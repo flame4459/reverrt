@@ -109,46 +109,17 @@ final class RideJournal: @unchecked Sendable {
     }
 
     private static func makeRide(points: [RidePoint], start: Date, end: Date) -> Ride {
-        var distance = 0.0
-        var gain = 0.0
-        var maxSpeed = 0.0
-        var maxLean = 0.0
-        var moving = 0.0
-        var stopped = 0.0
-        var altitudeRef: Double?
-
-        for index in points.indices {
-            let point = points[index]
-            maxSpeed = max(maxSpeed, point.speed)
-            maxLean = max(maxLean, abs(point.lean ?? 0))
-            if index > 0 {
-                let previous = points[index - 1]
-                let gap = point.time.timeIntervalSince(previous.time)
-                let delta = RoadGraph.flat(previous.lat, previous.lon, point.lat, point.lon).dist
-                if gap > 0, gap < 15, delta < 30 {
-                    distance += delta
-                    if point.speed > 1.5 { moving += gap } else { stopped += gap }
-                }
-            }
-            if point.alt != 0 {
-                if let ref = altitudeRef {
-                    let diff = point.alt - ref
-                    if diff >= 3 { gain += diff; altitudeRef = point.alt }
-                    else if diff <= -3 { altitudeRef = point.alt }
-                } else {
-                    altitudeRef = point.alt
-                }
-            }
-        }
-
+        // Same arithmetic as the live recorder, so a recovered ride reports the
+        // distance the rider actually saw on the cockpit.
+        let stats = RideStats.compute(points: points)
         return Ride(startDate: start, endDate: end,
-                    distanceMeters: distance,
-                    maxSpeedMps: maxSpeed,
-                    elevationGainMeters: gain,
+                    distanceMeters: stats.distanceMeters,
+                    maxSpeedMps: stats.maxSpeedMps,
+                    elevationGainMeters: stats.elevationGainMeters,
                     durationSeconds: max(end.timeIntervalSince(start), 0),
                     points: points,
-                    maxLeanAngleDegrees: maxLean,
-                    movingSeconds: moving,
-                    stoppedSeconds: stopped)
+                    maxLeanAngleDegrees: stats.maxLeanAngleDegrees,
+                    movingSeconds: stats.movingSeconds,
+                    stoppedSeconds: stats.stoppedSeconds)
     }
 }

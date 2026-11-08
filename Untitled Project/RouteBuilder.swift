@@ -94,14 +94,20 @@ nonisolated enum RouteBuilder {
         date: Date,
         preferences: RoadPreferences,
         surface: LoopSurface,
-        hazards: HazardDensity?
+        hazards: HazardDensity?,
+        profile: TwistProfile? = nil
     ) -> [Double] {
-        graph.edges.map { edge in
+        // Where twisty roads are scarce, a road's class says less about how
+        // good it is to ride: a winding residential lane is the point.
+        let classPower = profile?.classRelief ?? 1
+        return graph.edges.map { edge in
             let road = graph.roads[edge.road]
             // The same road is worth different things to different riders.
             // Relaxed wants flowing sweepers, max-twisty wants hairpins, and
             // the default blends both with overall corner density.
-            let baseValue = min(edge.value / 100, 1)
+            // Continuous, locally normalised curvature. `edge.value` keeps the
+            // older category-shaped number for display.
+            let baseValue = profile?.effective(edge.raw) ?? min(edge.raw / 100, 1)
             let value: Double
             switch style {
             case .relaxed:
@@ -132,7 +138,7 @@ nonisolated enum RouteBuilder {
             let preference = preferences.multiplier(for: road)
             return edge.length
                 * (1.55 - 1.2 * value)
-                * classFactor(road.highway)
+                * pow(classFactor(road.highway), classPower)
                 * traffic
                 * preference
                 * surfaceFactor
@@ -254,13 +260,17 @@ nonisolated enum RouteBuilder {
                 .filter { !$0.isEmpty }
         )
 
+        // One local profile per plan; both the cost function and the
+        // improvement passes score roads relative to it.
+        let profile = TwistProfile.make(edges: graph.edges)
         let baseCosts = costs(
             graph,
             style: style,
             date: date,
             preferences: merged,
             surface: surface,
-            hazards: density
+            hazards: density,
+            profile: profile
         )
         let shortestCosts = graph.edges.map { edge in
             edge.length * classFactor(graph.roads[edge.road].highway)
@@ -272,6 +282,7 @@ nonisolated enum RouteBuilder {
         let model = Model(
             graph: graph,
             costs: baseCosts,
+            profile: profile,
             shortestCosts: shortestCosts,
             times: times,
             hazards: density,
@@ -654,7 +665,7 @@ nonisolated enum RouteBuilder {
             let newLength = model.length(of: path) - edge.length + model.length(of: detour)
             guard newLength >= target * 0.94, newLength <= target * 1.06 else { break }
             let detourValue = model.value(of: detour)
-            guard detourValue > edge.value + 6 else { break }
+            guard detourValue > model.score(edge) + 6 else { break }
             path.replaceSubrange(index...index, with: detour)
         }
 
@@ -677,10 +688,10 @@ nonisolated enum RouteBuilder {
         // and back into the start, and keeping them keeps the loop a loop.
         let inner = 1..<(path.count - 1)
         guard let index = inner.min(by: {
-            model.graph.edges[path[$0]].value < model.graph.edges[path[$1]].value
+            model.score(model.graph.edges[path[$0]]) < model.score(model.graph.edges[path[$1]])
         }) else { return nil }
         // If even the worst edge is decent, a detour is unlikely to help.
-        guard model.graph.edges[path[index]].value < 60 else { return nil }
+        guard model.score(model.graph.edges[path[index]]) < 60 else { return nil }
         return index
     }
 
@@ -695,8 +706,8 @@ nonisolated enum RouteBuilder {
         var spans: [(start: Int, end: Int, value: Double)] = []
         for start in 1..<(path.count - 2) {
             let end = min(start + 1, path.count - 2)
-            let value = model.graph.edges[path[start]].value
-                + model.graph.edges[path[end]].value
+            let value = model.score(model.graph.edges[path[start]])
+                + model.score(model.graph.edges[path[end]])
             spans.append((start, end, value))
         }
         spans.sort { $0.value < $1.value }
@@ -775,7 +786,7 @@ nonisolated enum RouteBuilder {
 
         for edgeIndex in path {
             let edge = model.graph.edges[edgeIndex]
-            weightedValue += edge.value * edge.length
+            weightedValue += model.score(edge) * edge.length
             weightedTwist += edge.twist * edge.length
             weightedSweeper += edge.sweeperShare * edge.length
             if !seenSegments.insert(edge.seg).inserted { repeated += edge.length }
@@ -851,7 +862,7 @@ nonisolated enum RouteBuilder {
             let edge = model.graph.edges[edgeIndex]
             let midpoint = travelled + edge.length / 2
             let bucket = min(3, Int(midpoint / total * 4))
-            valueByBucket[bucket] += edge.value * edge.length
+            valueByBucket[bucket] += model.score(edge) * edge.length
             lengthByBucket[bucket] += edge.length
             travelled += edge.length
         }
@@ -1005,6 +1016,7 @@ nonisolated enum RouteBuilder {
     nonisolated private struct Model {
         let graph: RoadGraph
         let costs: [Double]
+        let profile: TwistProfile?
         let shortestCosts: [Double]
         let times: [Double]
         let hazards: HazardDensity?
@@ -1015,10 +1027,15 @@ nonisolated enum RouteBuilder {
             path.reduce(0) { $0 + graph.edges[$1].length }
         }
 
+        /// 0...100 curvature score for one edge, relative to the local profile.
+        func score(_ edge: RoadGraph.Edge) -> Double {
+            (profile?.effective(edge.raw) ?? edge.value / 100) * 100
+        }
+
         func value(of path: [Int]) -> Double {
             let total = length(of: path)
             guard total > 0 else { return 0 }
-            return path.reduce(0.0) { $0 + graph.edges[$1].value * graph.edges[$1].length } / total
+            return path.reduce(0.0) { $0 + score(graph.edges[$1]) * graph.edges[$1].length } / total
         }
     }
 

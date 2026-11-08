@@ -389,3 +389,95 @@ xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderUITests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-audit \
   -only-testing:RiderUITests/RiderAuditUITests
 ```
+
+---
+
+# Implementation round 3 — 8 Nov 2026
+
+Follow-up to the code-level review and the curvature-scoring review. The tree
+before this round is preserved in commit `2198a54` ("Baseline snapshot"), so
+every change below can be diffed or reverted as a unit.
+
+## Correctness fixes
+
+1. **GPS clients released twice.** `LocationHub` now hands out a `Lease` from
+   `acquirePrecise()` / `acquireBackground()`. `release()` is idempotent, so the
+   recorder finishing a ride and the ride screen disappearing can no longer drop
+   navigation's claim to zero. `RideRecorder` and `NavigationManager` hold
+   leases instead of counting begin/end calls.
+2. **Auto-pause never fired.** A 1 Hz timer now decides when two minutes of
+   standing have passed, using `CLLocation.timestamp` for the stationary clock.
+   The old check lived inside the location callback, which a parked phone
+   (`distanceFilter = 5`) stops receiving.
+3. **Recovered rides lost highway distance.** `RideStats.compute(points:)` and
+   `RideStats.segmentMeters` are now the single rule used by both the live
+   recorder and `RideJournal`. A 31.5 m/s fix is no longer treated as noise:
+   a long segment only counts as a jump when the fix reports near-zero speed or
+   implies an impossible speed.
+4. **Leaving the cockpit deleted the ride.** `RideView.onDisappear` calls
+   `recorder.suspend()`, which flushes the journal and releases GPS but leaves
+   the journal on disk for the existing recovery prompt. Only `discard()`
+   deletes it.
+5. **Stale reroute overwrote a new route.** `NavigationManager.routeGeneration`
+   is captured when a reroute starts and checked in
+   `finishReroute(_:generation:)`. A result from a route the rider has left is
+   dropped.
+6. **Elevation cache collisions.** The key is now a SHA-256 over every vertex
+   quantized to 4 decimals, instead of first + last + count. Two loops from the
+   same start no longer share a 90-day profile.
+
+## Curvature scoring (steps 1–3 of the proposal)
+
+1. **Continuous curvature.** `Curvature.fun(radius:)` replaces the 150 m
+   threshold: 1 at 25 m, 0 at 450 m, log-spaced. `Stats.raw` is the mean merit
+   over the sampled length. Radii are fitted once per OSM way and sliced per
+   220 m chunk, so chunk boundaries no longer cut curves or lose their ends.
+   A 250 m sweeper now scores about 20 instead of 0; a 400 m bend about 4.
+2. **Local profile.** `TwistProfile` (length-weighted p50/p97, `richness`,
+   `scarcity`) feeds `effective(raw)` into edge costs, route metrics, the
+   detour/swap/trim passes and the lap score. Where twisty roads are scarce the
+   top few percent reach full value and `classFactor` is softened
+   (`pow(classFactor, 1 - 0.6 × scarcity)`); where they are plentiful the
+   absolute score still dominates.
+3. **Joint ranking.** MapKit loops are still published immediately, but the
+   graph result is now awaited and compared on `TwistProfile.scoreRoute`
+   (measured geometry, not the score that produced it). The graph replaces the
+   MapKit set when it is more than 5 points better, which is the case that
+   matters on flat ground: MapKit legs follow Apple's fastest roads.
+
+## Verification
+
+- 58 unit tests pass (39 before), including new coverage for lease idempotency,
+  auto-pause, the highway-distance fixture, journal parity, suspend/discard,
+  reroute generations, cache keys, radius continuity, chunk-seam curvature and
+  relative scoring.
+- Debug simulator build succeeds; the only warnings are the pre-existing
+  `Units.distanceText` actor-isolation warnings in `RouteBuilder`.
+- `RiderFlowUITests/testRecordRideAndSummary` passes end-to-end (start, pause,
+  resume, stop, save, summary). It needs a *moving* simulated location: with no
+  location, or a static one, the ride correctly reports "not enough GPS data".
+  `xcrun simctl location <udid> start --speed=13 --interval=1 …` was used for
+  the run.
+
+## Still open from the reviews
+
+- Steps 4–5 of the scoring proposal: fetching residential roads when scarcity is
+  high, hotspot-first seeding, a wider large-neighbourhood improvement pass, and
+  an ALT/bidirectional search.
+- Reopening the cockpit in the same session and starting a *new* ride still
+  truncates a suspended journal; the recovery prompt covers the next launch.
+  A "resume unfinished ride" path would close this.
+- TileStore/Overpass consolidation, cache eviction, privacy copy/manifest and
+  the Live Activity intent were not touched in this round.
+
+```bash
+# Unit tests (58)
+xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderTests \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-fix
+
+# Ride flow smoke test (set a moving simulated location first)
+xcrun simctl location <udid> start --speed=13 --interval=1 40.700,-73.520 40.712,-73.505
+xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderUITests \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-fix \
+  -only-testing:RiderUITests/RiderFlowUITests/testRecordRideAndSummary
+```

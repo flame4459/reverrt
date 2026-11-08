@@ -146,7 +146,6 @@ struct RideView: View {
         .onDisappear {
             lean.stop()
             gForce.stop()
-            recorder.stopUpdates()
             voice.stop()
             remote.stop()
             hazardLoadTask?.cancel()
@@ -154,7 +153,10 @@ struct RideView: View {
             LiveRideActivity.shared.end()
             HelmetAudio.shared.stop()
             IdleTimer.release("ride")
-            if recorder.isRecording { recorder.discard() }
+            // Leaving the screen stops the clock but must not delete the
+            // journal: a ride that was still running when the cockpit went away
+            // is offered by the recovery prompt instead of vanishing.
+            recorder.suspend()
         }
         .onChange(of: recorder.points.count) { _, count in
             // Rebuilding the whole polyline on every 5 m fix is expensive.

@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import CryptoKit
 
 struct ElevationSample: Codable, Hashable, Sendable {
     var distance: Double      // meters from the start
@@ -142,10 +143,27 @@ nonisolated enum ElevationService {
         }
     }
 
-    private static func cacheKey(_ coordinates: [CLLocationCoordinate2D]) -> String {
-        guard let first = coordinates.first, let last = coordinates.last else { return "empty" }
-        return String(format: "%.4f,%.4f-%.4f,%.4f-%d",
-                      first.latitude, first.longitude, last.latitude, last.longitude, coordinates.count)
+    /// Stable key for a whole polyline.
+    ///
+    /// Keying on the first coordinate, the last coordinate and the vertex count
+    /// was not unique: a loop starts and ends in the same place, so two loops
+    /// from the same car park with the same number of vertices shared one
+    /// profile for 90 days. Hashing every quantized vertex distinguishes them
+    /// while still collapsing GPS jitter between two computations of the same
+    /// route.
+    static func cacheKey(_ coordinates: [CLLocationCoordinate2D]) -> String {
+        guard !coordinates.isEmpty else { return "empty" }
+        // 4 decimals is about 11 m: fine enough to keep neighboring roads
+        // apart, coarse enough that a re-planned identical route matches.
+        var body = "\(coordinates.count);"
+        body.reserveCapacity(coordinates.count * 22 + 8)
+        for coordinate in coordinates {
+            let latitude = (coordinate.latitude * 10_000).rounded()
+            let longitude = (coordinate.longitude * 10_000).rounded()
+            body += String(format: "%.0f,%.0f;", latitude, longitude)
+        }
+        let digest = SHA256.hash(data: Data(body.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private struct Response: Decodable {

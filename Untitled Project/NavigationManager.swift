@@ -18,6 +18,7 @@ nonisolated struct RideCameraPose: Equatable, Sendable {
 }
 
 /// Follows a planned route: tracks progress, speaks directions, and finds a way back if you leave it.
+@MainActor
 @Observable
 final class NavigationManager {
     var route: PlannedRoute?
@@ -75,7 +76,10 @@ final class NavigationManager {
     @ObservationIgnored private var normalDestination: CLLocationCoordinate2D?
     @ObservationIgnored private var lastPoseAt = Date.distantPast
     @ObservationIgnored private var lastPoseHeading = 0.0
-    @ObservationIgnored private var holdsPreciseLocation = false
+    @ObservationIgnored private var preciseLease: LocationHub.Lease?
+    /// Bumped whenever the active route changes. In-flight reroutes capture it
+    /// and refuse to install their result if it has moved on.
+    @ObservationIgnored private(set) var routeGeneration = 0
 
     var startCoordinate: CLLocationCoordinate2D? { route?.points.first?.coordinate }
 
@@ -97,15 +101,15 @@ final class NavigationManager {
 
     // MARK: Control
     func start(_ r: PlannedRoute, roads: [Road]) {
+        routeGeneration += 1
         route = r
         self.roads = roads
         // A loop finishes where it starts. Treating that as a point-to-point
         // destination is what sent riders back to the trailhead instead of
         // rejoining the loop; only MapKit directions have a real destination.
         normalDestination = r.kind == .directions ? r.destination : nil
-        if !holdsPreciseLocation {
-            hub.beginPrecise()
-            holdsPreciseLocation = true
+        if preciseLease == nil {
+            preciseLease = hub.acquirePrecise()
         }
         reset()
         stepIdx = r.kind == .directions ? 0 : min(1, max(r.steps.count - 1, 0))
@@ -116,15 +120,14 @@ final class NavigationManager {
     }
 
     func stop() {
+        routeGeneration += 1
         route = nil
         step = nil
         nextStep = nil
         roads = []
         normalDestination = nil
-        if holdsPreciseLocation {
-            hub.endPrecise()
-            holdsPreciseLocation = false
-        }
+        preciseLease?.release()
+        preciseLease = nil
         reset()
         arrived = false
     }
@@ -283,6 +286,7 @@ final class NavigationManager {
     // MARK: Rerouting
     private func reroute(from loc: CLLocation) {
         guard let r = route else { return }
+        let generation = routeGeneration
         rerouting = true
         lastReroute = Date()
         Speaker.shared.say("Off route. Finding a way back", kind: .navigation)
@@ -291,7 +295,7 @@ final class NavigationManager {
         // not: their destination is the start, so send them through the graph
         // rejoin below instead.
         if r.kind == .directions, let destination = normalDestination {
-            rerouteDirections(from: loc.coordinate, to: destination)
+            rerouteDirections(from: loc.coordinate, to: destination, generation: generation)
             return
         }
 
@@ -300,7 +304,7 @@ final class NavigationManager {
             // No offline graph is available. As a last resort, guide the rider
             // back to the route's end so they can restart from the trailhead.
             if let destination = r.destination {
-                rerouteDirections(from: loc.coordinate, to: destination)
+                rerouteDirections(from: loc.coordinate, to: destination, generation: generation)
             }
             return
         }
@@ -315,11 +319,13 @@ final class NavigationManager {
             // Graph construction and Dijkstra are pure work; keep them off the
             // main actor so navigation stays responsive while rerouting.
             let new = RouteBuilder.reroute(roads: allRoads, route: r, from: coord, rejoinAt: target)
-            await MainActor.run { self.finishReroute(new) }
+            await MainActor.run { self.finishReroute(new, generation: generation) }
         }
     }
 
-    private func rerouteDirections(from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) {
+    private func rerouteDirections(from source: CLLocationCoordinate2D,
+                                  to destination: CLLocationCoordinate2D,
+                                  generation: Int) {
         Task {
             let request = MKDirections.Request()
             request.source = MKMapItem(location: CLLocation(latitude: source.latitude, longitude: source.longitude), address: nil)
@@ -329,14 +335,19 @@ final class NavigationManager {
             do {
                 let response = try await MKDirections(request: request).calculate()
                 let updated = response.routes.first.map(PlannedRoute.init(mapRoute:))
-                finishReroute(updated)
+                finishReroute(updated, generation: generation)
             } catch {
-                finishReroute(nil)
+                finishReroute(nil, generation: generation)
             }
         }
     }
 
-    private func finishReroute(_ new: PlannedRoute?) {
+    /// Installs a reroute result, but only if it belongs to the route that is
+    /// still active. Without this guard, a reroute requested on one route could
+    /// land after the rider ended navigation or started another route and
+    /// replace it with a stale way back.
+    func finishReroute(_ new: PlannedRoute?, generation: Int) {
+        guard generation == routeGeneration else { return }
         rerouting = false
         guard route != nil else { return }
         guard let new else {

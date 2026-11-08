@@ -1189,6 +1189,21 @@ final class RoutePlanner {
                 prefersPasses: prefersPasses,
                 roadsTask: roadsTask
             )
+            // MapKit's legs follow Apple's fastest roads, so on a flat grid they
+            // hug the arterials. The graph planner is the one that optimises
+            // curvature; let it finish and replace the MapKit loops if it is
+            // clearly better on the same measured metric.
+            await considerGraphResult(
+                graphTask,
+                mapKit: mapKitRoutes,
+                target: length,
+                start: start,
+                style: style,
+                mode: mode,
+                surface: surface,
+                preferredRoads: preferredRoads,
+                prefersPasses: prefersPasses
+            )
             return
         }
 
@@ -1297,6 +1312,58 @@ final class RoutePlanner {
                     "Couldn't build a \(distance) loop from this start.\(detail) Try a different start or a shorter distance."
                 )
             }
+        }
+    }
+
+    /// Replaces a published MapKit loop with the graph's loop when the graph is
+    /// clearly twistier.
+    ///
+    /// Both candidates are scored with `TwistProfile.scoreRoute`, which measures
+    /// the rendered geometry rather than the score that produced it. The graph
+    /// has to win by a margin: swapping a loop the rider is already looking at
+    /// because of a near-tie is worse than leaving it alone.
+    private func considerGraphResult(
+        _ graphTask: Task<(routes: [PlannedRoute], roads: [Road], failure: String?, notice: String?), Never>,
+        mapKit: [PlannedRoute],
+        target: Double,
+        start: CLLocationCoordinate2D,
+        style: RouteStyle,
+        mode: LoopMode,
+        surface: LoopSurface,
+        preferredRoads: [String],
+        prefersPasses: Bool
+    ) async {
+        let generation = generationID
+        let graphResult = await graphTask.value
+        guard !Task.isCancelled, generation == generationID else { return }
+        let graphRoutes = graphResult.routes
+        guard !graphRoutes.isEmpty else { return }
+
+        func bestScore(_ routes: [PlannedRoute]) -> Double {
+            routes.map { TwistProfile.scoreRoute($0.points, targetMeters: target) }.max() ?? 0
+        }
+        guard bestScore(graphRoutes) > bestScore(mapKit) + 5 else { return }
+
+        await MainActor.run {
+            self.roads = graphResult.roads
+            self.notice = graphResult.notice
+            self.results = graphRoutes
+            self.loopCache = LoopCache(
+                latitude: start.latitude,
+                longitude: start.longitude,
+                miles: target / 1609.344,
+                style: style,
+                mode: mode,
+                surface: surface,
+                shapingPins: [],
+                results: graphRoutes,
+                roads: graphResult.roads,
+                preferredRoads: preferredRoads
+            )
+            self.phase = .done
+        }
+        for route in graphRoutes {
+            await attachElevation(to: route.id, prefersPasses: prefersPasses)
         }
     }
 

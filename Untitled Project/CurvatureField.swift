@@ -8,12 +8,19 @@ import CoreLocation
 /// so a "twisty" label can no longer be produced by a score that rewarded
 /// straights.
 ///
-/// The old graph implementation averaged heading change over a whole
-/// junction-to-junction segment. On a 6 km road with 2 km of bends that
-/// diluted the good part into invisibility, and the router could only take or
-/// leave the entire road. Measuring short chunks fixes that.
+/// Two things matter for how the number behaves:
+///
+/// * `fun(radius:)` is a smooth function of log radius. The old score counted
+///   only corners under 150 m, so a 151 m corner was worth nothing and a 149 m
+///   corner was worth a lot. On Long Island, where most of the good roads are
+///   200–400 m sweepers, that produced 0–12 for roads a rider would call
+///   twisty.
+/// * Radii are computed once per OSM way and then sliced per chunk (see
+///   `sampled`/`stats`). Measuring each 220 m chunk in isolation discarded the
+///   first and last 15 m of every chunk and split any sweeper that crossed a
+///   boundary.
 nonisolated enum Curvature {
-    struct Stats: Sendable, Equatable {
+    nonisolated struct Stats: Sendable, Equatable {
         var lengthMeters: Double = 0
         /// Total absolute heading change per kilometre.
         var degreesPerKm: Double = 0
@@ -27,16 +34,40 @@ nonisolated enum Curvature {
         var minRadiusMeters: Double = .infinity
         /// 0...100 riding value. A straight road is 0 by construction.
         var value: Double = 0
+        /// 0...100 continuous curvature: the mean of `fun(radius:)` over the
+        /// sampled length. Unlike `value` this has no category thresholds, so
+        /// it is what the router and the relative scoring use.
+        var raw: Double = 0
+        /// Length of road whose radius scores at least half of `fun`'s range
+        /// (roughly 170 m or tighter). "Twisty kilometres" for a whole route.
+        var twistyLengthMeters: Double = 0
         /// Comfortable speed through the tightest part, metres per second.
         var comfortableMps: Double = 30
 
+        var twistyShare: Double {
+            lengthMeters > 0 ? min(twistyLengthMeters / lengthMeters, 1) : 0
+        }
+
         static let empty = Stats()
+    }
+
+    /// A whole OSM way resampled at `sampleSpacingMeters`, with a fitted radius
+    /// at every sample and the distance from the start of the way.
+    nonisolated struct Sampled {
+        var points: [CLLocationCoordinate2D]
+        var arc: [Double]
+        var radii: [Double]
+
+        var length: Double { arc.last ?? 0 }
     }
 
     // MARK: Thresholds
     static let cornerRadiusMeters = 150.0
     static let tightRadiusMeters = 70.0
     static let sweeperRadiusMeters = 250.0
+    /// `fun` is 0 at this radius and 1 at `funFullRadiusMeters`.
+    static let funZeroRadiusMeters = 450.0
+    static let funFullRadiusMeters = 25.0
     /// Geometry is sampled every 5 m and the radius is fitted through points
     /// 15 m either side, which is stable on OSM vertices without smoothing away
     /// short hairpins.
@@ -47,43 +78,98 @@ nonisolated enum Curvature {
     static let maximumComfortableMps = 30.0
     static let minimumComfortableMps = 7.0
 
+    /// Smooth riding merit of a corner radius: 1 at 25 m, 0 at 450 m.
+    ///
+    /// Log spacing matches how riders experience the difference: 100 → 150 m is
+    /// a real change, 400 → 450 m is not.
+    static func fun(radius: Double) -> Double {
+        guard radius.isFinite, radius > 0 else { return 0 }
+        let denominator = log(funZeroRadiusMeters) - log(funFullRadiusMeters)
+        let t = (log(funZeroRadiusMeters) - log(max(radius, funFullRadiusMeters))) / denominator
+        return min(max(t, 0), 1)
+    }
+
+    // MARK: Measurement
+
     static func measure(_ coordinates: [CLLocationCoordinate2D]) -> Stats {
-        guard coordinates.count > 2 else { return .empty }
-        let sampled = resample(coordinates, every: sampleSpacingMeters)
-        guard sampled.count > 2 * chordSteps + 2 else { return .empty }
+        guard let sampled = sampled(coordinates) else { return .empty }
+        return stats(sampled, from: 0, to: sampled.length)
+    }
 
-        var totalLength = 0.0
-        for index in 1..<sampled.count {
-            totalLength += distance(sampled[index - 1], sampled[index])
+    /// Convenience for routes that already carry `RoutePoint`s.
+    static func measure(points: [RoutePoint]) -> Stats {
+        measure(points.map(\.coordinate))
+    }
+
+    /// Resamples a whole way and fits a radius at every interior sample.
+    static func sampled(_ coordinates: [CLLocationCoordinate2D]) -> Sampled? {
+        guard coordinates.count > 2 else { return nil }
+        let points = resample(coordinates, every: sampleSpacingMeters)
+        guard points.count > 2 * chordSteps + 2 else { return nil }
+
+        var arc = [Double](repeating: 0, count: points.count)
+        for index in 1..<points.count {
+            arc[index] = arc[index - 1] + distance(points[index - 1], points[index])
         }
-        guard totalLength > 1 else { return .empty }
+        guard let total = arc.last, total > 1 else { return nil }
 
-        let step = sampleSpacingMeters
-        let half = chordSteps
-        var radii = [Double](repeating: .infinity, count: sampled.count)
-        for index in half..<(sampled.count - half) {
+        var radii = [Double](repeating: .infinity, count: points.count)
+        for index in chordSteps..<(points.count - chordSteps) {
             radii[index] = circumradius(
-                sampled[index - half],
-                sampled[index],
-                sampled[index + half]
+                points[index - chordSteps],
+                points[index],
+                points[index + chordSteps]
             )
         }
+        return Sampled(points: points, arc: arc, radii: radii)
+    }
 
+    /// Stats for the slice of a sampled way between two distances from its start.
+    ///
+    /// Slicing a whole-way sample is what keeps chunk boundaries from cutting
+    /// curves: the radius at a chunk's first sample was fitted using the road on
+    /// both sides of the boundary.
+    static func stats(_ sample: Sampled, from startMeters: Double, to endMeters: Double) -> Stats {
+        guard sample.points.count > 2, sample.length > 1 else { return .empty }
+        let start = min(max(startMeters, 0), sample.length)
+        let end = min(max(endMeters, start), sample.length)
+        guard end - start > 1 else { return .empty }
+
+        var lo = 0
+        while lo < sample.arc.count - 1, sample.arc[lo] < start - 0.001 { lo += 1 }
+        var hi = lo
+        while hi + 1 < sample.arc.count, sample.arc[hi + 1] <= end + 0.001 { hi += 1 }
+        guard hi - lo >= 3 else { return .empty }
+
+        let step = sampleSpacingMeters
+        var measured = 0.0
+        var rawSum = 0.0
         var cornerLength = 0.0
-        var tightSamples = 0
-        var sweeperSamples = 0
-        var runs: [(length: Double, minRadius: Double)] = []
+        var tightLength = 0.0
+        var sweeperLength = 0.0
+        var twistyLength = 0.0
+        var runs = 0
         var runStart: Int?
         var runMin = Double.infinity
+        var minRadius = Double.infinity
 
-        for index in half..<(sampled.count - half) {
-            let radius = radii[index]
-            // Tightness and sweeper flow are categories of their own; a
-            // 200 m sweeper is not a corner but it certainly is flow.
-            if radius < tightRadiusMeters { tightSamples += 1 }
-            if radius >= tightRadiusMeters && radius < sweeperRadiusMeters {
-                sweeperSamples += 1
+        func closeRun(at index: Int) {
+            guard let runStart else { return }
+            let runLength = Double(index - runStart) * step
+            // A single noisy sample is not a corner.
+            if runLength >= 3 * step {
+                runs += 1
+                cornerLength += runLength
+                minRadius = min(minRadius, runMin)
             }
+        }
+
+        for index in lo...hi {
+            let radius = sample.radii[index]
+            let merit = fun(radius: radius)
+            measured += step
+            rawSum += merit
+            if merit >= 0.5 { twistyLength += step }
             if radius < cornerRadiusMeters {
                 if runStart == nil {
                     runStart = index
@@ -91,38 +177,34 @@ nonisolated enum Curvature {
                 } else {
                     runMin = min(runMin, radius)
                 }
-            } else if let start = runStart {
-                let length = Double(index - start) * step
-                // A single noisy sample is not a corner.
-                if length >= 3 * step {
-                    runs.append((length, runMin))
-                    cornerLength += length
-                }
+            } else {
+                closeRun(at: index)
                 runStart = nil
                 runMin = .infinity
             }
-        }
-        if let start = runStart {
-            let length = Double((sampled.count - half) - start) * step
-            if length >= 3 * step {
-                runs.append((length, runMin))
-                cornerLength += length
+            if radius < tightRadiusMeters { tightLength += step }
+            if radius >= tightRadiusMeters && radius < sweeperRadiusMeters {
+                sweeperLength += step
             }
         }
+        closeRun(at: hi + 1)
 
-        let measuredSamples = max(sampled.count - 2 * half, 1)
-        let kilometers = totalLength / 1_000
-        let cornersPerKm = Double(runs.count) / max(kilometers, 0.05)
-        let cornerShare = min(cornerLength / totalLength, 1)
-        let tightShare = min(Double(tightSamples) / Double(measuredSamples), 1)
-        let sweeperShare = min(Double(sweeperSamples) / Double(measuredSamples), 1)
-        let minRadius = runs.map(\.minRadius).min() ?? .infinity
+        guard measured > 1 else { return .empty }
+        let kilometers = measured / 1_000
+        let cornersPerKm = Double(runs) / max(kilometers, 0.05)
+        let cornerShare = min(cornerLength / measured, 1)
+        let tightShare = min(tightLength / measured, 1)
+        let sweeperShare = min(sweeperLength / measured, 1)
+        let raw = 100 * rawSum / Double(hi - lo + 1)
 
-        // Density alone saturates on switchback roads; share alone punishes a
-        // single great corner surrounded by a connector. All four terms are
-        // required so a straight road cannot score anything at all.
+        let slice = Array(sample.points[lo...hi])
+        // Density saturates on switchback roads; share alone punishes a great
+        // corner surrounded by a connector. A straight road still scores 0.
         let densityScore = min(cornersPerKm / 6, 1)
-        let shareScore = min(cornerShare / 0.55, 1)
+        // Continuous share: a 250 m sweeper is worth something, a 450 m bend is
+        // worth almost nothing. Dividing by 0.55 keeps tight mountain roads at
+        // the top of the scale they had before the threshold was removed.
+        let shareScore = min(raw / 55, 1)
         let tightScore: Double = minRadius.isFinite
             ? clamp((sweeperRadiusMeters - minRadius) / 210, 0, 1)
             : 0
@@ -133,21 +215,18 @@ nonisolated enum Curvature {
             + 0.12 * sweeperScore)
 
         return Stats(
-            lengthMeters: totalLength,
-            degreesPerKm: degreesPerKilometer(sampled, totalLength: totalLength),
+            lengthMeters: measured,
+            degreesPerKm: degreesPerKilometer(slice, totalLength: measured),
             cornerShare: cornerShare,
             tightShare: tightShare,
             sweeperShare: sweeperShare,
             cornersPerKm: cornersPerKm,
             minRadiusMeters: minRadius,
             value: clamp(value, 0, 100),
+            raw: clamp(raw, 0, 100),
+            twistyLengthMeters: twistyLength,
             comfortableMps: comfortableSpeed(minRadius: minRadius)
         )
-    }
-
-    /// Convenience for routes that already carry `RoutePoint`s.
-    static func measure(points: [RoutePoint]) -> Stats {
-        measure(points.map(\.coordinate))
     }
 
     static func comfortableSpeed(minRadius: Double) -> Double {

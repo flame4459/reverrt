@@ -51,6 +51,10 @@ nonisolated final class RoadGraph {
         let twist: Double
         /// 0...100 riding value from radius-based curvature.
         let value: Double
+        /// 0...100 continuous curvature (mean of `Curvature.fun` over the
+        /// chunk). The router scores relative to its neighbours with this;
+        /// `value` keeps the older, category-shaped number for display.
+        let raw: Double
         /// Fraction of the chunk spent in corners under 150 m.
         let cornerShare: Double
         /// Fraction in 70...250 m sweepers.
@@ -114,6 +118,21 @@ nonisolated final class RoadGraph {
 
         var seg = 0
         for (ri, r) in roads.enumerated() where r.count >= 2 && (includeUnpaved || !r.isUnpaved) {
+            // Curvature is measured once over the whole way and then sliced per
+            // chunk. Measuring each chunk on its own threw away the 15 m at
+            // every chunk edge and split curves that crossed a boundary.
+            let coordinates = (0..<r.count).map {
+                CLLocationCoordinate2D(latitude: r.lat($0), longitude: r.lon($0))
+            }
+            var vertexArc = [Double](repeating: 0, count: coordinates.count)
+            for i in 1..<coordinates.count {
+                vertexArc[i] = vertexArc[i - 1] + RoadGraph.flat(
+                    r.lat(i - 1), r.lon(i - 1),
+                    r.lat(i), r.lon(i)
+                ).dist
+            }
+            let profile = Curvature.sampled(coordinates)
+
             var a = 0
             var chunkLength = 0.0
             for i in 1..<r.count {
@@ -127,7 +146,8 @@ nonisolated final class RoadGraph {
                     || forced.contains(k)
                     || chunkLength >= Self.chunkMeters
                 if boundary {
-                    addSegment(road: ri, from: a, to: i, id: seg)
+                    addSegment(road: ri, from: a, to: i, id: seg,
+                               profile: profile, vertexArc: vertexArc, coordinates: coordinates)
                     seg += 1
                     a = i
                     chunkLength = 0
@@ -150,22 +170,26 @@ nonisolated final class RoadGraph {
 
     func node(forKey k: Int64) -> Int? { nodeOfKey[k] }
 
-    private func addSegment(road ri: Int, from i0: Int, to i1: Int, id: Int) {
+    private func addSegment(road ri: Int, from i0: Int, to i1: Int, id: Int,
+                            profile: Curvature.Sampled?,
+                            vertexArc: [Double],
+                            coordinates: [CLLocationCoordinate2D]) {
         let r = roads[ri]
-        var len = 0.0
-        for i in i0..<i1 {
-            len += RoadGraph.flat(r.lat(i), r.lon(i), r.lat(i + 1), r.lon(i + 1)).dist
-        }
+        let len = abs(vertexArc[i1] - vertexArc[i0])
         guard len >= 1 else { return }
 
-        // Curvature over exactly this chunk. Radius-based, so a 90-degree
-        // junction approach does not read as a corner and a hairpin does.
-        var coordinates: [CLLocationCoordinate2D] = []
-        coordinates.reserveCapacity(i1 - i0 + 1)
-        for i in i0...i1 {
-            coordinates.append(CLLocationCoordinate2D(latitude: r.lat(i), longitude: r.lon(i)))
+        // Curvature over exactly this chunk, sliced out of the whole-way
+        // profile so the radius at a boundary still sees the road on both
+        // sides. Radius-based, so a 90-degree junction approach does not read
+        // as a corner and a hairpin does.
+        let stats: Curvature.Stats
+        if let profile, profile.length > 1 {
+            let lower = min(i0, i1), upper = max(i0, i1)
+            stats = Curvature.stats(profile, from: vertexArc[lower], to: vertexArc[upper])
+        } else {
+            let lower = min(i0, i1), upper = max(i0, i1)
+            stats = Curvature.measure(Array(coordinates[lower...upper]))
         }
-        let stats = Curvature.measure(coordinates)
 
         let a = node(r.lat(i0), r.lon(i0))
         let b = node(r.lat(i1), r.lon(i1))
@@ -178,7 +202,7 @@ nonisolated final class RoadGraph {
             fe = edges.count
             edges.append(Edge(
                 from: a, to: b, road: ri, i0: i0, i1: i1,
-                length: len, twist: stats.degreesPerKm, value: stats.value,
+                length: len, twist: stats.degreesPerKm, value: stats.value, raw: stats.raw,
                 cornerShare: stats.cornerShare, sweeperShare: stats.sweeperShare,
                 tightShare: stats.tightShare,
                 comfortableMps: stats.comfortableMps, seg: id
@@ -191,7 +215,7 @@ nonisolated final class RoadGraph {
             be = edges.count
             edges.append(Edge(
                 from: b, to: a, road: ri, i0: i1, i1: i0,
-                length: len, twist: stats.degreesPerKm, value: stats.value,
+                length: len, twist: stats.degreesPerKm, value: stats.value, raw: stats.raw,
                 cornerShare: stats.cornerShare, sweeperShare: stats.sweeperShare,
                 tightShare: stats.tightShare,
                 comfortableMps: stats.comfortableMps, seg: id

@@ -74,27 +74,59 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
         manager.requestAlwaysAuthorization()
     }
 
-    /// Called when navigation or recording needs turn-level accuracy.
-    func beginPrecise() {
-        preciseClients += 1
-        applyConfiguration()
+    /// A claim on one of the hub's accuracy tiers.
+    ///
+    /// Releasing a lease twice does nothing, so two owners cleaning up the same
+    /// claim (the recorder finishing a ride and the ride screen disappearing,
+    /// say) can no longer drop the other owner's accuracy to 100 m mid-ride.
+    /// Prefer this over counting begin/end calls by hand.
+    @MainActor
+    final class Lease {
+        enum Tier { case precise, background }
+
+        private weak var hub: LocationHub?
+        private let tier: Tier
+        private var active = true
+
+        fileprivate init(hub: LocationHub, tier: Tier) {
+            self.hub = hub
+            self.tier = tier
+        }
+
+        var isActive: Bool { active }
+
+        /// Gives the claim back. Safe to call more than once, and safe after
+        /// the hub has gone away.
+        func release() {
+            guard active else { return }
+            active = false
+            guard let hub else { return }
+            switch tier {
+            case .precise: hub.preciseClients = max(hub.preciseClients - 1, 0)
+            case .background: hub.backgroundClients = max(hub.backgroundClients - 1, 0)
+            }
+            hub.applyConfiguration()
+        }
     }
 
-    func endPrecise() {
-        preciseClients = max(preciseClients - 1, 0)
+    /// Called when navigation or recording needs turn-level accuracy.
+    func acquirePrecise() -> Lease {
+        preciseClients += 1
         applyConfiguration()
+        return Lease(hub: self, tier: .precise)
     }
 
     /// Called while a ride needs background location.
-    func beginBackground() {
+    func acquireBackground() -> Lease {
         backgroundClients += 1
         applyConfiguration()
+        return Lease(hub: self, tier: .background)
     }
 
-    func endBackground() {
-        backgroundClients = max(backgroundClients - 1, 0)
-        applyConfiguration()
-    }
+    /// Live claim counts. Exposed for diagnostics and unit tests; the rider
+    /// never sees these directly.
+    var preciseClaimCount: Int { preciseClients }
+    var backgroundClaimCount: Int { backgroundClients }
 
     private func applyConfiguration() {
         manager.desiredAccuracy = preciseClients > 0 ? kCLLocationAccuracyBest : kCLLocationAccuracyHundredMeters

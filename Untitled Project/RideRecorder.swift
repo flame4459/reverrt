@@ -1,11 +1,18 @@
 import CoreLocation
 import Observation
 
+@MainActor
 @Observable
 final class RideRecorder {
     @ObservationIgnored private let hub = LocationHub.shared
     @ObservationIgnored private var hubToken: UUID?
     @ObservationIgnored private var authToken: UUID?
+    /// Claims on the hub's accuracy tiers. Leases are idempotent, so finishing
+    /// a ride and leaving the screen can both clean up without stepping on
+    /// navigation's claim.
+    @ObservationIgnored private var preciseLease: LocationHub.Lease?
+    @ObservationIgnored private var backgroundLease: LocationHub.Lease?
+    @ObservationIgnored private var autoPauseTimer: Timer?
 
     var isRecording = false
     var isPaused = false
@@ -18,6 +25,9 @@ final class RideRecorder {
     var elevationGain = 0.0
     var authStatus: CLAuthorizationStatus = .notDetermined
     @ObservationIgnored var onLocation: ((CLLocation) -> Void)?
+
+    /// True while the recorder paused itself because the bike stopped moving.
+    var isAutoPaused: Bool { autoPaused }
 
     private var startDate: Date?
     private var pauseStart: Date?
@@ -44,7 +54,7 @@ final class RideRecorder {
     private func attach() {
         if hubToken == nil {
             hubToken = hub.addSubscriber { [weak self] location in
-                self?.process(location)
+                self?.ingest(location)
             }
         }
         if authToken == nil {
@@ -77,9 +87,10 @@ final class RideRecorder {
         isPaused = false
         isRecording = true
         attach()
-        hub.beginPrecise()
-        hub.beginBackground()
+        preciseLease = hub.acquirePrecise()
+        backgroundLease = hub.acquireBackground()
         hub.requestAlwaysIfNeeded()
+        startAutoPauseTimer()
     }
 
     func pause() {
@@ -102,18 +113,22 @@ final class RideRecorder {
         guard isRecording, let start = startDate else { return nil }
         let now = Date()
         let duration = elapsed(at: now)
-        let stopped = stoppedTime(in: points)
         finishRecording()
         guard points.count > 1 else {
             RideJournal.shared.finish()
             return nil
         }
-        return Ride(startDate: start, endDate: now, distanceMeters: distanceMeters,
-                    maxSpeedMps: maxSpeedMps, elevationGainMeters: elevationGain,
+        // The saved ride comes from the same stats the recovery journal uses,
+        // so a ride saved now and the same ride recovered after a crash agree.
+        let stats = RideStats.compute(points: points)
+        return Ride(startDate: start, endDate: now,
+                    distanceMeters: stats.distanceMeters,
+                    maxSpeedMps: stats.maxSpeedMps,
+                    elevationGainMeters: stats.elevationGainMeters,
                     durationSeconds: duration, points: points,
-                    maxLeanAngleDegrees: maxLeanAngle,
-                    movingSeconds: max(duration - stopped, 0),
-                    stoppedSeconds: stopped)
+                    maxLeanAngleDegrees: stats.maxLeanAngleDegrees,
+                    movingSeconds: max(duration - stats.stoppedSeconds, 0),
+                    stoppedSeconds: stats.stoppedSeconds)
     }
 
     func discard() {
@@ -124,10 +139,20 @@ final class RideRecorder {
         points.removeAll(keepingCapacity: false)
     }
 
+    /// Stops recording without throwing the track away.
+    ///
+    /// The ride screen calls this when it disappears. The journal stays on disk
+    /// so the existing "Recover unfinished ride?" prompt can still offer it;
+    /// only `discard()` deletes it.
+    func suspend() {
+        if isRecording { finishRecording() }
+        stopUpdates()
+    }
+
     /// Stops this recorder's interest in GPS when the ride screen goes away.
     func stopUpdates() {
-        hub.endPrecise()
-        hub.endBackground()
+        stopAutoPauseTimer()
+        releaseLocationClaims()
         if let hubToken {
             hub.removeSubscriber(hubToken)
             self.hubToken = nil
@@ -144,8 +169,47 @@ final class RideRecorder {
         isRecording = false
         isPaused = false
         pauseStart = nil
-        hub.endPrecise()
-        hub.endBackground()
+        stopAutoPauseTimer()
+        releaseLocationClaims()
+    }
+
+    /// Hands back both accuracy claims. A lease releases at most once, so this
+    /// is safe to call from `finishRecording()` and again from `stopUpdates()`.
+    private func releaseLocationClaims() {
+        preciseLease?.release()
+        preciseLease = nil
+        backgroundLease?.release()
+        backgroundLease = nil
+    }
+
+    // MARK: Auto-pause
+
+    private func startAutoPauseTimer() {
+        autoPauseTimer?.invalidate()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tickAutoPause() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        autoPauseTimer = timer
+    }
+
+    private func stopAutoPauseTimer() {
+        autoPauseTimer?.invalidate()
+        autoPauseTimer = nil
+    }
+
+    /// Pauses the clock after two minutes without movement.
+    ///
+    /// This runs on a timer, not from `ingest`: with `distanceFilter = 5` a
+    /// parked phone receives almost no fixes, so a fix-driven check would never
+    /// fire. The stationary clock is anchored to `CLLocation.timestamp`, so a
+    /// fix delivered late does not postpone the pause.
+    func tickAutoPause() {
+        guard isRecording, !isPaused, let since = stationarySince else { return }
+        guard Date().timeIntervalSince(since) >= 120 else { return }
+        isPaused = true
+        autoPaused = true
+        pauseStart = Date()
     }
 
     func elapsed(at now: Date) -> TimeInterval {
@@ -156,19 +220,11 @@ final class RideRecorder {
         return max(now.timeIntervalSince(start) - paused, 0)
     }
 
-    private func stoppedTime(in points: [RidePoint]) -> TimeInterval {
-        guard points.count > 1 else { return 0 }
-        var stopped = 0.0
-        for index in 1..<points.count {
-            let gap = points[index].time.timeIntervalSince(points[index - 1].time)
-            guard gap > 0, gap < 60 else { continue }
-            if points[index - 1].speed < 1.5 { stopped += gap }
-        }
-        return stopped
-    }
-
     // MARK: Location updates
-    private func process(_ loc: CLLocation) {
+
+    /// Feeds a fix through the same path the GPS subscription uses. Internal so
+    /// tests can drive scripted sequences without Core Location.
+    func ingest(_ loc: CLLocation) {
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 20 else { return }
         currentSpeedMps = max(loc.speed, 0)
         onLocation?(loc)
@@ -187,43 +243,27 @@ final class RideRecorder {
         }
 
         if currentSpeedMps < 0.5 {
-            if stationarySince == nil { stationarySince = Date() }
-            if let since = stationarySince, Date().timeIntervalSince(since) >= 120 {
-                isPaused = true
-                autoPaused = true
-                pauseStart = Date()
-                lastLocation = loc
-                return
-            }
+            // Only start the clock here; `tickAutoPause()` owns the decision so
+            // it still fires when no further fixes arrive.
+            if stationarySince == nil { stationarySince = loc.timestamp }
         } else {
             stationarySince = nil
         }
 
-        if let last = lastLocation {
-            let delta = loc.distance(from: last)
-            let gap = max(loc.timestamp.timeIntervalSince(last.timestamp), 0)
-            let impliedSpeed = gap > 0 ? delta / gap : .infinity
-            // Reject multipath jumps, stationary drift and fixes on either
-            // side of a long tunnel gap. A rejected fix still advances
-            // `lastLocation` so the next good fix is measured from here.
-            let isJump = delta > 30 && (loc.speed < 1 || impliedSpeed > 60)
-            let isGap = gap > 15
-            if !isJump, !isGap {
-                distanceMeters += delta
-            }
+        if let last = lastLocation,
+           let meters = RideStats.segmentMeters(from: last.coordinate, at: last.timestamp,
+                                               to: loc.coordinate, at: loc.timestamp,
+                                               nextSpeed: currentSpeedMps) {
+            // A rejected fix still advances `lastLocation` so the next good fix
+            // is measured from here rather than bridging the jump.
+            distanceMeters += meters
         }
         lastLocation = loc
         maxSpeedMps = max(maxSpeedMps, currentSpeedMps)
         maxLeanAngle = max(maxLeanAngle, abs(currentLean))
 
         if loc.verticalAccuracy > 0, loc.verticalAccuracy <= 15 {
-            if let ref = altitudeRef {
-                let diff = loc.altitude - ref
-                if diff >= 3 { elevationGain += diff; altitudeRef = loc.altitude }
-                else if diff <= -3 { altitudeRef = loc.altitude }
-            } else {
-                altitudeRef = loc.altitude
-            }
+            elevationGain += RideStats.elevationGain(altitude: loc.altitude, reference: &altitudeRef)
         }
 
         let point = RidePoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude,
