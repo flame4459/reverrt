@@ -1,0 +1,77 @@
+name: iOS build, tests and audit
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    # Requires a runner with Xcode 27.x and the iOS 27 simulator runtime.
+    runs-on: [self-hosted, macOS, xcode-27]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build for testing
+        run: |
+          xcodebuild build-for-testing \
+            -project "Untitled Project.xcodeproj" \
+            -scheme "RiderUITests" \
+            -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+            -derivedDataPath .build \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Unit tests
+        run: |
+          xcodebuild test-without-building \
+            -project "Untitled Project.xcodeproj" \
+            -scheme "RiderTests" \
+            -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+            -derivedDataPath .build \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Boot simulator and give it a moving location
+        run: |
+          xcrun simctl boot "iPhone 18 Pro" || true
+          xcrun simctl bootstatus "iPhone 18 Pro" -b || true
+          xcrun simctl location booted set 37.7749,-122.4194 || true
+
+      - name: UI audit
+        continue-on-error: true
+        run: |
+          rm -rf Audit.xcresult
+          xcodebuild test-without-building \
+            -project "Untitled Project.xcodeproj" \
+            -scheme "RiderUITests" \
+            -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+            -derivedDataPath .build \
+            -resultBundlePath Audit.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:RiderUITests/RiderAuditUITests
+
+      - name: Upload audit screenshots and result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rider-audit
+          path: |
+            Audit.xcresult
+            .screens
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release-build:
+    runs-on: [self-hosted, macOS, xcode-27]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release build (simulator)
+        run: |
+          xcodebuild build \
+            -project "Untitled Project.xcodeproj" \
+            -scheme "Untitled Project" \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath .build-release \
+            CODE_SIGNING_ALLOWED=NO

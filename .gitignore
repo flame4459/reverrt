@@ -1,0 +1,6 @@
+.aider*
+.build/
+.screens/
+.tmpcheck/
+.DS_Store
+.build*/
