@@ -84,6 +84,14 @@ nonisolated enum LoopGeometry {
             maximumReversalMeters: 200,
             maximumRepeatedFraction: 0.22
         )
+        /// Used only when every normal loop check rejects the candidates. The
+        /// result is still a rideable circuit, but it may share a connector or
+        /// carry a short spur, so the planner labels it as the best available.
+        static let bestEffort = Limits(
+            maximumSpurMeters: 1_200,
+            maximumReversalMeters: 1_200,
+            maximumRepeatedFraction: 0.55
+        )
     }
 
     static func isLapable(_ analysis: Analysis, limits: Limits = .standard) -> Bool {

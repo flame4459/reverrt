@@ -365,7 +365,8 @@ nonisolated enum RouteBuilder {
         /// Waypoints sit on a circle that passes through the start; ride
         /// through them in order and come home. This is only a seed: the
         /// detour pass below decides what the loop is actually made of.
-        func buildLoop(theta: Double, clockwise: Bool, radius: Double) -> [Int]? {
+        func buildLoop(theta: Double, clockwise: Bool, radius: Double,
+                       allowWrapReversal: Bool = false) -> [Int]? {
             let t = theta * .pi / 180
             let cx = radius * sin(t)
             let cy = radius * cos(t)
@@ -435,7 +436,8 @@ nonisolated enum RouteBuilder {
                 }
             }
 
-            if let first = all.first, let last = all.last, last == graph.twin[first] {
+            if allowWrapReversal == false,
+               let first = all.first, let last = all.last, last == graph.twin[first] {
                 return nil
             }
             return all
@@ -476,30 +478,66 @@ nonisolated enum RouteBuilder {
         // Seed B: directional circle seeds. Enough of them for the rider to
         // see clearly different headings, not so many that the budget is gone
         // before the improvement pass runs.
-        let rotationCount = 6
-        for index in 0..<rotationCount {
-            guard budget.canSearch() else { break }
-            let theta = Double(index) * (360.0 / Double(rotationCount))
-            let clockwise = index % 2 == 0
-            var radius = min(length / (2 * Double.pi * 1.3), max(networkRadius * 0.55, 500))
-            var chosen: (path: [Int], err: Double)?
-
-            for _ in 0..<2 {
+        func circleSeeds(acceptError: Double,
+                         allowWrapReversal: Bool = false) -> [(path: [Int], theta: Double)] {
+            var found: [(path: [Int], theta: Double)] = []
+            let rotationCount = 6
+            for index in 0..<rotationCount {
                 guard budget.canSearch() else { break }
-                guard let path = buildLoop(theta: theta, clockwise: clockwise, radius: radius) else { break }
-                let pathLength = path.reduce(0) { $0 + graph.edges[$1].length }
-                guard pathLength > 0 else { break }
-                let err = abs(pathLength / target - 1)
-                if chosen == nil || err < chosen!.err { chosen = (path, err) }
-                if err < 0.10 { break }
-                radius = min(
-                    max(radius * min(max(target / pathLength, 0.6), 1.6), 400),
-                    max(networkRadius * 0.60, 500)
-                )
-            }
+                let theta = Double(index) * (360.0 / Double(rotationCount))
+                let clockwise = index % 2 == 0
+                var radius = min(length / (2 * Double.pi * 1.3), max(networkRadius * 0.55, 500))
+                var chosen: (path: [Int], err: Double)?
 
-            if let chosen, chosen.err < 0.35 {
-                seeds.append((chosen.path, theta))
+                for _ in 0..<2 {
+                    guard budget.canSearch() else { break }
+                    guard let path = buildLoop(theta: theta, clockwise: clockwise,
+                                               radius: radius,
+                                               allowWrapReversal: allowWrapReversal) else { break }
+                    let pathLength = path.reduce(0) { $0 + graph.edges[$1].length }
+                    guard pathLength > 0 else { break }
+                    let err = abs(pathLength / target - 1)
+                    if chosen == nil || err < chosen!.err { chosen = (path, err) }
+                    if err < 0.10 { break }
+                    radius = min(
+                        max(radius * min(max(target / pathLength, 0.6), 1.6), 400),
+                        max(networkRadius * 0.60, 500)
+                    )
+                }
+
+                if let chosen, chosen.err < acceptError {
+                    found.append((chosen.path, theta))
+                }
+            }
+            return found
+        }
+
+        let normalSeeds = circleSeeds(acceptError: 0.35)
+        let circleSeedCount = normalSeeds.count
+        seeds += normalSeeds
+        if seeds.isEmpty {
+            // The distance the rider asked for does not fit the roads here, but
+            // a loop that is 40% short still beats telling them there is
+            // nothing to ride. The label says "longest loop in this area".
+            seeds = circleSeeds(acceptError: 0.70)
+            if !seeds.isEmpty {
+                note("These roads can't hold the distance you asked for. This is the longest loop the area allows.")
+            }
+        }
+
+        // Seeded before the improvement passes spend the search budget: a
+        // pocket with a single entrance only yields a loop if the route is
+        // allowed to come back down the road it left on. Kept aside for the
+        // best-effort pass, never mixed into the normal candidates.
+        var connectorSeeds: [(path: [Int], theta: Double)] = []
+        if circleSeedCount == 0, seeds.count <= 1 {
+            connectorSeeds = circleSeeds(acceptError: 0.85, allowWrapReversal: true)
+        }
+        if seeds.isEmpty {
+            let relaxed = circleSeeds(acceptError: 0.90, allowWrapReversal: true)
+            if !relaxed.isEmpty {
+                seeds = relaxed
+                note("The only way round here shares a stretch of road. Showing the best loop the area allows.")
             }
         }
 
@@ -560,6 +598,45 @@ nonisolated enum RouteBuilder {
                 scored.append((route, metrics))
             }
             if !scored.isEmpty { break }
+        }
+
+        if scored.isEmpty {
+            // Last resort. The rider asked for a ride, not for a textbook loop.
+            // Relax the distance band and the shared-road limit, and stop
+            // penalising stop signs and lights: in a dense grid those are the
+            // checks that reject every candidate. Better to hand over the best
+            // route that exists than an error.
+            var bestEffortCandidates = candidates
+            for seed in connectorSeeds.prefix(2) {
+                let path = improve(seed.path, target: target, model: model, budget: budget)
+                if !bestEffortCandidates.contains(where: { $0.path == path }) {
+                    bestEffortCandidates.append((path, seed.theta))
+                }
+            }
+
+            for candidate in bestEffortCandidates {
+                guard let metrics = measure(
+                    candidate.path,
+                    model: model,
+                    target: target,
+                    requested: length,
+                    retraceLimit: 0.45,
+                    bestEffort: true
+                ) else { continue }
+                guard let route = makeRoute(
+                    path: candidate.path,
+                    metrics: metrics,
+                    model: model,
+                    surface: surface,
+                    bearing: candidate.theta,
+                    requestedLength: length,
+                    limits: .bestEffort
+                ) else { continue }
+                scored.append((route, metrics))
+            }
+            if !scored.isEmpty {
+                note("No clean, quiet loop fits here. This is the best route the roads allow.")
+            }
         }
 
         guard !scored.isEmpty else {
@@ -771,7 +848,8 @@ nonisolated enum RouteBuilder {
         model: Model,
         target: Double,
         requested: Double,
-        retraceLimit: Double = 0.05
+        retraceLimit: Double = 0.05,
+        bestEffort: Bool = false
     ) -> Metrics? {
         guard path.count >= 3 else { return nil }
         let length = model.length(of: path)
@@ -800,11 +878,14 @@ nonisolated enum RouteBuilder {
         }
 
         // No immediate reversal anywhere: that includes the wrap-around from
-        // the last edge back onto the first.
+        // the last edge back onto the first. Best effort allows the wrap one,
+        // because a loop out of a single-entrance pocket finishes by riding
+        // back down the road it left on; geometry checks still reject a plain
+        // out-and-back.
         for pair in zip(path, path.dropFirst()) where pair.1 == model.graph.twin[pair.0] {
             return nil
         }
-        if let first = path.first, let last = path.last,
+        if !bestEffort, let first = path.first, let last = path.last,
            last == model.graph.twin[first] {
             return nil
         }
@@ -818,15 +899,23 @@ nonisolated enum RouteBuilder {
         let lap = lapScore(path, model: model)
         let time = path.reduce(0.0) { $0 + model.times[$1] }
         let closure = closureDistance(path, model: model)
-        guard closure < 250 else { return nil }
+        // Best effort accepts a loop that does not close as tightly and misses
+        // the requested distance by more. It is still a loop the rider can
+        // ride; the alternative was an error screen.
+        guard closure < (bestEffort ? 600 : 250) else { return nil }
 
         let distanceError = abs(length / target - 1)
         // If the area forced the target down, a short loop is expected.
-        let maximumError = requested > target * 1.02 ? 0.60 : 0.35
+        let maximumError = bestEffort ? 0.75 : (requested > target * 1.02 ? 0.60 : 0.35)
         guard distanceError <= maximumError else { return nil }
 
         let retracePenalty = min(100, retraced * 1_500)
-        let interruptionPenalty = min(100, Double(interruptions) / max(length / 1_000, 0.5) * 12)
+        // Stop signs and lights are a comfort preference, not a safety rule.
+        // When nothing else fits, stop penalising them so the rider gets the
+        // best route the area has instead of "couldn't build a loop".
+        let interruptionPenalty = bestEffort
+            ? 0
+            : min(100, Double(interruptions) / max(length / 1_000, 0.5) * 12)
         let closureScore = max(0, 100 - closure / 2.5)
         let quality = 0.45 * value
             + 0.15 * flow

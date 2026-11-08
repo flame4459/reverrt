@@ -16,6 +16,15 @@ struct PlanView: View {
     @State private var surface: LoopSurface = .paved
     @State private var prefersPasses = false
     @State private var roadText = ""
+    /// Search for the start: a road name, an address or a place.
+    @State private var searchQuery = ""
+    @FocusState private var searchFocused: Bool
+    @State private var pinLabel: String?
+    @State private var searchError: String?
+    @State private var searchingPlace = false
+    @State private var roadSearch = AddressSearchService()
+    /// Optional: skip the comparison and highlight the strongest loop.
+    @AppStorage("plan.autoPickBest") private var autoPickBest = false
     @State private var pin: CLLocationCoordinate2D?
     @State private var shapingPins: [CLLocationCoordinate2D] = []
     @State private var pinMode: PlanPinMode = .start
@@ -162,10 +171,12 @@ struct PlanView: View {
             planner.prefetchRoads(around: origin, miles: miles, surface: value)
         }
         .onChange(of: planner.results.first?.id) { _, _ in
-            selected = planner.results.first?.id
-            if let route = planner.results.first {
-                camera = .region(Self.region(for: planner.results, fallback: route))
-            }
+            guard !planner.results.isEmpty else { return }
+            let pick = autoPickBest
+                ? (LoopRanking.best(in: planner.results, targetMeters: miles * 1609.344) ?? planner.results[0])
+                : planner.results[0]
+            selected = pick.id
+            camera = .region(Self.region(for: planner.results, fallback: pick))
         }
         .onChange(of: planner.phase) { _, newPhase in
             // Keep the extra local-route searches out of the critical path.
@@ -178,7 +189,10 @@ struct PlanView: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") { roadTextFocused = false }
+                Button("Done") {
+                    roadTextFocused = false
+                    searchFocused = false
+                }
             }
         }
         .sheet(item: $previewRoute, onDismiss: {
@@ -444,13 +458,23 @@ struct PlanView: View {
     /// the exact spot is unambiguous, even under the rider's thumb.
     private func dropPin(at coordinate: CLLocationCoordinate2D) {
         roadTextFocused = false
+        searchFocused = false
         if pinMode == .shaping {
             shapingPins.append(coordinate)
         } else {
             pin = coordinate
+            pinLabel = nil
+            searchQuery = ""
+            searchError = nil
+            roadSearch.clear()
             planner.prefetchRoads(around: coordinate, miles: miles, surface: surface)
         }
+        flashPin(at: coordinate)
+    }
 
+    /// Flashes a lock-on pulse so the exact spot is unambiguous, even under the
+    /// rider's thumb.
+    private func flashPin(at coordinate: CLLocationCoordinate2D) {
         let strike = PlanPinStrike(coordinate: coordinate)
         pinStrike = strike
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -460,6 +484,145 @@ struct PlanView: View {
             guard pinStrike?.id == strike.id else { return }
             pinStrike = nil
         }
+    }
+
+    // MARK: Start search
+
+    /// Search for where the loop starts: a road name, an address, or a place.
+    ///
+    /// Dropping a pin on the crosshair is exact but slow if the rider is not
+    /// already looking at the right part of the map. This lets them type
+    /// "Skyline Blvd" and starts the loop there instead.
+    private var roadSearchField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(MapUI.cyan)
+
+                TextField("Search a road or place", text: $searchQuery)
+                    .font(.system(.subheadline, design: .rounded))
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .onSubmit { resolveSearchText() }
+                    .onChange(of: searchQuery) { _, query in
+                        searchError = nil
+                        // Only ask for suggestions while the rider is typing.
+                        // Committing a result writes the label back into the
+                        // field, and that must not repopulate the list.
+                        guard searchFocused else { return }
+                        roadSearch.update(query: query, region: searchRegion)
+                    }
+
+                if searchingPlace {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(MapUI.cyan)
+                } else if !searchQuery.isEmpty {
+                    Button {
+                        clearSearch()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(MapUI.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 42)
+            .background(MapUI.surfaceHigh.opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(searchFocused ? MapUI.cyan.opacity(0.55) : MapUI.lineStrong, lineWidth: 0.8)
+            }
+
+            if searchFocused, !roadSearch.suggestions.isEmpty {
+                AddressSuggestionList(suggestions: roadSearch.suggestions) { suggestion in
+                    chooseSearchResult(suggestion)
+                }
+                .padding(.top, 2)
+            }
+
+            if let searchError {
+                Text(searchError)
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(MapUI.coral)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var searchRegion: MKCoordinateRegion? {
+        let center = pin ?? nav.currentLocation?.coordinate ?? aim.center
+        guard let center else { return nil }
+        return MKCoordinateRegion(center: center, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
+    }
+
+    private func clearSearch() {
+        searchQuery = ""
+        searchError = nil
+        roadSearch.clear()
+    }
+
+    private func chooseSearchResult(_ suggestion: AddressSearchService.Suggestion) {
+        guard !searchingPlace else { return }
+        searchingPlace = true
+        Task { @MainActor in
+            defer { searchingPlace = false }
+            do {
+                let coordinate = try await roadSearch.coordinate(for: suggestion)
+                commitSearchResult(
+                    coordinate,
+                    label: suggestion.title.isEmpty ? suggestion.subtitle : suggestion.title
+                )
+            } catch {
+                searchError = "That place could not be found. Try a nearby town or a full street name."
+            }
+        }
+    }
+
+    private func resolveSearchText() {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2, !searchingPlace else { return }
+        searchingPlace = true
+        Task { @MainActor in
+            defer { searchingPlace = false }
+            do {
+                let coordinate = try await roadSearch.coordinate(forQuery: query, region: searchRegion)
+                commitSearchResult(coordinate, label: query)
+            } catch {
+                searchError = "That road could not be found. Try a nearby town or a full street name."
+            }
+        }
+    }
+
+    /// Moves the pin to the searched coordinate and gets its roads ready.
+    ///
+    /// Respects the Start/Shaping switch: in Shaping mode the searched road
+    /// becomes a waypoint the loop is pulled through, exactly as a map tap
+    /// would.
+    private func commitSearchResult(_ coordinate: CLLocationCoordinate2D, label: String) {
+        if pinMode == .shaping {
+            shapingPins.append(coordinate)
+        } else {
+            pin = coordinate
+            pinLabel = label
+            planner.prefetchRoads(around: coordinate, miles: miles, surface: surface)
+        }
+        searchQuery = label
+        searchFocused = false
+        searchError = nil
+        roadSearch.clear()
+        camera = .region(MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: 6_000,
+            longitudinalMeters: 6_000
+        ))
+        flashPin(at: coordinate)
     }
 
     // MARK: Sections
@@ -568,7 +731,8 @@ struct PlanView: View {
                 Button {
                     findLoops()
                 } label: {
-                    Label("Update loops", systemImage: "arrow.clockwise")
+                    Label(autoPickBest ? "Update best loop" : "Update loops",
+                          systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(RiderSecondaryButtonStyle())
                 .disabled(!originAvailable)
@@ -577,7 +741,9 @@ struct PlanView: View {
                 Button {
                     findLoops()
                 } label: {
-                    Label(originAvailable ? "Find scenic loops" : "Waiting for location",
+                    Label(originAvailable
+                              ? (autoPickBest ? "Find my best loop" : "Find scenic loops")
+                              : "Waiting for location",
                           systemImage: originAvailable ? "sparkles" : "location.slash")
                 }
                 .buttonStyle(RiderPrimaryButtonStyle())
@@ -607,6 +773,8 @@ struct PlanView: View {
                 tint: MapUI.cyan
             )
 
+            roadSearchField
+
             HStack(spacing: 9) {
                 RiderIconBadge(
                     systemImage: pin == nil ? "location.fill" : "mappin.and.ellipse",
@@ -619,7 +787,7 @@ struct PlanView: View {
                         .font(.system(size: 9, weight: .heavy, design: .rounded))
                         .tracking(1.2)
                         .foregroundStyle(MapUI.textTertiary)
-                    Text(pin == nil ? "My location" : "Dropped pin")
+                    Text(pin == nil ? "My location" : (pinLabel ?? "Dropped pin"))
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .foregroundStyle(MapUI.ink)
                 }
@@ -628,6 +796,10 @@ struct PlanView: View {
                     Button("Use my location") {
                         RiderHaptics.tap()
                         pin = nil
+                        pinLabel = nil
+                        searchQuery = ""
+                        searchError = nil
+                        roadSearch.clear()
                     }
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(MapUI.cyan)
@@ -714,6 +886,21 @@ struct PlanView: View {
                     systemImage: { modeIcon($0) }
                 )
                 Text(mode.blurb)
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(MapUI.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Toggle(isOn: $autoPickBest) {
+                    Label("Auto-pick the best loop", systemImage: "wand.and.stars")
+                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                        .foregroundStyle(MapUI.ink)
+                }
+                .tint(MapUI.emerald)
+                .accessibilityHint("Highlights the strongest loop in this area as soon as planning finishes")
+
+                Text("Rider ranks every loop it builds and selects the strongest one for you, instead of leaving you to compare cards.")
                     .font(.system(.caption, design: .rounded))
                     .foregroundStyle(MapUI.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

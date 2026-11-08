@@ -481,3 +481,71 @@ xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderUITests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-fix \
   -only-testing:RiderUITests/RiderFlowUITests/testRecordRideAndSummary
 ```
+
+---
+
+# Implementation round 4 — 8 Nov 2026
+
+Planning additions requested after the scoring work.
+
+## Road search for the loop start
+
+The "Ride shape" card now has a search field above the start row. Typing a road
+name, address or place shows MapKit suggestions (`AddressSearchService`, the
+same one the directions screen uses); picking one, or pressing Search on free
+text, moves the start pin there, recentres the map at 6 km, prefetches the
+roads around it and prefetches the road tiles for the new area. The start row
+shows the chosen name instead of "Dropped pin". Dropping a pin on the map still
+works and clears the search.
+
+Manual verification: the field renders on the plan sheet and the existing
+plan-builder UI test (`test03_PlanBuilder`) still passes. The suggestion list
+itself needs network and is not covered by an automated test.
+
+## Auto-pick the best loop
+
+A new toggle in "Ride shape" (`plan.autoPickBest`, persisted): when on, the
+planner still builds and ranks every candidate, then selects the strongest one
+and centres the map on it instead of leaving the rider to compare cards. The
+primary button becomes "Find my best loop" / "Update best loop". Selection is
+`LoopRanking.best`, which ranks on the planner score and breaks ties toward the
+requested distance (unit tested).
+
+## Best-effort routing instead of "couldn't build a loop"
+
+Loop planning used to answer with an error whenever the strict checks rejected
+every candidate: distance within 35%, closure under 250 m, retrace under 24%,
+and a proper lap geometry. Those checks are what quietly enforce "avoid stop
+signs and lights" — signals only ever reduce a candidate's score, but the tight
+geometry and distance gates are what reject dense-grid loops outright.
+
+Now, before failing, the planner retries once with the preferences relaxed:
+
+- distance tolerance 75% and closure 600 m;
+- shared-road limit 45%, and the interruption penalty (signals, stop signs,
+  busy junctions) is switched off so a signal-heavy loop can win;
+- loop geometry is checked against a new `LoopGeometry.Limits.bestEffort`
+  (1.2 km spur, 55% repeated) instead of `.loose`;
+- in a pocket with a single entrance, it may seed a loop that finishes by
+  riding back down the road it left on (the wrap-around reversal is allowed
+  only in this pass);
+- if the requested distance cannot fit the network, seeds are retried at a 70%
+  error band and the result is labelled "Longest loop in this area".
+
+Whenever one of these fallbacks produces the route, the planner sets a notice
+("No clean, quiet loop fits here. This is the best route the roads allow.") and
+the results card shows it above the loops. The tests cover a lollipop road
+(loop on a shared stick) and a tiny network asked for 60 miles.
+
+## Verification
+
+- 65 unit tests in 5 suites pass (`RideSafetyTests`, `TwistScoringTests`,
+  `LoopFallbackTests`, `RiderCoreTests`, `RouteAlgorithmTests`).
+- Debug simulator build succeeds.
+- `RiderAuditUITests/test03_PlanBuilder` passes on the iPhone 18 Pro simulator
+  with the new field and toggle in place.
+- One unit-test run launched the host while the simulator was still busy with
+  the UI test and failed with "Rider encountered an error" before any test ran;
+  rerunning on an idle simulator passed 65/65. That is harness flakiness, not a
+  test failure, but CI should not run the two schemes back to back without a
+  settle delay.
