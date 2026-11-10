@@ -1,8 +1,8 @@
-# reverrt
+# revert
 obvious clone 
 
 
-This is clearly a reverr clone; what you do and what data you choose to post on social media with this app is not my concern or under my influence. Ride responsibly and follow the law. 
+This is clearly a rever clone; what you do and what data you choose to post on social media with this app is not my concern or under my influence. Ride responsibly and follow the law. 
 
 (This app does not work on Android at this current moment)
 
