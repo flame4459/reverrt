@@ -154,3 +154,19 @@ The Waze voice-pack audio under `revert/BuiltInVoicePacks/` is third-party
 copyrighted material and is deliberately **not** committed to this repository;
 the app degrades gracefully without it (see [VOICE_PACKS.md](VOICE_PACKS.md)).
 
+## Notes from Flame4459
+
+This is a clone/derivative project: what you do with it, and what you choose to
+post on social media from it, is your own call and not the author's. Ride
+responsibly and follow the law.
+
+**It does not work on Android at the moment** — it is a native iOS app.
+
+### Quick install on a device
+
+1. Open the project in **Xcode** on a Mac.
+2. Connect your iPhone with a cable.
+3. Pick your team and build to the device — see [Run it on a device](#run-it-on-a-device)
+   for signing, bundle IDs and the App Group.
+
+— Flame4459
