@@ -1,10 +1,22 @@
-# Rider app audit — 4 Nov 2026
+# Revert app audit — 4 Nov 2026
+
+## Naming
+
+The product is **Revert** everywhere it is named: the app target and product
+(`Revert.app`), the module (including `@testable import Revert`), the schemes
+(`Revert`, `RevertTests`, `RevertUITests`), the widget (`RevertWidgets`), the
+bundle identifiers (`com.davidmolina.Revert*`), the App Group
+(`group.com.davidmolina.Revert`), the URL scheme (`revert://`) and the Swift
+type prefixes (`Revert*`). The clone folder and the project file are lowercase
+(`revert/`, `revert.xcodeproj`). The person on the bike is still a *rider*, and
+third-party names such as *Low Rider* are untouched. Earlier drafts used a
+working name for the product; those mentions have been normalised here.
 
 ## Scope and method
 
 - Built the app with Xcode 27.2 against the iPhone 18 Pro / iOS 27 simulator.
 - Started from a clean install and drove the app with a purpose-built XCUITest suite
-  (`RiderUITests/RiderAuditUITests.swift`) plus the existing project tests.
+  (`RevertUITests/RevertAuditUITests.swift`) plus the existing project tests.
 - Captured every screen along the way (60+ named screenshots under
   `.screens/audit/run*/named/`).
 - Exercised: home map, search/suggestions, destination commit, route options,
@@ -140,7 +152,7 @@ choice. iPad still declares all orientations.
 
 ## Verification
 
-- `RiderTests`: **39/39 passed** (`xcodebuild test -scheme RiderTests`).
+- `RevertTests`: **39/39 passed** (`xcodebuild test -scheme RevertTests`).
 - Audit UI suite: `test01`, `test02`, `test03`, `test04`, `test05`, `test06`,
   `test07`, `test08`, `test09` all ran; the useful ones pass. The original
   project UI suite has known data/network-dependent failures (for example it
@@ -163,7 +175,7 @@ choice. iPad still declares all orientations.
   deployment target was lowered; onboarding and home render. The layout is
   functional but still iPhone-width optimised, not a two-column iPad design.
 - **Widgets, Live Activity and App Intents** were code-reviewed; the URL scheme
-  reaches the system “Open in Rider?” confirmation, but full interaction was not
+  reaches the system “Open in Revert?” confirmation, but full interaction was not
   automatable. App Intents now post a notification so a warm app reacts, not just
   a cold launch.
 - **Selecting an actual GPX file** in the document picker was not exercised; the
@@ -187,10 +199,9 @@ choice. iPad still declares all orientations.
    areas.
 3. **A complete offline/error story.** A single “Retry” action for routing and
    downloads, a cancel for offline downloads, and a clear network status banner.
-4. **Rename the shipping product.** The bundle executable/product name is still
-   `Revert.app` (display name is Rider). Rename the target/product to Rider and
-   update the test host/schemes; the App Store and some system surfaces should
-   not show “Revert”.
+4. **Ship one product name.** The bundle executable/product name and the
+   display name disagreed. Target, product, display name, schemes and test
+   hosts now all say **Revert**; see “Naming” above.
 5. **Deployment target is iOS 27.0.** That excludes every device on iOS 18–26.
    Confirm this is intentional; if not, lower the target or isolate the new APIs.
 
@@ -211,7 +222,7 @@ choice. iPad still declares all orientations.
 11. **Saved places and recents management.** More than Home/Work (favorites,
     recent list clear/remove, rename).
 12. **Import/export hardening.** Parse GPX off the main thread, show a progress
-    indicator, support drag-and-drop and share-to-Rider, and include lean data in
+    indicator, support drag-and-drop and share-to-Revert, and include lean data in
     GPX extensions.
 13. **Accessibility pass.** Many labels use fixed `.system(size:)` and do not
     scale; the quick-action chips and toolbar text buttons have sub-44 pt hit
@@ -245,16 +256,16 @@ choice. iPad still declares all orientations.
 
 ```bash
 # Unit tests (39)
-xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderTests \
+xcodebuild test -project "revert.xcodeproj" -scheme RevertTests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-audit
 
 # UI audit (individual scenarios)
-xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderUITests \
+xcodebuild test -project "revert.xcodeproj" -scheme RevertUITests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-audit \
-  -only-testing:RiderUITests/RiderAuditUITests/test09_CompactSearchFocus
+  -only-testing:RevertUITests/RevertAuditUITests/test09_CompactSearchFocus
 
 # Release build
-xcodebuild build -project "Untitled Project.xcodeproj" -scheme "Untitled Project" \
+xcodebuild build -project "revert.xcodeproj" -scheme "revert" \
   -configuration Release -destination 'generic/platform=iOS Simulator'
 ```
 
@@ -266,9 +277,9 @@ The suggestions above were implemented in a second pass. This section records
 what shipped and what is intentionally still open.
 
 ## Product identity and platform
-- Product/executable renamed from **Revert** to **Rider** (`Rider.app`,
-  `CFBundleName = Rider`); test hosts, schemes and `@testable import Rider`
-  updated.
+- Product/executable settled on **Revert** (`Revert.app`, `CFBundleName =
+  Revert`); target, test hosts, schemes and `@testable import Revert` aligned
+  to that name.
 - Deployment target lowered from iOS 27.0 to **iOS 26.0**, with
   `#available(iOS 27)` fallbacks for the new AVAudioEngine/session APIs. The
   iPad Pro 13 (M5, iPadOS 26.4) now installs and renders the app.
@@ -305,7 +316,7 @@ what shipped and what is intentionally still open.
 
 ## Ride and Live Activity
 - Stale Live Activities are ended at launch and before starting a new one.
-- Lock Screen and Dynamic Island now have an **End** link (`rider://end`); the URL
+- Lock Screen and Dynamic Island now have an **End** link (`revert://end`); the URL
   stops navigation and ends the activity.
 - Cockpit/chase camera pitch lowered (58°→46°, 38°→34°) and minimum distance
   raised, so buildings no longer fill the screen at town speeds.
@@ -314,7 +325,7 @@ what shipped and what is intentionally still open.
 ## GPX and history
 - Import parses XML off the main actor (`GPX.parseTrack` → `ImportedTrack`) and
   creates SwiftData models on the main actor; large files no longer block UI.
-- GPX export/import preserves **lean angle** via a `rider:lean` extension
+- GPX export/import preserves **lean angle** via a `revert:lean` extension
   (qualified-name parsing bug fixed).
 - Import progress (“Reading N of M…”) is shown; failures are summarised.
 - History has search by bike/route/date; garage has search; saved routes have
@@ -325,13 +336,13 @@ what shipped and what is intentionally still open.
 ## About, privacy, diagnostics
 - New About screen: version/build, storage, privacy, Apple Maps/OpenStreetMap
   attribution, and a diagnostics share/clear flow.
-- `RiderDiagnostics` logs coarse launch/route/offline/GPX/poster/ride-save/voice
+- `RevertDiagnostics` logs coarse launch/route/offline/GPX/poster/ride-save/voice
   failures to a 256 KB, on-device file. No coordinates or place names are logged.
   The file can be shared or cleared from About.
 - Fuel “Check” hit target raised; version label deduplicated.
 
 ## Widgets and data sharing
-- App Group `group.com.davidmolina.MyApp` with entitlements for the app and
+- App Group `group.com.davidmolina.Revert` with entitlements for the app and
   widget extension.
 - `WidgetBridge` writes a small snapshot (bike name, odometer, units, last ride
   distance/date/name) and reloads timelines.
@@ -362,7 +373,7 @@ what shipped and what is intentionally still open.
    explained instead of promising tiles it does not cache.
 2. **Favourites beyond Home/Work.** Recents can be removed/cleared, but a
    user-defined favourites list with its own picker is still a feature.
-3. **Drag-and-drop / Share-to-Rider GPX.** Import/export and off-main parsing are
+3. **Drag-and-drop / Share-to-Revert GPX.** Import/export and off-main parsing are
    solid; registering the document type and handling cold-launch file URLs is
    not wired yet.
 4. **Full backup/restore.** Diagnostics can be shared, but the SwiftData store
@@ -381,13 +392,13 @@ what shipped and what is intentionally still open.
 
 ```bash
 # Unit tests (39)
-xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderTests \
+xcodebuild test -project "revert.xcodeproj" -scheme RevertTests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-audit
 
 # Full audit
-xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderUITests \
+xcodebuild test -project "revert.xcodeproj" -scheme RevertUITests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-audit \
-  -only-testing:RiderUITests/RiderAuditUITests
+  -only-testing:RevertUITests/RevertAuditUITests
 ```
 
 ---
@@ -453,7 +464,7 @@ every change below can be diffed or reverted as a unit.
   relative scoring.
 - Debug simulator build succeeds; the only warnings are the pre-existing
   `Units.distanceText` actor-isolation warnings in `RouteBuilder`.
-- `RiderFlowUITests/testRecordRideAndSummary` passes end-to-end (start, pause,
+- `RevertFlowUITests/testRecordRideAndSummary` passes end-to-end (start, pause,
   resume, stop, save, summary). It needs a *moving* simulated location: with no
   location, or a static one, the ride correctly reports "not enough GPS data".
   `xcrun simctl location <udid> start --speed=13 --interval=1 …` was used for
@@ -472,14 +483,14 @@ every change below can be diffed or reverted as a unit.
 
 ```bash
 # Unit tests (58)
-xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderTests \
+xcodebuild test -project "revert.xcodeproj" -scheme RevertTests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-fix
 
 # Ride flow smoke test (set a moving simulated location first)
 xcrun simctl location <udid> start --speed=13 --interval=1 40.700,-73.520 40.712,-73.505
-xcodebuild test -project "Untitled Project.xcodeproj" -scheme RiderUITests \
+xcodebuild test -project "revert.xcodeproj" -scheme RevertUITests \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath .build-fix \
-  -only-testing:RiderUITests/RiderFlowUITests/testRecordRideAndSummary
+  -only-testing:RevertUITests/RevertFlowUITests/testRecordRideAndSummary
 ```
 
 ---
@@ -540,12 +551,12 @@ the results card shows it above the loops. The tests cover a lollipop road
 ## Verification
 
 - 65 unit tests in 5 suites pass (`RideSafetyTests`, `TwistScoringTests`,
-  `LoopFallbackTests`, `RiderCoreTests`, `RouteAlgorithmTests`).
+  `LoopFallbackTests`, `RevertCoreTests`, `RouteAlgorithmTests`).
 - Debug simulator build succeeds.
-- `RiderAuditUITests/test03_PlanBuilder` passes on the iPhone 18 Pro simulator
+- `RevertAuditUITests/test03_PlanBuilder` passes on the iPhone 18 Pro simulator
   with the new field and toggle in place.
 - One unit-test run launched the host while the simulator was still busy with
-  the UI test and failed with "Rider encountered an error" before any test ran;
+  the UI test and failed with "Revert encountered an error" before any test ran;
   rerunning on an idle simulator passed 65/65. That is harness flakiness, not a
   test failure, but CI should not run the two schemes back to back without a
   settle delay.

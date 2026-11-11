@@ -1,0 +1,37 @@
+brand,tier,keep,models,reason
+Honda,core,yes,168,Four Japanese marques cover most of the ridden fleet in the US and EU
+Yamaha,core,yes,116,Four Japanese marques cover most of the ridden fleet in the US and EU
+Kawasaki,core,yes,116,Four Japanese marques cover most of the ridden fleet in the US and EU
+Suzuki,core,yes,110,Four Japanese marques cover most of the ridden fleet in the US and EU
+BMW,core,yes,101,Top-five European marque with a full US/EU dealer network
+Ducati,core,yes,88,Top-five European marque with a full US/EU dealer network
+Harley-Davidson,core,yes,81,Dominant US cruiser brand
+Triumph,core,yes,80,Long-established European marque sold worldwide
+Aprilia,core,yes,44,Piaggio group sport brand with US/EU distribution
+KTM,core,yes,40,Largest European off-road and naked brand
+Indian,core,yes,31,Revived US cruiser brand with a national dealer network
+Royal Enfield,core,yes,23,Fast-growing brand with real US/EU sales
+MV Agusta,niche,yes,9,Exotic but actively sold with US/EU dealers - worth keeping for aspiration
+CFMoto,niche,yes,8,Growing budget brand with expanding US/EU distribution
+Buell,halo,yes,6,Defunct but with a real enthusiast following - recognisable
+Bimota,kill,no,5,Boutique exotica: single-digit global sales, effectively zero ownership odds
+Norton,kill,no,4,Boutique British marque with minimal production and near-zero ownership
+Husqvarna,niche,yes,3,Vitpilen/Svartpilen are sold through KTM dealers in the US and EU
+Hero,kill,no,3,India-only distribution
+QJMotor,kill,no,3,China-only distribution
+Rieju,kill,no,3,Small Spanish brand with negligible US/EU presence
+Bajaj,kill,no,2,India-only distribution
+Horex,kill,no,2,Defunct German boutique with no service network
+TVS,kill,no,2,India-only distribution
+BRP,kill,no,1,Can-Am: no sportbike in the range, entry is mislabelled
+BSA,kill,no,1,Revived badge with negligible real-world volume
+Benda,kill,no,1,China-only distribution
+GasGas,kill,no,1,Single entry, negligible road-bike presence
+Kiden,kill,no,1,Obscure Chinese brand with no US/EU distribution
+Kove,kill,no,1,New Chinese brand with negligible US/EU distribution
+Kymco,kill,no,1,Taiwanese scooters with no meaningful US/EU motorcycle presence
+LiveWire,kill,no,1,Niche EV spin-off with near-zero ownership
+Loncin,kill,no,1,Chinese OEM with no US/EU retail presence
+Mahindra,kill,no,1,India-only distribution
+SYM,kill,no,1,Taiwanese scooters with no meaningful US/EU motorcycle presence
+Zontes,kill,no,1,China-only distribution

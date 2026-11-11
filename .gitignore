@@ -1,6 +1,62 @@
-.aider*
+# macOS
+.DS_Store
+.AppleDouble
+
+# Xcode build products and per-user state
 .build/
+.build*/
+build/
+DerivedData/
+*.xcresult
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Per-user Xcode state (shared schemes live in xcshareddata and are committed)
+xcuserdata/
+
+# Swift Package Manager / CocoaPods (unused today, kept for forks)
+.swiftpm/
+Pods/
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local agent/editor scratch
+.aider*
+.vscode/
+.idea/
+
+# Local-only audit artifacts
 .screens/
 .tmpcheck/
-.DS_Store
-.build*/
+Audit.xcresult/
+
+# ---------------------------------------------------------------------------
+# Large, regenerable art pipelines. These are inputs for Scripts/*.py, not
+# build inputs: the app only consumes the generated `BikeSprites.xcassets`.
+# Keeping them out keeps a clone around 90 MB instead of over 1 GB.
+# ---------------------------------------------------------------------------
+bikes/
+refs/
+pilot/
+Meshes3D/
+Turntables/
+
+# Third-party link archive, mirrored locally for the catalogue scripts only.
+waze-voicepack-links-main/
+
+# ---------------------------------------------------------------------------
+# Built-in voice packs: four packs x 43 clips of third-party audio under
+# `revert/BuiltInVoicePacks/`. This repo is public and that audio is not ours
+# to redistribute, so it stays out of git. The app degrades gracefully without
+# it (built-in seeding is skipped and the rest of the voice-pack UI works).
+# ---------------------------------------------------------------------------
+revert/BuiltInVoicePacks/

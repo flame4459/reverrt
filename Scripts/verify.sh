@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Local verification for RiderApp.
+# Local verification for RevertApp.
 # Usage: ./Scripts/verify.sh ["iPhone 18 Pro"]
 DEVICE="${1:-iPhone 18 Pro}"
-PROJECT="Untitled Project.xcodeproj"
-SCHEME="Untitled Project"
+PROJECT="revert.xcodeproj"
+SCHEME="Revert"
 DERIVED=".build"
 EXTRA_FLAGS="${EXTRA_SWIFT_FLAGS:-}"
 

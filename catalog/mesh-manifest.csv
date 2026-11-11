@@ -1,0 +1,960 @@
+asset,brand,model,source,source_kind,faces,mesh
+bike-atlantic-125,Aprilia,Atlantic 125,revert/BikeSprites.xcassets/bike-atlantic-125.imageset/bike-atlantic-125.png,original-render,29992,Meshes3D/bike-atlantic-125.npz
+bike-atlantic-500,Aprilia,Atlantic 500,revert/BikeSprites.xcassets/bike-atlantic-500.imageset/bike-atlantic-500.png,original-render,29992,Meshes3D/bike-atlantic-500.npz
+bike-caponord-1000-etv,Aprilia,Caponord 1000 ETV,revert/BikeSprites.xcassets/bike-caponord-1000-etv.imageset/bike-caponord-1000-etv.png,original-render,23712,Meshes3D/bike-caponord-1000-etv.npz
+bike-caponord-1200,Aprilia,Caponord 1200,revert/BikeSprites.xcassets/bike-caponord-1200.imageset/bike-caponord-1200.png,original-render,23712,Meshes3D/bike-caponord-1200.npz
+bike-dorsoduro-750,Aprilia,Dorsoduro 750,revert/BikeSprites.xcassets/bike-dorsoduro-750.imageset/bike-dorsoduro-750.png,original-render,24008,Meshes3D/bike-dorsoduro-750.npz
+bike-dorsoduro-900,Aprilia,Dorsoduro 900,revert/BikeSprites.xcassets/bike-dorsoduro-900.imageset/bike-dorsoduro-900.png,original-render,21804,Meshes3D/bike-dorsoduro-900.npz
+bike-mana-850,Aprilia,Mana 850,revert/BikeSprites.xcassets/bike-mana-850.imageset/bike-mana-850.png,original-render,22588,Meshes3D/bike-mana-850.npz
+bike-pegaso-650,Aprilia,Pegaso 650,revert/BikeSprites.xcassets/bike-pegaso-650.imageset/bike-pegaso-650.png,original-render,23712,Meshes3D/bike-pegaso-650.npz
+bike-pegaso-strada,Aprilia,Pegaso Strada,revert/BikeSprites.xcassets/bike-pegaso-strada.imageset/bike-pegaso-strada.png,original-render,23712,Meshes3D/bike-pegaso-strada.npz
+bike-rs-125,Aprilia,RS 125,revert/BikeSprites.xcassets/bike-rs-125.imageset/bike-rs-125.png,original-render,27164,Meshes3D/bike-rs-125.npz
+bike-rs-125-1995,Aprilia,RS 125,revert/BikeSprites.xcassets/bike-rs-125-1995.imageset/bike-rs-125-1995.png,original-render,24300,Meshes3D/bike-rs-125-1995.npz
+bike-rs-125-1999,Aprilia,RS 125,revert/BikeSprites.xcassets/bike-rs-125-1999.imageset/bike-rs-125-1999.png,original-render,26968,Meshes3D/bike-rs-125-1999.npz
+bike-rs-125-2006,Aprilia,RS 125,revert/BikeSprites.xcassets/bike-rs-125-2006.imageset/bike-rs-125-2006.png,original-render,24300,Meshes3D/bike-rs-125-2006.npz
+bike-rs-125-2017,Aprilia,RS 125,revert/BikeSprites.xcassets/bike-rs-125-2017.imageset/bike-rs-125-2017.png,original-render,28032,Meshes3D/bike-rs-125-2017.npz
+bike-rs-125-2021,Aprilia,RS 125,revert/BikeSprites.xcassets/bike-rs-125-2021.imageset/bike-rs-125-2021.png,original-render,28996,Meshes3D/bike-rs-125-2021.npz
+bike-rs-250,Aprilia,RS 250,revert/BikeSprites.xcassets/bike-rs-250.imageset/bike-rs-250.png,original-render,28032,Meshes3D/bike-rs-250.npz
+bike-rs-250-1998,Aprilia,RS 250,revert/BikeSprites.xcassets/bike-rs-250-1998.imageset/bike-rs-250-1998.png,original-render,28032,Meshes3D/bike-rs-250-1998.npz
+bike-rs-457,Aprilia,RS 457,revert/BikeSprites.xcassets/bike-rs-457.imageset/bike-rs-457.png,original-render,27164,Meshes3D/bike-rs-457.npz
+bike-rs-660,Aprilia,RS 660,revert/BikeSprites.xcassets/bike-rs-660.imageset/bike-rs-660.png,original-render,28672,Meshes3D/bike-rs-660.npz
+bike-rst-1000-futura,Aprilia,RST 1000 Futura,revert/BikeSprites.xcassets/bike-rst-1000-futura.imageset/bike-rst-1000-futura.png,original-render,26968,Meshes3D/bike-rst-1000-futura.npz
+bike-rsv-1000-r,Aprilia,RSV 1000 R,revert/BikeSprites.xcassets/bike-rsv-1000-r.imageset/bike-rsv-1000-r.png,original-render,17460,Meshes3D/bike-rsv-1000-r.npz
+bike-rsv-mille,Aprilia,RSV Mille,revert/BikeSprites.xcassets/bike-rsv-mille.imageset/bike-rsv-mille.png,original-render,26968,Meshes3D/bike-rsv-mille.npz
+bike-rsv-mille-2001,Aprilia,RSV Mille,revert/BikeSprites.xcassets/bike-rsv-mille-2001.imageset/bike-rsv-mille-2001.png,original-render,26968,Meshes3D/bike-rsv-mille-2001.npz
+bike-rsv4,Aprilia,RSV4,revert/BikeSprites.xcassets/bike-rsv4.imageset/bike-rsv4.png,original-render,24300,Meshes3D/bike-rsv4.npz
+bike-rsv4-2015,Aprilia,RSV4,revert/BikeSprites.xcassets/bike-rsv4-2015.imageset/bike-rsv4-2015.png,original-render,28996,Meshes3D/bike-rsv4-2015.npz
+bike-rsv4-2021,Aprilia,RSV4,revert/BikeSprites.xcassets/bike-rsv4-2021.imageset/bike-rsv4-2021.png,original-render,28032,Meshes3D/bike-rsv4-2021.npz
+bike-sl-750-shiver-gt,Aprilia,SL 750 Shiver GT,revert/BikeSprites.xcassets/bike-sl-750-shiver-gt.imageset/bike-sl-750-shiver-gt.png,original-render,22588,Meshes3D/bike-sl-750-shiver-gt.npz
+bike-sr-50,Aprilia,SR 50,revert/BikeSprites.xcassets/bike-sr-50.imageset/bike-sr-50.png,original-render,29992,Meshes3D/bike-sr-50.npz
+bike-sr-gt-200,Aprilia,SR GT 200,revert/BikeSprites.xcassets/bike-sr-gt-200.imageset/bike-sr-gt-200.png,original-render,29992,Meshes3D/bike-sr-gt-200.npz
+bike-sxr-160,Aprilia,SXR 160,revert/BikeSprites.xcassets/bike-sxr-160.imageset/bike-sxr-160.png,original-render,29992,Meshes3D/bike-sxr-160.npz
+bike-sxv-450,Aprilia,SXV 450,revert/BikeSprites.xcassets/bike-sxv-450.imageset/bike-sxv-450.png,original-render,22332,Meshes3D/bike-sxv-450.npz
+bike-sxv-5-5,Aprilia,SXV 5.5,revert/BikeSprites.xcassets/bike-sxv-5-5.imageset/bike-sxv-5-5.png,original-render,22332,Meshes3D/bike-sxv-5-5.npz
+bike-scarabeo-125,Aprilia,Scarabeo 125,revert/BikeSprites.xcassets/bike-scarabeo-125.imageset/bike-scarabeo-125.png,original-render,29992,Meshes3D/bike-scarabeo-125.npz
+bike-scarabeo-200,Aprilia,Scarabeo 200,revert/BikeSprites.xcassets/bike-scarabeo-200.imageset/bike-scarabeo-200.png,original-render,29992,Meshes3D/bike-scarabeo-200.npz
+bike-scarabeo-50,Aprilia,Scarabeo 50,revert/BikeSprites.xcassets/bike-scarabeo-50.imageset/bike-scarabeo-50.png,original-render,29992,Meshes3D/bike-scarabeo-50.npz
+bike-scarabeo-500,Aprilia,Scarabeo 500,revert/BikeSprites.xcassets/bike-scarabeo-500.imageset/bike-scarabeo-500.png,original-render,29992,Meshes3D/bike-scarabeo-500.npz
+bike-shiver-750,Aprilia,Shiver 750,revert/BikeSprites.xcassets/bike-shiver-750.imageset/bike-shiver-750.png,original-render,23116,Meshes3D/bike-shiver-750.npz
+bike-tuareg-660,Aprilia,Tuareg 660,revert/BikeSprites.xcassets/bike-tuareg-660.imageset/bike-tuareg-660.png,original-render,23712,Meshes3D/bike-tuareg-660.npz
+bike-tuono-1000-r,Aprilia,Tuono 1000 R,revert/BikeSprites.xcassets/bike-tuono-1000-r.imageset/bike-tuono-1000-r.png,original-render,24112,Meshes3D/bike-tuono-1000-r.npz
+bike-tuono-457,Aprilia,Tuono 457,revert/BikeSprites.xcassets/bike-tuono-457.imageset/bike-tuono-457.png,original-render,22588,Meshes3D/bike-tuono-457.npz
+bike-tuono-660,Aprilia,Tuono 660,revert/BikeSprites.xcassets/bike-tuono-660.imageset/bike-tuono-660.png,original-render,21804,Meshes3D/bike-tuono-660.npz
+bike-tuono-v4,Aprilia,Tuono V4,revert/BikeSprites.xcassets/bike-tuono-v4.imageset/bike-tuono-v4.png,original-render,22588,Meshes3D/bike-tuono-v4.npz
+bike-tuono-v4-1100,Aprilia,Tuono V4 1100,revert/BikeSprites.xcassets/bike-tuono-v4-1100.imageset/bike-tuono-v4-1100.png,original-render,24008,Meshes3D/bike-tuono-v4-1100.npz
+bike-tuono-v4-1100-factory,Aprilia,Tuono V4 1100 Factory,revert/BikeSprites.xcassets/bike-tuono-v4-1100-factory.imageset/bike-tuono-v4-1100-factory.png,original-render,24008,Meshes3D/bike-tuono-v4-1100-factory.npz
+bike-c1,BMW,C1,revert/BikeSprites.xcassets/bike-c1.imageset/bike-c1.png,original-render,29992,Meshes3D/bike-c1.npz
+bike-c400gt,BMW,C400GT,revert/BikeSprites.xcassets/bike-c400gt.imageset/bike-c400gt.png,original-render,29992,Meshes3D/bike-c400gt.npz
+bike-c400x,BMW,C400X,revert/BikeSprites.xcassets/bike-c400x.imageset/bike-c400x.png,original-render,29992,Meshes3D/bike-c400x.npz
+bike-c600-sport,BMW,C600 Sport,revert/BikeSprites.xcassets/bike-c600-sport.imageset/bike-c600-sport.png,original-render,29992,Meshes3D/bike-c600-sport.npz
+bike-c650-gt,BMW,C650 GT,revert/BikeSprites.xcassets/bike-c650-gt.imageset/bike-c650-gt.png,original-render,29992,Meshes3D/bike-c650-gt.npz
+bike-ce-02,BMW,CE 02,revert/BikeSprites.xcassets/bike-ce-02.imageset/bike-ce-02.png,original-render,29992,Meshes3D/bike-ce-02.npz
+bike-ce-04,BMW,CE 04,revert/BikeSprites.xcassets/bike-ce-04.imageset/bike-ce-04.png,original-render,29992,Meshes3D/bike-ce-04.npz
+bike-f-900-r,BMW,F 900 R,revert/BikeSprites.xcassets/bike-f-900-r.imageset/bike-f-900-r.png,original-render,24008,Meshes3D/bike-f-900-r.npz
+bike-f650-funduro,BMW,F650 Funduro,revert/BikeSprites.xcassets/bike-f650-funduro.imageset/bike-f650-funduro.png,original-render,23712,Meshes3D/bike-f650-funduro.npz
+bike-f650gs,BMW,F650GS,revert/BikeSprites.xcassets/bike-f650gs.imageset/bike-f650gs.png,original-render,23712,Meshes3D/bike-f650gs.npz
+bike-f700gs,BMW,F700GS,revert/BikeSprites.xcassets/bike-f700gs.imageset/bike-f700gs.png,original-render,23712,Meshes3D/bike-f700gs.npz
+bike-f750gs,BMW,F750GS,revert/BikeSprites.xcassets/bike-f750gs.imageset/bike-f750gs.png,original-render,23712,Meshes3D/bike-f750gs.npz
+bike-f800gs,BMW,F800GS,revert/BikeSprites.xcassets/bike-f800gs.imageset/bike-f800gs.png,original-render,23712,Meshes3D/bike-f800gs.npz
+bike-f800gs-2024-present,BMW,F800GS,revert/BikeSprites.xcassets/bike-f800gs-2024-present.imageset/bike-f800gs-2024-present.png,original-render,23712,Meshes3D/bike-f800gs-2024-present.npz
+bike-f800gt,BMW,F800GT,revert/BikeSprites.xcassets/bike-f800gt.imageset/bike-f800gt.png,original-render,23116,Meshes3D/bike-f800gt.npz
+bike-f800r,BMW,F800R,revert/BikeSprites.xcassets/bike-f800r.imageset/bike-f800r.png,original-render,23116,Meshes3D/bike-f800r.npz
+bike-f800s,BMW,F800S,revert/BikeSprites.xcassets/bike-f800s.imageset/bike-f800s.png,original-render,24008,Meshes3D/bike-f800s.npz
+bike-f800st,BMW,F800ST,revert/BikeSprites.xcassets/bike-f800st.imageset/bike-f800st.png,original-render,22588,Meshes3D/bike-f800st.npz
+bike-f850gs,BMW,F850GS,revert/BikeSprites.xcassets/bike-f850gs.imageset/bike-f850gs.png,original-render,23712,Meshes3D/bike-f850gs.npz
+bike-f850gs-adventure,BMW,F850GS Adventure,revert/BikeSprites.xcassets/bike-f850gs-adventure.imageset/bike-f850gs-adventure.png,original-render,23712,Meshes3D/bike-f850gs-adventure.npz
+bike-f900gs,BMW,F900GS,revert/BikeSprites.xcassets/bike-f900gs.imageset/bike-f900gs.png,original-render,23712,Meshes3D/bike-f900gs.npz
+bike-f900xr,BMW,F900XR,revert/BikeSprites.xcassets/bike-f900xr.imageset/bike-f900xr.png,original-render,24008,Meshes3D/bike-f900xr.npz
+bike-g-310-rr,BMW,G 310 RR,revert/BikeSprites.xcassets/bike-g-310-rr.imageset/bike-g-310-rr.png,original-render,28032,Meshes3D/bike-g-310-rr.npz
+bike-g310gs,BMW,G310GS,revert/BikeSprites.xcassets/bike-g310gs.imageset/bike-g310gs.png,original-render,23712,Meshes3D/bike-g310gs.npz
+bike-g310r,BMW,G310R,revert/BikeSprites.xcassets/bike-g310r.imageset/bike-g310r.png,original-render,22588,Meshes3D/bike-g310r.npz
+bike-g650gs,BMW,G650GS,revert/BikeSprites.xcassets/bike-g650gs.imageset/bike-g650gs.png,original-render,23712,Meshes3D/bike-g650gs.npz
+bike-hp2-enduro,BMW,HP2 Enduro,revert/BikeSprites.xcassets/bike-hp2-enduro.imageset/bike-hp2-enduro.png,original-render,28996,Meshes3D/bike-hp2-enduro.npz
+bike-hp2-megamoto,BMW,HP2 Megamoto,revert/BikeSprites.xcassets/bike-hp2-megamoto.imageset/bike-hp2-megamoto.png,original-render,17460,Meshes3D/bike-hp2-megamoto.npz
+bike-hp2-sport,BMW,HP2 Sport,revert/BikeSprites.xcassets/bike-hp2-sport.imageset/bike-hp2-sport.png,original-render,24300,Meshes3D/bike-hp2-sport.npz
+bike-hp4,BMW,HP4,revert/BikeSprites.xcassets/bike-hp4.imageset/bike-hp4.png,original-render,28996,Meshes3D/bike-hp4.npz
+bike-k100,BMW,K100,revert/BikeSprites.xcassets/bike-k100.imageset/bike-k100.png,original-render,21624,Meshes3D/bike-k100.npz
+bike-k100rs,BMW,K100RS,revert/BikeSprites.xcassets/bike-k100rs.imageset/bike-k100rs.png,original-render,21624,Meshes3D/bike-k100rs.npz
+bike-k1100lt,BMW,K1100LT,revert/BikeSprites.xcassets/bike-k1100lt.imageset/bike-k1100lt.png,original-render,21624,Meshes3D/bike-k1100lt.npz
+bike-k1100rs,BMW,K1100RS,revert/BikeSprites.xcassets/bike-k1100rs.imageset/bike-k1100rs.png,original-render,21624,Meshes3D/bike-k1100rs.npz
+bike-k1200gt,BMW,K1200GT,revert/BikeSprites.xcassets/bike-k1200gt.imageset/bike-k1200gt.png,original-render,21624,Meshes3D/bike-k1200gt.npz
+bike-k1200lt,BMW,K1200LT,revert/BikeSprites.xcassets/bike-k1200lt.imageset/bike-k1200lt.png,original-render,21624,Meshes3D/bike-k1200lt.npz
+bike-k1200r,BMW,K1200R,revert/BikeSprites.xcassets/bike-k1200r.imageset/bike-k1200r.png,original-render,21804,Meshes3D/bike-k1200r.npz
+bike-k1200rs,BMW,K1200RS,revert/BikeSprites.xcassets/bike-k1200rs.imageset/bike-k1200rs.png,original-render,21624,Meshes3D/bike-k1200rs.npz
+bike-k1200s,BMW,K1200S,revert/BikeSprites.xcassets/bike-k1200s.imageset/bike-k1200s.png,original-render,24112,Meshes3D/bike-k1200s.npz
+bike-k1300gt,BMW,K1300GT,revert/BikeSprites.xcassets/bike-k1300gt.imageset/bike-k1300gt.png,original-render,21624,Meshes3D/bike-k1300gt.npz
+bike-k1300r,BMW,K1300R,revert/BikeSprites.xcassets/bike-k1300r.imageset/bike-k1300r.png,original-render,24112,Meshes3D/bike-k1300r.npz
+bike-k1300s,BMW,K1300S,revert/BikeSprites.xcassets/bike-k1300s.imageset/bike-k1300s.png,original-render,23116,Meshes3D/bike-k1300s.npz
+bike-k1600-grand-america,BMW,K1600 Grand America,revert/BikeSprites.xcassets/bike-k1600-grand-america.imageset/bike-k1600-grand-america.png,original-render,21624,Meshes3D/bike-k1600-grand-america.npz
+bike-k1600b,BMW,K1600B,revert/BikeSprites.xcassets/bike-k1600b.imageset/bike-k1600b.png,original-render,21624,Meshes3D/bike-k1600b.npz
+bike-k1600gt,BMW,K1600GT,revert/BikeSprites.xcassets/bike-k1600gt.imageset/bike-k1600gt.png,original-render,21624,Meshes3D/bike-k1600gt.npz
+bike-k1600gtl,BMW,K1600GTL,revert/BikeSprites.xcassets/bike-k1600gtl.imageset/bike-k1600gtl.png,original-render,21624,Meshes3D/bike-k1600gtl.npz
+bike-k75,BMW,K75,revert/BikeSprites.xcassets/bike-k75.imageset/bike-k75.png,original-render,21624,Meshes3D/bike-k75.npz
+bike-k75c,BMW,K75C,revert/BikeSprites.xcassets/bike-k75c.imageset/bike-k75c.png,original-render,21624,Meshes3D/bike-k75c.npz
+bike-k75s,BMW,K75S,revert/BikeSprites.xcassets/bike-k75s.imageset/bike-k75s.png,original-render,21624,Meshes3D/bike-k75s.npz
+bike-m-1000-r,BMW,M 1000 R,revert/BikeSprites.xcassets/bike-m-1000-r.imageset/bike-m-1000-r.png,original-render,21804,Meshes3D/bike-m-1000-r.npz
+bike-m-1000-rr,BMW,M 1000 RR,revert/BikeSprites.xcassets/bike-m-1000-rr.imageset/bike-m-1000-rr.png,original-render,22588,Meshes3D/bike-m-1000-rr.npz
+bike-m1000xr,BMW,M1000XR,revert/BikeSprites.xcassets/bike-m1000xr.imageset/bike-m1000xr.png,original-render,17460,Meshes3D/bike-m1000xr.npz
+bike-r-12,BMW,R 12,revert/BikeSprites.xcassets/bike-r-12.imageset/bike-r-12.png,original-render,34312,Meshes3D/bike-r-12.npz
+bike-r-12-ninet,BMW,R 12 nineT,revert/BikeSprites.xcassets/bike-r-12-ninet.imageset/bike-r-12-ninet.png,original-render,34312,Meshes3D/bike-r-12-ninet.npz
+bike-r-ninet,BMW,R nineT,revert/BikeSprites.xcassets/bike-r-ninet.imageset/bike-r-ninet.png,original-render,34312,Meshes3D/bike-r-ninet.npz
+bike-r-ninet-pure,BMW,R nineT Pure,revert/BikeSprites.xcassets/bike-r-ninet-pure.imageset/bike-r-ninet-pure.png,original-render,34312,Meshes3D/bike-r-ninet-pure.npz
+bike-r-ninet-racer,BMW,R nineT Racer,revert/BikeSprites.xcassets/bike-r-ninet-racer.imageset/bike-r-ninet-racer.png,original-render,34312,Meshes3D/bike-r-ninet-racer.npz
+bike-r-ninet-scrambler,BMW,R nineT Scrambler,revert/BikeSprites.xcassets/bike-r-ninet-scrambler.imageset/bike-r-ninet-scrambler.png,original-render,34312,Meshes3D/bike-r-ninet-scrambler.npz
+bike-r-ninet-urban-gs,BMW,R nineT Urban GS,revert/BikeSprites.xcassets/bike-r-ninet-urban-gs.imageset/bike-r-ninet-urban-gs.png,original-render,34312,Meshes3D/bike-r-ninet-urban-gs.npz
+bike-r100gs,BMW,R100GS,revert/BikeSprites.xcassets/bike-r100gs.imageset/bike-r100gs.png,original-render,23712,Meshes3D/bike-r100gs.npz
+bike-r1100gs,BMW,R1100GS,revert/BikeSprites.xcassets/bike-r1100gs.imageset/bike-r1100gs.png,original-render,23712,Meshes3D/bike-r1100gs.npz
+bike-r1100r,BMW,R1100R,revert/BikeSprites.xcassets/bike-r1100r.imageset/bike-r1100r.png,original-render,24112,Meshes3D/bike-r1100r.npz
+bike-r1100rs,BMW,R1100RS,revert/BikeSprites.xcassets/bike-r1100rs.imageset/bike-r1100rs.png,original-render,21624,Meshes3D/bike-r1100rs.npz
+bike-r1100rt,BMW,R1100RT,revert/BikeSprites.xcassets/bike-r1100rt.imageset/bike-r1100rt.png,original-render,21624,Meshes3D/bike-r1100rt.npz
+bike-r1100s,BMW,R1100S,revert/BikeSprites.xcassets/bike-r1100s.imageset/bike-r1100s.png,original-render,23116,Meshes3D/bike-r1100s.npz
+bike-r1150gs,BMW,R1150GS,revert/BikeSprites.xcassets/bike-r1150gs.imageset/bike-r1150gs.png,original-render,23712,Meshes3D/bike-r1150gs.npz
+bike-r1150gs-adventure,BMW,R1150GS Adventure,revert/BikeSprites.xcassets/bike-r1150gs-adventure.imageset/bike-r1150gs-adventure.png,original-render,23712,Meshes3D/bike-r1150gs-adventure.npz
+bike-r1150r,BMW,R1150R,revert/BikeSprites.xcassets/bike-r1150r.imageset/bike-r1150r.png,original-render,24112,Meshes3D/bike-r1150r.npz
+bike-r1150rs,BMW,R1150RS,revert/BikeSprites.xcassets/bike-r1150rs.imageset/bike-r1150rs.png,original-render,21624,Meshes3D/bike-r1150rs.npz
+bike-r1150rt,BMW,R1150RT,revert/BikeSprites.xcassets/bike-r1150rt.imageset/bike-r1150rt.png,original-render,21624,Meshes3D/bike-r1150rt.npz
+bike-r12-s,BMW,R12 S,revert/BikeSprites.xcassets/bike-r12-s.imageset/bike-r12-s.png,original-render,34312,Meshes3D/bike-r12-s.npz
+bike-r1200c,BMW,R1200C,revert/BikeSprites.xcassets/bike-r1200c.imageset/bike-r1200c.png,original-render,25712,Meshes3D/bike-r1200c.npz
+bike-r1200gs,BMW,R1200GS,revert/BikeSprites.xcassets/bike-r1200gs.imageset/bike-r1200gs.png,original-render,23712,Meshes3D/bike-r1200gs.npz
+bike-r1200gs-adventure,BMW,R1200GS Adventure,revert/BikeSprites.xcassets/bike-r1200gs-adventure.imageset/bike-r1200gs-adventure.png,original-render,23712,Meshes3D/bike-r1200gs-adventure.npz
+bike-r1200gs-lc,BMW,R1200GS LC,revert/BikeSprites.xcassets/bike-r1200gs-lc.imageset/bike-r1200gs-lc.png,original-render,23712,Meshes3D/bike-r1200gs-lc.npz
+bike-r1200r,BMW,R1200R,revert/BikeSprites.xcassets/bike-r1200r.imageset/bike-r1200r.png,original-render,23116,Meshes3D/bike-r1200r.npz
+bike-r1200rs,BMW,R1200RS,revert/BikeSprites.xcassets/bike-r1200rs.imageset/bike-r1200rs.png,original-render,21624,Meshes3D/bike-r1200rs.npz
+bike-r1200rt,BMW,R1200RT,revert/BikeSprites.xcassets/bike-r1200rt.imageset/bike-r1200rt.png,original-render,21624,Meshes3D/bike-r1200rt.npz
+bike-r1200s,BMW,R1200S,revert/BikeSprites.xcassets/bike-r1200s.imageset/bike-r1200s.png,original-render,24008,Meshes3D/bike-r1200s.npz
+bike-r1200st,BMW,R1200ST,revert/BikeSprites.xcassets/bike-r1200st.imageset/bike-r1200st.png,original-render,22588,Meshes3D/bike-r1200st.npz
+bike-r1250gs,BMW,R1250GS,revert/BikeSprites.xcassets/bike-r1250gs.imageset/bike-r1250gs.png,original-render,23712,Meshes3D/bike-r1250gs.npz
+bike-r1250gs-adventure,BMW,R1250GS Adventure,revert/BikeSprites.xcassets/bike-r1250gs-adventure.imageset/bike-r1250gs-adventure.png,original-render,23712,Meshes3D/bike-r1250gs-adventure.npz
+bike-r1250r,BMW,R1250R,revert/BikeSprites.xcassets/bike-r1250r.imageset/bike-r1250r.png,original-render,23116,Meshes3D/bike-r1250r.npz
+bike-r1250rs,BMW,R1250RS,revert/BikeSprites.xcassets/bike-r1250rs.imageset/bike-r1250rs.png,original-render,21624,Meshes3D/bike-r1250rs.npz
+bike-r1250rt,BMW,R1250RT,revert/BikeSprites.xcassets/bike-r1250rt.imageset/bike-r1250rt.png,original-render,21624,Meshes3D/bike-r1250rt.npz
+bike-r1300gs,BMW,R1300GS,revert/BikeSprites.xcassets/bike-r1300gs.imageset/bike-r1300gs.png,original-render,23712,Meshes3D/bike-r1300gs.npz
+bike-r1300gs-adventure,BMW,R1300GS Adventure,revert/BikeSprites.xcassets/bike-r1300gs-adventure.imageset/bike-r1300gs-adventure.png,original-render,23712,Meshes3D/bike-r1300gs-adventure.npz
+bike-r18,BMW,R18,revert/BikeSprites.xcassets/bike-r18.imageset/bike-r18.png,original-render,25712,Meshes3D/bike-r18.npz
+bike-r18-b,BMW,R18 B,revert/BikeSprites.xcassets/bike-r18-b.imageset/bike-r18-b.png,original-render,25712,Meshes3D/bike-r18-b.npz
+bike-r18-classic,BMW,R18 Classic,revert/BikeSprites.xcassets/bike-r18-classic.imageset/bike-r18-classic.png,original-render,25712,Meshes3D/bike-r18-classic.npz
+bike-r18-transcontinental,BMW,R18 Transcontinental,revert/BikeSprites.xcassets/bike-r18-transcontinental.imageset/bike-r18-transcontinental.png,original-render,25712,Meshes3D/bike-r18-transcontinental.npz
+bike-r80gs,BMW,R80GS,revert/BikeSprites.xcassets/bike-r80gs.imageset/bike-r80gs.png,original-render,23712,Meshes3D/bike-r80gs.npz
+bike-r850gs,BMW,R850GS,revert/BikeSprites.xcassets/bike-r850gs.imageset/bike-r850gs.png,original-render,23712,Meshes3D/bike-r850gs.npz
+bike-s-1000-r,BMW,S 1000 R,revert/BikeSprites.xcassets/bike-s-1000-r.imageset/bike-s-1000-r.png,original-render,17460,Meshes3D/bike-s-1000-r.npz
+bike-s-1000-r-2021,BMW,S 1000 R,revert/BikeSprites.xcassets/bike-s-1000-r-2021.imageset/bike-s-1000-r-2021.png,original-render,27164,Meshes3D/bike-s-1000-r-2021.npz
+bike-s-1000-rr,BMW,S 1000 RR,revert/BikeSprites.xcassets/bike-s-1000-rr.imageset/bike-s-1000-rr.png,original-render,27164,Meshes3D/bike-s-1000-rr.npz
+bike-s-1000-rr-2012,BMW,S 1000 RR,revert/BikeSprites.xcassets/bike-s-1000-rr-2012.imageset/bike-s-1000-rr-2012.png,original-render,28996,Meshes3D/bike-s-1000-rr-2012.npz
+bike-s-1000-rr-2015,BMW,S 1000 RR,revert/BikeSprites.xcassets/bike-s-1000-rr-2015.imageset/bike-s-1000-rr-2015.png,original-render,24300,Meshes3D/bike-s-1000-rr-2015.npz
+bike-s-1000-rr-2019,BMW,S 1000 RR,revert/BikeSprites.xcassets/bike-s-1000-rr-2019.imageset/bike-s-1000-rr-2019.png,original-render,26968,Meshes3D/bike-s-1000-rr-2019.npz
+bike-s-1000-rr-2023,BMW,S 1000 RR,revert/BikeSprites.xcassets/bike-s-1000-rr-2023.imageset/bike-s-1000-rr-2023.png,original-render,28672,Meshes3D/bike-s-1000-rr-2023.npz
+bike-s1000xr,BMW,S1000XR,revert/BikeSprites.xcassets/bike-s1000xr.imageset/bike-s1000xr.png,original-render,28672,Meshes3D/bike-s1000xr.npz
+bike-1125r,Buell,1125R,revert/BikeSprites.xcassets/bike-1125r.imageset/bike-1125r.png,original-render,26968,Meshes3D/bike-1125r.npz
+bike-1190rx,Buell,1190RX,revert/BikeSprites.xcassets/bike-1190rx.imageset/bike-1190rx.png,original-render,29196,Meshes3D/bike-1190rx.npz
+bike-1190sx,Buell,1190SX,revert/BikeSprites.xcassets/bike-1190sx.imageset/bike-1190sx.png,original-render,28672,Meshes3D/bike-1190sx.npz
+bike-firebolt-xb12r,Buell,Firebolt XB12R,revert/BikeSprites.xcassets/bike-firebolt-xb12r.imageset/bike-firebolt-xb12r.png,original-render,26968,Meshes3D/bike-firebolt-xb12r.npz
+bike-firebolt-xb9r,Buell,Firebolt XB9R,revert/BikeSprites.xcassets/bike-firebolt-xb9r.imageset/bike-firebolt-xb9r.png,original-render,28032,Meshes3D/bike-firebolt-xb9r.npz
+bike-hammerhead-1190,Buell,Hammerhead 1190,revert/BikeSprites.xcassets/bike-hammerhead-1190.imageset/bike-hammerhead-1190.png,original-render,28996,Meshes3D/bike-hammerhead-1190.npz
+bike-250sr,CFMoto,250SR,revert/BikeSprites.xcassets/bike-250sr.imageset/bike-250sr.png,original-render,28996,Meshes3D/bike-250sr.npz
+bike-300sr,CFMoto,300SR,revert/BikeSprites.xcassets/bike-300sr.imageset/bike-300sr.png,original-render,17460,Meshes3D/bike-300sr.npz
+bike-450nk,CFMoto,450NK,revert/BikeSprites.xcassets/bike-450nk.imageset/bike-450nk.png,original-render,22588,Meshes3D/bike-450nk.npz
+bike-450sr,CFMoto,450SR,revert/BikeSprites.xcassets/bike-450sr.imageset/bike-450sr.png,original-render,28672,Meshes3D/bike-450sr.npz
+bike-450sr-s,CFMoto,450SR S,revert/BikeSprites.xcassets/bike-450sr-s.imageset/bike-450sr-s.png,original-render,28672,Meshes3D/bike-450sr-s.npz
+bike-675nk,CFMoto,675NK,revert/BikeSprites.xcassets/bike-675nk.imageset/bike-675nk.png,original-render,26968,Meshes3D/bike-675nk.npz
+bike-675sr-r,CFMoto,675SR-R,revert/BikeSprites.xcassets/bike-675sr-r.imageset/bike-675sr-r.png,original-render,28672,Meshes3D/bike-675sr-r.npz
+bike-800nk,CFMoto,800NK,revert/BikeSprites.xcassets/bike-800nk.imageset/bike-800nk.png,original-render,24008,Meshes3D/bike-800nk.npz
+bike-1098,Ducati,1098,revert/BikeSprites.xcassets/bike-1098.imageset/bike-1098.png,original-render,27164,Meshes3D/bike-1098.npz
+bike-1198,Ducati,1198,revert/BikeSprites.xcassets/bike-1198.imageset/bike-1198.png,original-render,26968,Meshes3D/bike-1198.npz
+bike-1199-panigale,Ducati,1199 Panigale,revert/BikeSprites.xcassets/bike-1199-panigale.imageset/bike-1199-panigale.png,original-render,27164,Meshes3D/bike-1199-panigale.npz
+bike-1299-panigale,Ducati,1299 Panigale,revert/BikeSprites.xcassets/bike-1299-panigale.imageset/bike-1299-panigale.png,original-render,26968,Meshes3D/bike-1299-panigale.npz
+bike-748,Ducati,748,revert/BikeSprites.xcassets/bike-748.imageset/bike-748.png,original-render,26968,Meshes3D/bike-748.npz
+bike-748-1997,Ducati,748,revert/BikeSprites.xcassets/bike-748-1997.imageset/bike-748-1997.png,original-render,27164,Meshes3D/bike-748-1997.npz
+bike-748-2000,Ducati,748,revert/BikeSprites.xcassets/bike-748-2000.imageset/bike-748-2000.png,original-render,27164,Meshes3D/bike-748-2000.npz
+bike-749,Ducati,749,revert/BikeSprites.xcassets/bike-749.imageset/bike-749.png,original-render,28996,Meshes3D/bike-749.npz
+bike-848,Ducati,848,revert/BikeSprites.xcassets/bike-848.imageset/bike-848.png,original-render,28996,Meshes3D/bike-848.npz
+bike-851,Ducati,851,revert/BikeSprites.xcassets/bike-851.imageset/bike-851.png,original-render,28672,Meshes3D/bike-851.npz
+bike-888,Ducati,888,revert/BikeSprites.xcassets/bike-888.imageset/bike-888.png,original-render,17460,Meshes3D/bike-888.npz
+bike-899-panigale,Ducati,899 Panigale,revert/BikeSprites.xcassets/bike-899-panigale.imageset/bike-899-panigale.png,original-render,17460,Meshes3D/bike-899-panigale.npz
+bike-916,Ducati,916,revert/BikeSprites.xcassets/bike-916.imageset/bike-916.png,original-render,17460,Meshes3D/bike-916.npz
+bike-959-panigale,Ducati,959 Panigale,revert/BikeSprites.xcassets/bike-959-panigale.imageset/bike-959-panigale.png,original-render,29196,Meshes3D/bike-959-panigale.npz
+bike-996,Ducati,996,revert/BikeSprites.xcassets/bike-996.imageset/bike-996.png,original-render,17460,Meshes3D/bike-996.npz
+bike-998,Ducati,998,revert/BikeSprites.xcassets/bike-998.imageset/bike-998.png,original-render,27164,Meshes3D/bike-998.npz
+bike-999,Ducati,999,revert/BikeSprites.xcassets/bike-999.imageset/bike-999.png,original-render,26968,Meshes3D/bike-999.npz
+bike-desertx,Ducati,DesertX,revert/BikeSprites.xcassets/bike-desertx.imageset/bike-desertx.png,original-render,23712,Meshes3D/bike-desertx.npz
+bike-desmosedici-rr,Ducati,Desmosedici RR,revert/BikeSprites.xcassets/bike-desmosedici-rr.imageset/bike-desmosedici-rr.png,original-render,27164,Meshes3D/bike-desmosedici-rr.npz
+bike-diavel,Ducati,Diavel,revert/BikeSprites.xcassets/bike-diavel.imageset/bike-diavel.png,original-render,25712,Meshes3D/bike-diavel.npz
+bike-diavel-v4,Ducati,Diavel V4,revert/BikeSprites.xcassets/bike-diavel-v4.imageset/bike-diavel-v4.png,original-render,25712,Meshes3D/bike-diavel-v4.npz
+bike-gt1000,Ducati,GT1000,revert/BikeSprites.xcassets/bike-gt1000.imageset/bike-gt1000.png,original-render,25712,Meshes3D/bike-gt1000.npz
+bike-hypermotard-1100,Ducati,Hypermotard 1100,revert/BikeSprites.xcassets/bike-hypermotard-1100.imageset/bike-hypermotard-1100.png,original-render,23116,Meshes3D/bike-hypermotard-1100.npz
+bike-hypermotard-698-mono,Ducati,Hypermotard 698 Mono,revert/BikeSprites.xcassets/bike-hypermotard-698-mono.imageset/bike-hypermotard-698-mono.png,original-render,24112,Meshes3D/bike-hypermotard-698-mono.npz
+bike-hypermotard-796,Ducati,Hypermotard 796,revert/BikeSprites.xcassets/bike-hypermotard-796.imageset/bike-hypermotard-796.png,original-render,22588,Meshes3D/bike-hypermotard-796.npz
+bike-hypermotard-821,Ducati,Hypermotard 821,revert/BikeSprites.xcassets/bike-hypermotard-821.imageset/bike-hypermotard-821.png,original-render,24008,Meshes3D/bike-hypermotard-821.npz
+bike-hypermotard-939,Ducati,Hypermotard 939,revert/BikeSprites.xcassets/bike-hypermotard-939.imageset/bike-hypermotard-939.png,original-render,24008,Meshes3D/bike-hypermotard-939.npz
+bike-hypermotard-950,Ducati,Hypermotard 950,revert/BikeSprites.xcassets/bike-hypermotard-950.imageset/bike-hypermotard-950.png,original-render,24112,Meshes3D/bike-hypermotard-950.npz
+bike-monster,Ducati,Monster,revert/BikeSprites.xcassets/bike-monster.imageset/bike-monster.png,original-render,21804,Meshes3D/bike-monster.npz
+bike-monster-2001,Ducati,Monster,revert/BikeSprites.xcassets/bike-monster-2001.imageset/bike-monster-2001.png,original-render,21804,Meshes3D/bike-monster-2001.npz
+bike-monster-2008,Ducati,Monster,revert/BikeSprites.xcassets/bike-monster-2008.imageset/bike-monster-2008.png,original-render,23116,Meshes3D/bike-monster-2008.npz
+bike-monster-2014,Ducati,Monster,revert/BikeSprites.xcassets/bike-monster-2014.imageset/bike-monster-2014.png,original-render,22588,Meshes3D/bike-monster-2014.npz
+bike-monster-2021,Ducati,Monster,revert/BikeSprites.xcassets/bike-monster-2021.imageset/bike-monster-2021.png,original-render,23116,Meshes3D/bike-monster-2021.npz
+bike-monster-1000,Ducati,Monster 1000,revert/BikeSprites.xcassets/bike-monster-1000.imageset/bike-monster-1000.png,original-render,24008,Meshes3D/bike-monster-1000.npz
+bike-monster-1100,Ducati,Monster 1100,revert/BikeSprites.xcassets/bike-monster-1100.imageset/bike-monster-1100.png,original-render,22588,Meshes3D/bike-monster-1100.npz
+bike-monster-1100-evo,Ducati,Monster 1100 EVO,revert/BikeSprites.xcassets/bike-monster-1100-evo.imageset/bike-monster-1100-evo.png,original-render,22588,Meshes3D/bike-monster-1100-evo.npz
+bike-monster-1200,Ducati,Monster 1200,revert/BikeSprites.xcassets/bike-monster-1200.imageset/bike-monster-1200.png,original-render,21804,Meshes3D/bike-monster-1200.npz
+bike-monster-400,Ducati,Monster 400,revert/BikeSprites.xcassets/bike-monster-400.imageset/bike-monster-400.png,original-render,24008,Meshes3D/bike-monster-400.npz
+bike-monster-600,Ducati,Monster 600,revert/BikeSprites.xcassets/bike-monster-600.imageset/bike-monster-600.png,original-render,21804,Meshes3D/bike-monster-600.npz
+bike-monster-696,Ducati,Monster 696,revert/BikeSprites.xcassets/bike-monster-696.imageset/bike-monster-696.png,original-render,21804,Meshes3D/bike-monster-696.npz
+bike-monster-750,Ducati,Monster 750,revert/BikeSprites.xcassets/bike-monster-750.imageset/bike-monster-750.png,original-render,24112,Meshes3D/bike-monster-750.npz
+bike-monster-796,Ducati,Monster 796,revert/BikeSprites.xcassets/bike-monster-796.imageset/bike-monster-796.png,original-render,24112,Meshes3D/bike-monster-796.npz
+bike-monster-797,Ducati,Monster 797,revert/BikeSprites.xcassets/bike-monster-797.imageset/bike-monster-797.png,original-render,23116,Meshes3D/bike-monster-797.npz
+bike-monster-821,Ducati,Monster 821,revert/BikeSprites.xcassets/bike-monster-821.imageset/bike-monster-821.png,original-render,21804,Meshes3D/bike-monster-821.npz
+bike-monster-900,Ducati,Monster 900,revert/BikeSprites.xcassets/bike-monster-900.imageset/bike-monster-900.png,original-render,24008,Meshes3D/bike-monster-900.npz
+bike-monster-937,Ducati,Monster 937,revert/BikeSprites.xcassets/bike-monster-937.imageset/bike-monster-937.png,original-render,24008,Meshes3D/bike-monster-937.npz
+bike-multistrada-1000ds,Ducati,Multistrada 1000DS,revert/BikeSprites.xcassets/bike-multistrada-1000ds.imageset/bike-multistrada-1000ds.png,original-render,23712,Meshes3D/bike-multistrada-1000ds.npz
+bike-multistrada-1100,Ducati,Multistrada 1100,revert/BikeSprites.xcassets/bike-multistrada-1100.imageset/bike-multistrada-1100.png,original-render,23712,Meshes3D/bike-multistrada-1100.npz
+bike-multistrada-1200,Ducati,Multistrada 1200,revert/BikeSprites.xcassets/bike-multistrada-1200.imageset/bike-multistrada-1200.png,original-render,23712,Meshes3D/bike-multistrada-1200.npz
+bike-multistrada-1200-enduro,Ducati,Multistrada 1200 Enduro,revert/BikeSprites.xcassets/bike-multistrada-1200-enduro.imageset/bike-multistrada-1200-enduro.png,original-render,23712,Meshes3D/bike-multistrada-1200-enduro.npz
+bike-multistrada-1260,Ducati,Multistrada 1260,revert/BikeSprites.xcassets/bike-multistrada-1260.imageset/bike-multistrada-1260.png,original-render,23712,Meshes3D/bike-multistrada-1260.npz
+bike-multistrada-620,Ducati,Multistrada 620,revert/BikeSprites.xcassets/bike-multistrada-620.imageset/bike-multistrada-620.png,original-render,23712,Meshes3D/bike-multistrada-620.npz
+bike-multistrada-950,Ducati,Multistrada 950,revert/BikeSprites.xcassets/bike-multistrada-950.imageset/bike-multistrada-950.png,original-render,23712,Meshes3D/bike-multistrada-950.npz
+bike-multistrada-v2,Ducati,Multistrada V2,revert/BikeSprites.xcassets/bike-multistrada-v2.imageset/bike-multistrada-v2.png,original-render,23712,Meshes3D/bike-multistrada-v2.npz
+bike-multistrada-v4,Ducati,Multistrada V4,revert/BikeSprites.xcassets/bike-multistrada-v4.imageset/bike-multistrada-v4.png,original-render,23712,Meshes3D/bike-multistrada-v4.npz
+bike-multistrada-v4-rally,Ducati,Multistrada V4 Rally,revert/BikeSprites.xcassets/bike-multistrada-v4-rally.imageset/bike-multistrada-v4-rally.png,original-render,23712,Meshes3D/bike-multistrada-v4-rally.npz
+bike-panigale-v2,Ducati,Panigale V2,revert/BikeSprites.xcassets/bike-panigale-v2.imageset/bike-panigale-v2.png,original-render,28672,Meshes3D/bike-panigale-v2.npz
+bike-panigale-v2-2025,Ducati,Panigale V2,revert/BikeSprites.xcassets/bike-panigale-v2-2025.imageset/bike-panigale-v2-2025.png,original-render,28996,Meshes3D/bike-panigale-v2-2025.npz
+bike-panigale-v4,Ducati,Panigale V4,revert/BikeSprites.xcassets/bike-panigale-v4.imageset/bike-panigale-v4.png,original-render,17460,Meshes3D/bike-panigale-v4.npz
+bike-panigale-v4-2022,Ducati,Panigale V4,revert/BikeSprites.xcassets/bike-panigale-v4-2022.imageset/bike-panigale-v4-2022.png,original-render,26968,Meshes3D/bike-panigale-v4-2022.npz
+bike-panigale-v4-2025,Ducati,Panigale V4,revert/BikeSprites.xcassets/bike-panigale-v4-2025.imageset/bike-panigale-v4-2025.png,original-render,28672,Meshes3D/bike-panigale-v4-2025.npz
+bike-paso-906,Ducati,Paso 906,revert/BikeSprites.xcassets/bike-paso-906.imageset/bike-paso-906.png,original-render,24300,Meshes3D/bike-paso-906.npz
+bike-paul-smart-1000-le,Ducati,Paul Smart 1000 LE,revert/BikeSprites.xcassets/bike-paul-smart-1000-le.imageset/bike-paul-smart-1000-le.png,original-render,25712,Meshes3D/bike-paul-smart-1000-le.npz
+bike-st2,Ducati,ST2,revert/BikeSprites.xcassets/bike-st2.imageset/bike-st2.png,original-render,28032,Meshes3D/bike-st2.npz
+bike-st3,Ducati,ST3,revert/BikeSprites.xcassets/bike-st3.imageset/bike-st3.png,original-render,27164,Meshes3D/bike-st3.npz
+bike-st4,Ducati,ST4,revert/BikeSprites.xcassets/bike-st4.imageset/bike-st4.png,original-render,26968,Meshes3D/bike-st4.npz
+bike-st4s,Ducati,ST4S,revert/BikeSprites.xcassets/bike-st4s.imageset/bike-st4s.png,original-render,28672,Meshes3D/bike-st4s.npz
+bike-scrambler-cafe-racer,Ducati,Scrambler Cafe Racer,revert/BikeSprites.xcassets/bike-scrambler-cafe-racer.imageset/bike-scrambler-cafe-racer.png,original-render,25712,Meshes3D/bike-scrambler-cafe-racer.npz
+bike-scrambler-classic,Ducati,Scrambler Classic,revert/BikeSprites.xcassets/bike-scrambler-classic.imageset/bike-scrambler-classic.png,original-render,25712,Meshes3D/bike-scrambler-classic.npz
+bike-scrambler-desert-sled,Ducati,Scrambler Desert Sled,revert/BikeSprites.xcassets/bike-scrambler-desert-sled.imageset/bike-scrambler-desert-sled.png,original-render,25712,Meshes3D/bike-scrambler-desert-sled.npz
+bike-scrambler-full-throttle,Ducati,Scrambler Full Throttle,revert/BikeSprites.xcassets/bike-scrambler-full-throttle.imageset/bike-scrambler-full-throttle.png,original-render,25712,Meshes3D/bike-scrambler-full-throttle.npz
+bike-scrambler-icon,Ducati,Scrambler Icon,revert/BikeSprites.xcassets/bike-scrambler-icon.imageset/bike-scrambler-icon.png,original-render,25712,Meshes3D/bike-scrambler-icon.npz
+bike-scrambler-nightshift,Ducati,Scrambler Nightshift,revert/BikeSprites.xcassets/bike-scrambler-nightshift.imageset/bike-scrambler-nightshift.png,original-render,25712,Meshes3D/bike-scrambler-nightshift.npz
+bike-scrambler-urban-enduro,Ducati,Scrambler Urban Enduro,revert/BikeSprites.xcassets/bike-scrambler-urban-enduro.imageset/bike-scrambler-urban-enduro.png,original-render,25712,Meshes3D/bike-scrambler-urban-enduro.npz
+bike-sport-1000-sportclassic,Ducati,Sport 1000 SportClassic,revert/BikeSprites.xcassets/bike-sport-1000-sportclassic.imageset/bike-sport-1000-sportclassic.png,original-render,25712,Meshes3D/bike-sport-1000-sportclassic.npz
+bike-streetfighter-1098,Ducati,Streetfighter 1098,revert/BikeSprites.xcassets/bike-streetfighter-1098.imageset/bike-streetfighter-1098.png,original-render,23116,Meshes3D/bike-streetfighter-1098.npz
+bike-streetfighter-848,Ducati,Streetfighter 848,revert/BikeSprites.xcassets/bike-streetfighter-848.imageset/bike-streetfighter-848.png,original-render,24112,Meshes3D/bike-streetfighter-848.npz
+bike-streetfighter-v2,Ducati,Streetfighter V2,revert/BikeSprites.xcassets/bike-streetfighter-v2.imageset/bike-streetfighter-v2.png,original-render,21804,Meshes3D/bike-streetfighter-v2.npz
+bike-streetfighter-v4,Ducati,Streetfighter V4,revert/BikeSprites.xcassets/bike-streetfighter-v4.imageset/bike-streetfighter-v4.png,original-render,23116,Meshes3D/bike-streetfighter-v4.npz
+bike-streetfighter-v4-2023,Ducati,Streetfighter V4,revert/BikeSprites.xcassets/bike-streetfighter-v4-2023.imageset/bike-streetfighter-v4-2023.png,original-render,24112,Meshes3D/bike-streetfighter-v4-2023.npz
+bike-supersport-950,Ducati,SuperSport 950,revert/BikeSprites.xcassets/bike-supersport-950.imageset/bike-supersport-950.png,original-render,27164,Meshes3D/bike-supersport-950.npz
+bike-superleggera-v4,Ducati,Superleggera V4,revert/BikeSprites.xcassets/bike-superleggera-v4.imageset/bike-superleggera-v4.png,original-render,29196,Meshes3D/bike-superleggera-v4.npz
+bike-supersport-400,Ducati,Supersport 400,revert/BikeSprites.xcassets/bike-supersport-400.imageset/bike-supersport-400.png,original-render,17460,Meshes3D/bike-supersport-400.npz
+bike-supersport-600,Ducati,Supersport 600,revert/BikeSprites.xcassets/bike-supersport-600.imageset/bike-supersport-600.png,original-render,27164,Meshes3D/bike-supersport-600.npz
+bike-supersport-750,Ducati,Supersport 750,revert/BikeSprites.xcassets/bike-supersport-750.imageset/bike-supersport-750.png,original-render,17460,Meshes3D/bike-supersport-750.npz
+bike-supersport-900,Ducati,Supersport 900,revert/BikeSprites.xcassets/bike-supersport-900.imageset/bike-supersport-900.png,original-render,29196,Meshes3D/bike-supersport-900.npz
+bike-supersport-939,Ducati,Supersport 939,revert/BikeSprites.xcassets/bike-supersport-939.imageset/bike-supersport-939.png,original-render,28032,Meshes3D/bike-supersport-939.npz
+bike-xdiavel,Ducati,XDiavel,revert/BikeSprites.xcassets/bike-xdiavel.imageset/bike-xdiavel.png,original-render,25712,Meshes3D/bike-xdiavel.npz
+bike-breakout,Harley-Davidson,Breakout,revert/BikeSprites.xcassets/bike-breakout.imageset/bike-breakout.png,original-render,25712,Meshes3D/bike-breakout.npz
+bike-cvo-road-glide,Harley-Davidson,CVO Road Glide,revert/BikeSprites.xcassets/bike-cvo-road-glide.imageset/bike-cvo-road-glide.png,original-render,21624,Meshes3D/bike-cvo-road-glide.npz
+bike-cvo-road-king,Harley-Davidson,CVO Road King,revert/BikeSprites.xcassets/bike-cvo-road-king.imageset/bike-cvo-road-king.png,original-render,21624,Meshes3D/bike-cvo-road-king.npz
+bike-cvo-street-glide,Harley-Davidson,CVO Street Glide,revert/BikeSprites.xcassets/bike-cvo-street-glide.imageset/bike-cvo-street-glide.png,original-render,21624,Meshes3D/bike-cvo-street-glide.npz
+bike-cvo-ultra-classic,Harley-Davidson,CVO Ultra Classic,revert/BikeSprites.xcassets/bike-cvo-ultra-classic.imageset/bike-cvo-ultra-classic.png,original-render,21624,Meshes3D/bike-cvo-ultra-classic.npz
+bike-deluxe,Harley-Davidson,Deluxe,revert/BikeSprites.xcassets/bike-deluxe.imageset/bike-deluxe.png,original-render,25712,Meshes3D/bike-deluxe.npz
+bike-electra-glide-classic,Harley-Davidson,Electra Glide Classic,revert/BikeSprites.xcassets/bike-electra-glide-classic.imageset/bike-electra-glide-classic.png,original-render,21624,Meshes3D/bike-electra-glide-classic.npz
+bike-electra-glide-standard,Harley-Davidson,Electra Glide Standard,revert/BikeSprites.xcassets/bike-electra-glide-standard.imageset/bike-electra-glide-standard.png,original-render,21624,Meshes3D/bike-electra-glide-standard.npz
+bike-electra-glide-ultra-classic,Harley-Davidson,Electra Glide Ultra Classic,revert/BikeSprites.xcassets/bike-electra-glide-ultra-classic.imageset/bike-electra-glide-ultra-classic.png,original-render,21624,Meshes3D/bike-electra-glide-ultra-classic.npz
+bike-fld-switchback,Harley-Davidson,FLD Switchback,revert/BikeSprites.xcassets/bike-fld-switchback.imageset/bike-fld-switchback.png,original-render,25712,Meshes3D/bike-fld-switchback.npz
+bike-flstc-heritage-softail-classic,Harley-Davidson,FLSTC Heritage Softail Classic,revert/BikeSprites.xcassets/bike-flstc-heritage-softail-classic.imageset/bike-flstc-heritage-softail-classic.png,original-render,25712,Meshes3D/bike-flstc-heritage-softail-classic.npz
+bike-flstf-fat-boy,Harley-Davidson,FLSTF Fat Boy,revert/BikeSprites.xcassets/bike-flstf-fat-boy.imageset/bike-flstf-fat-boy.png,original-render,25712,Meshes3D/bike-flstf-fat-boy.npz
+bike-flstn-softail-deluxe,Harley-Davidson,FLSTN Softail Deluxe,revert/BikeSprites.xcassets/bike-flstn-softail-deluxe.imageset/bike-flstn-softail-deluxe.png,original-render,25712,Meshes3D/bike-flstn-softail-deluxe.npz
+bike-flstsb-cross-bones,Harley-Davidson,FLSTSB Cross Bones,revert/BikeSprites.xcassets/bike-flstsb-cross-bones.imageset/bike-flstsb-cross-bones.png,original-render,25712,Meshes3D/bike-flstsb-cross-bones.npz
+bike-fxd-dyna-super-glide,Harley-Davidson,FXD Dyna Super Glide,revert/BikeSprites.xcassets/bike-fxd-dyna-super-glide.imageset/bike-fxd-dyna-super-glide.png,original-render,25712,Meshes3D/bike-fxd-dyna-super-glide.npz
+bike-fxdb-street-bob,Harley-Davidson,FXDB Street Bob,revert/BikeSprites.xcassets/bike-fxdb-street-bob.imageset/bike-fxdb-street-bob.png,original-render,25712,Meshes3D/bike-fxdb-street-bob.npz
+bike-fxdc-super-glide-custom,Harley-Davidson,FXDC Super Glide Custom,revert/BikeSprites.xcassets/bike-fxdc-super-glide-custom.imageset/bike-fxdc-super-glide-custom.png,original-render,25712,Meshes3D/bike-fxdc-super-glide-custom.npz
+bike-fxdf-fat-bob,Harley-Davidson,FXDF Fat Bob,revert/BikeSprites.xcassets/bike-fxdf-fat-bob.imageset/bike-fxdf-fat-bob.png,original-render,25712,Meshes3D/bike-fxdf-fat-bob.npz
+bike-fxdl-dyna-low-rider,Harley-Davidson,FXDL Dyna Low Rider,revert/BikeSprites.xcassets/bike-fxdl-dyna-low-rider.imageset/bike-fxdl-dyna-low-rider.png,original-render,25712,Meshes3D/bike-fxdl-dyna-low-rider.npz
+bike-fxdls-low-rider-s,Harley-Davidson,FXDLS Low Rider S,revert/BikeSprites.xcassets/bike-fxdls-low-rider-s.imageset/bike-fxdls-low-rider-s.png,original-render,25712,Meshes3D/bike-fxdls-low-rider-s.npz
+bike-fxdwg-wide-glide,Harley-Davidson,FXDWG Wide Glide,revert/BikeSprites.xcassets/bike-fxdwg-wide-glide.imageset/bike-fxdwg-wide-glide.png,original-render,25712,Meshes3D/bike-fxdwg-wide-glide.npz
+bike-fxdx-super-glide-sport,Harley-Davidson,FXDX Super Glide Sport,revert/BikeSprites.xcassets/bike-fxdx-super-glide-sport.imageset/bike-fxdx-super-glide-sport.png,original-render,25712,Meshes3D/bike-fxdx-super-glide-sport.npz
+bike-fxr-low-rider,Harley-Davidson,FXR Low Rider,revert/BikeSprites.xcassets/bike-fxr-low-rider.imageset/bike-fxr-low-rider.png,original-render,25712,Meshes3D/bike-fxr-low-rider.npz
+bike-fxrt-sport-glide,Harley-Davidson,FXRT Sport Glide,revert/BikeSprites.xcassets/bike-fxrt-sport-glide.imageset/bike-fxrt-sport-glide.png,original-render,21624,Meshes3D/bike-fxrt-sport-glide.npz
+bike-fxstb-night-train,Harley-Davidson,FXSTB Night Train,revert/BikeSprites.xcassets/bike-fxstb-night-train.imageset/bike-fxstb-night-train.png,original-render,25712,Meshes3D/bike-fxstb-night-train.npz
+bike-fxstd-softail-deuce,Harley-Davidson,FXSTD Softail Deuce,revert/BikeSprites.xcassets/bike-fxstd-softail-deuce.imageset/bike-fxstd-softail-deuce.png,original-render,25712,Meshes3D/bike-fxstd-softail-deuce.npz
+bike-fxsts-springer-softail,Harley-Davidson,FXSTS Springer Softail,revert/BikeSprites.xcassets/bike-fxsts-springer-softail.imageset/bike-fxsts-springer-softail.png,original-render,25712,Meshes3D/bike-fxsts-springer-softail.npz
+bike-fat-bob-114,Harley-Davidson,Fat Bob 114,revert/BikeSprites.xcassets/bike-fat-bob-114.imageset/bike-fat-bob-114.png,original-render,25712,Meshes3D/bike-fat-bob-114.npz
+bike-fat-boy-114,Harley-Davidson,Fat Boy 114,revert/BikeSprites.xcassets/bike-fat-boy-114.imageset/bike-fat-boy-114.png,original-render,25712,Meshes3D/bike-fat-boy-114.npz
+bike-freewheeler,Harley-Davidson,Freewheeler,revert/BikeSprites.xcassets/bike-freewheeler.imageset/bike-freewheeler.png,original-render,25712,Meshes3D/bike-freewheeler.npz
+bike-heritage-classic-114,Harley-Davidson,Heritage Classic 114,revert/BikeSprites.xcassets/bike-heritage-classic-114.imageset/bike-heritage-classic-114.png,original-render,25712,Meshes3D/bike-heritage-classic-114.npz
+bike-low-rider-114,Harley-Davidson,Low Rider 114,revert/BikeSprites.xcassets/bike-low-rider-114.imageset/bike-low-rider-114.png,original-render,25712,Meshes3D/bike-low-rider-114.npz
+bike-low-rider-s,Harley-Davidson,Low Rider S,revert/BikeSprites.xcassets/bike-low-rider-s.imageset/bike-low-rider-s.png,original-render,25712,Meshes3D/bike-low-rider-s.npz
+bike-low-rider-st,Harley-Davidson,Low Rider ST,revert/BikeSprites.xcassets/bike-low-rider-st.imageset/bike-low-rider-st.png,original-render,25712,Meshes3D/bike-low-rider-st.npz
+bike-nightster-975,Harley-Davidson,Nightster 975,revert/BikeSprites.xcassets/bike-nightster-975.imageset/bike-nightster-975.png,original-render,25712,Meshes3D/bike-nightster-975.npz
+bike-nightster-special,Harley-Davidson,Nightster Special,revert/BikeSprites.xcassets/bike-nightster-special.imageset/bike-nightster-special.png,original-render,25712,Meshes3D/bike-nightster-special.npz
+bike-pan-america-1250,Harley-Davidson,Pan America 1250,revert/BikeSprites.xcassets/bike-pan-america-1250.imageset/bike-pan-america-1250.png,original-render,23712,Meshes3D/bike-pan-america-1250.npz
+bike-pan-america-1250-st,Harley-Davidson,Pan America 1250 ST,revert/BikeSprites.xcassets/bike-pan-america-1250-st.imageset/bike-pan-america-1250-st.png,original-render,23712,Meshes3D/bike-pan-america-1250-st.npz
+bike-pan-america-1250-special,Harley-Davidson,Pan America 1250 Special,revert/BikeSprites.xcassets/bike-pan-america-1250-special.imageset/bike-pan-america-1250-special.png,original-render,23712,Meshes3D/bike-pan-america-1250-special.npz
+bike-road-glide,Harley-Davidson,Road Glide,revert/BikeSprites.xcassets/bike-road-glide.imageset/bike-road-glide.png,original-render,21624,Meshes3D/bike-road-glide.npz
+bike-road-glide-limited,Harley-Davidson,Road Glide Limited,revert/BikeSprites.xcassets/bike-road-glide-limited.imageset/bike-road-glide-limited.png,original-render,21624,Meshes3D/bike-road-glide-limited.npz
+bike-road-glide-special,Harley-Davidson,Road Glide Special,revert/BikeSprites.xcassets/bike-road-glide-special.imageset/bike-road-glide-special.png,original-render,21624,Meshes3D/bike-road-glide-special.npz
+bike-road-king-classic,Harley-Davidson,Road King Classic,revert/BikeSprites.xcassets/bike-road-king-classic.imageset/bike-road-king-classic.png,original-render,21624,Meshes3D/bike-road-king-classic.npz
+bike-road-king-flhr,Harley-Davidson,Road King FLHR,revert/BikeSprites.xcassets/bike-road-king-flhr.imageset/bike-road-king-flhr.png,original-render,21624,Meshes3D/bike-road-king-flhr.npz
+bike-road-king-special,Harley-Davidson,Road King Special,revert/BikeSprites.xcassets/bike-road-king-special.imageset/bike-road-king-special.png,original-render,21624,Meshes3D/bike-road-king-special.npz
+bike-softail-slim,Harley-Davidson,Softail Slim,revert/BikeSprites.xcassets/bike-softail-slim.imageset/bike-softail-slim.png,original-render,25712,Meshes3D/bike-softail-slim.npz
+bike-softail-standard,Harley-Davidson,Softail Standard,revert/BikeSprites.xcassets/bike-softail-standard.imageset/bike-softail-standard.png,original-render,25712,Meshes3D/bike-softail-standard.npz
+bike-sport-glide,Harley-Davidson,Sport Glide,revert/BikeSprites.xcassets/bike-sport-glide.imageset/bike-sport-glide.png,original-render,25712,Meshes3D/bike-sport-glide.npz
+bike-sportster-s-1250,Harley-Davidson,Sportster S 1250,revert/BikeSprites.xcassets/bike-sportster-s-1250.imageset/bike-sportster-s-1250.png,original-render,25712,Meshes3D/bike-sportster-s-1250.npz
+bike-sprint,Harley-Davidson,Sprint,revert/BikeSprites.xcassets/bike-sprint.imageset/bike-sprint.png,original-render,25712,Meshes3D/bike-sprint.npz
+bike-street-500,Harley-Davidson,Street 500,revert/BikeSprites.xcassets/bike-street-500.imageset/bike-street-500.png,original-render,25712,Meshes3D/bike-street-500.npz
+bike-street-750,Harley-Davidson,Street 750,revert/BikeSprites.xcassets/bike-street-750.imageset/bike-street-750.png,original-render,25712,Meshes3D/bike-street-750.npz
+bike-street-bob-114,Harley-Davidson,Street Bob 114,revert/BikeSprites.xcassets/bike-street-bob-114.imageset/bike-street-bob-114.png,original-render,25712,Meshes3D/bike-street-bob-114.npz
+bike-street-glide,Harley-Davidson,Street Glide,revert/BikeSprites.xcassets/bike-street-glide.imageset/bike-street-glide.png,original-render,21624,Meshes3D/bike-street-glide.npz
+bike-street-glide-limited,Harley-Davidson,Street Glide Limited,revert/BikeSprites.xcassets/bike-street-glide-limited.imageset/bike-street-glide-limited.png,original-render,21624,Meshes3D/bike-street-glide-limited.npz
+bike-street-glide-special,Harley-Davidson,Street Glide Special,revert/BikeSprites.xcassets/bike-street-glide-special.imageset/bike-street-glide-special.png,original-render,21624,Meshes3D/bike-street-glide-special.npz
+bike-street-glide-trike,Harley-Davidson,Street Glide Trike,revert/BikeSprites.xcassets/bike-street-glide-trike.imageset/bike-street-glide-trike.png,original-render,25712,Meshes3D/bike-street-glide-trike.npz
+bike-street-rod,Harley-Davidson,Street Rod,revert/BikeSprites.xcassets/bike-street-rod.imageset/bike-street-rod.png,original-render,25712,Meshes3D/bike-street-rod.npz
+bike-super-glide-relaunch,Harley-Davidson,Super Glide relaunch,revert/BikeSprites.xcassets/bike-super-glide-relaunch.imageset/bike-super-glide-relaunch.png,original-render,25712,Meshes3D/bike-super-glide-relaunch.npz
+bike-tri-glide-ultra,Harley-Davidson,Tri Glide Ultra,revert/BikeSprites.xcassets/bike-tri-glide-ultra.imageset/bike-tri-glide-ultra.png,original-render,25712,Meshes3D/bike-tri-glide-ultra.npz
+bike-ultra-limited,Harley-Davidson,Ultra Limited,revert/BikeSprites.xcassets/bike-ultra-limited.imageset/bike-ultra-limited.png,original-render,21624,Meshes3D/bike-ultra-limited.npz
+bike-vr1000,Harley-Davidson,VR1000,revert/BikeSprites.xcassets/bike-vr1000.imageset/bike-vr1000.png,original-render,28032,Meshes3D/bike-vr1000.npz
+bike-vrsca-v-rod,Harley-Davidson,VRSCA V-Rod,revert/BikeSprites.xcassets/bike-vrsca-v-rod.imageset/bike-vrsca-v-rod.png,original-render,25712,Meshes3D/bike-vrsca-v-rod.npz
+bike-vrscb-v-rod,Harley-Davidson,VRSCB V-Rod,revert/BikeSprites.xcassets/bike-vrscb-v-rod.imageset/bike-vrscb-v-rod.png,original-render,25712,Meshes3D/bike-vrscb-v-rod.npz
+bike-vrscd-night-rod,Harley-Davidson,VRSCD Night Rod,revert/BikeSprites.xcassets/bike-vrscd-night-rod.imageset/bike-vrscd-night-rod.png,original-render,25712,Meshes3D/bike-vrscd-night-rod.npz
+bike-vrscdx-night-rod-special,Harley-Davidson,VRSCDX Night Rod Special,revert/BikeSprites.xcassets/bike-vrscdx-night-rod-special.imageset/bike-vrscdx-night-rod-special.png,original-render,25712,Meshes3D/bike-vrscdx-night-rod-special.npz
+bike-vrscf-v-rod-muscle,Harley-Davidson,VRSCF V-Rod Muscle,revert/BikeSprites.xcassets/bike-vrscf-v-rod-muscle.imageset/bike-vrscf-v-rod-muscle.png,original-render,25712,Meshes3D/bike-vrscf-v-rod-muscle.npz
+bike-xl1200c-sportster-1200-custom,Harley-Davidson,XL1200C Sportster 1200 Custom,revert/BikeSprites.xcassets/bike-xl1200c-sportster-1200-custom.imageset/bike-xl1200c-sportster-1200-custom.png,original-render,25712,Meshes3D/bike-xl1200c-sportster-1200-custom.npz
+bike-xl1200cx-roadster,Harley-Davidson,XL1200CX Roadster,revert/BikeSprites.xcassets/bike-xl1200cx-roadster.imageset/bike-xl1200cx-roadster.png,original-render,25712,Meshes3D/bike-xl1200cx-roadster.npz
+bike-xl1200n-nightster,Harley-Davidson,XL1200N Nightster,revert/BikeSprites.xcassets/bike-xl1200n-nightster.imageset/bike-xl1200n-nightster.png,original-render,25712,Meshes3D/bike-xl1200n-nightster.npz
+bike-xl1200ns-iron-1200,Harley-Davidson,XL1200NS Iron 1200,revert/BikeSprites.xcassets/bike-xl1200ns-iron-1200.imageset/bike-xl1200ns-iron-1200.png,original-render,25712,Meshes3D/bike-xl1200ns-iron-1200.npz
+bike-xl1200s-sport,Harley-Davidson,XL1200S Sport,revert/BikeSprites.xcassets/bike-xl1200s-sport.imageset/bike-xl1200s-sport.png,original-render,25712,Meshes3D/bike-xl1200s-sport.npz
+bike-xl1200t-superlow,Harley-Davidson,XL1200T SuperLow,revert/BikeSprites.xcassets/bike-xl1200t-superlow.imageset/bike-xl1200t-superlow.png,original-render,25712,Meshes3D/bike-xl1200t-superlow.npz
+bike-xl1200v-seventy-two,Harley-Davidson,XL1200V Seventy-Two,revert/BikeSprites.xcassets/bike-xl1200v-seventy-two.imageset/bike-xl1200v-seventy-two.png,original-render,25712,Meshes3D/bike-xl1200v-seventy-two.npz
+bike-xl1200x-forty-eight,Harley-Davidson,XL1200X Forty-Eight,revert/BikeSprites.xcassets/bike-xl1200x-forty-eight.imageset/bike-xl1200x-forty-eight.png,original-render,25712,Meshes3D/bike-xl1200x-forty-eight.npz
+bike-xl883-hugger,Harley-Davidson,XL883 Hugger,revert/BikeSprites.xcassets/bike-xl883-hugger.imageset/bike-xl883-hugger.png,original-render,25712,Meshes3D/bike-xl883-hugger.npz
+bike-xl883-iron,Harley-Davidson,XL883 Iron,revert/BikeSprites.xcassets/bike-xl883-iron.imageset/bike-xl883-iron.png,original-render,25712,Meshes3D/bike-xl883-iron.npz
+bike-xl883-low,Harley-Davidson,XL883 Low,revert/BikeSprites.xcassets/bike-xl883-low.imageset/bike-xl883-low.png,original-render,25712,Meshes3D/bike-xl883-low.npz
+bike-xl883-sportster,Harley-Davidson,XL883 Sportster,revert/BikeSprites.xcassets/bike-xl883-sportster.imageset/bike-xl883-sportster.png,original-render,25712,Meshes3D/bike-xl883-sportster.npz
+bike-xr1200,Harley-Davidson,XR1200,revert/BikeSprites.xcassets/bike-xr1200.imageset/bike-xr1200.png,original-render,24008,Meshes3D/bike-xr1200.npz
+bike-xr1200x,Harley-Davidson,XR1200X,revert/BikeSprites.xcassets/bike-xr1200x.imageset/bike-xr1200x.png,original-render,25712,Meshes3D/bike-xr1200x.npz
+bike-adv150-160,Honda,ADV150/160,revert/BikeSprites.xcassets/bike-adv150-160.imageset/bike-adv150-160.png,original-render,29992,Meshes3D/bike-adv150-160.npz
+bike-africa-twin-adventure-sports,Honda,Africa Twin Adventure Sports,revert/BikeSprites.xcassets/bike-africa-twin-adventure-sports.imageset/bike-africa-twin-adventure-sports.png,original-render,23712,Meshes3D/bike-africa-twin-adventure-sports.npz
+bike-cb1000-hornet,Honda,CB1000 Hornet,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb1000-hornet.npz
+bike-cb1100,Honda,CB1100,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb1100.npz
+bike-cb1300-super-four,Honda,CB1300 Super Four,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb1300-super-four.npz
+bike-cb250-nighthawk,Honda,CB250 Nighthawk,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb250-nighthawk.npz
+bike-cb500-twin,Honda,CB500 Twin,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb500-twin.npz
+bike-cb500f,Honda,CB500F,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb500f.npz
+bike-cb500x,Honda,CB500X,revert/BikeSprites.xcassets/bike-cb500x.imageset/bike-cb500x.png,original-render,23712,Meshes3D/bike-cb500x.npz
+bike-cb600f-hornet-599,Honda,CB600F Hornet 599,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb600f-hornet-599.npz
+bike-cb650f,Honda,CB650F,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb650f.npz
+bike-cb650r,Honda,CB650R,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb650r.npz
+bike-cb750-hornet,Honda,CB750 Hornet,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb750-hornet.npz
+bike-cb750-nighthawk,Honda,CB750 Nighthawk,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb750-nighthawk.npz
+bike-cb900f-hornet-919,Honda,CB900F Hornet 919,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-cb900f-hornet-919.npz
+bike-cbr150r,Honda,CBR150R,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr150r.npz
+bike-cbr150r-2010,Honda,CBR150R,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr150r-2010.npz
+bike-cbr150r-2016,Honda,CBR150R,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr150r-2016.npz
+bike-cbr150r-2021,Honda,CBR150R,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr150r-2021.npz
+bike-cbr250r-1986,Honda,CBR250R,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr250r-1986.npz
+bike-cbr250rr,Honda,CBR250RR,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr250rr.npz
+bike-cbr250rr-2017,Honda,CBR250RR,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr250rr-2017.npz
+bike-cbr250rr-2020,Honda,CBR250RR,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr250rr-2020.npz
+bike-cbr400f,Honda,CBR400F,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr400f.npz
+bike-cbr400r,Honda,CBR400R,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr400r.npz
+bike-cbr400rr,Honda,CBR400RR,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr400rr.npz
+bike-cbr400rr-1990,Honda,CBR400RR,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr400rr-1990.npz
+bike-cbr600f-hurricane,Honda,CBR600F Hurricane,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr600f-hurricane.npz
+bike-cbr750f,Honda,CBR750F,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr750f.npz
+bike-cbr919rr-1996-1999,Honda,CBR919RR,bikes/refs/honda-cbr.png,family-reference,12416,Meshes3D/bike-cbr919rr-1996-1999.npz
+bike-crf1000l-africa-twin,Honda,CRF1000L Africa Twin,revert/BikeSprites.xcassets/bike-crf1000l-africa-twin.imageset/bike-crf1000l-africa-twin.png,original-render,23712,Meshes3D/bike-crf1000l-africa-twin.npz
+bike-crf1100l-africa-twin,Honda,CRF1100L Africa Twin,revert/BikeSprites.xcassets/bike-crf1100l-africa-twin.imageset/bike-crf1100l-africa-twin.png,original-render,23712,Meshes3D/bike-crf1100l-africa-twin.npz
+bike-crf250-rally,Honda,CRF250 Rally,revert/BikeSprites.xcassets/bike-crf250-rally.imageset/bike-crf250-rally.png,original-render,22332,Meshes3D/bike-crf250-rally.npz
+bike-crf250l,Honda,CRF250L,revert/BikeSprites.xcassets/bike-crf250l.imageset/bike-crf250l.png,original-render,22332,Meshes3D/bike-crf250l.npz
+bike-crf300l,Honda,CRF300L,revert/BikeSprites.xcassets/bike-crf300l.imageset/bike-crf300l.png,original-render,22332,Meshes3D/bike-crf300l.npz
+bike-crf300l-rally,Honda,CRF300L Rally,revert/BikeSprites.xcassets/bike-crf300l-rally.imageset/bike-crf300l-rally.png,original-render,22332,Meshes3D/bike-crf300l-rally.npz
+bike-crf450rl,Honda,CRF450RL,revert/BikeSprites.xcassets/bike-crf450rl.imageset/bike-crf450rl.png,original-render,22332,Meshes3D/bike-crf450rl.npz
+bike-ct125-hunter-cub,Honda,CT125 Hunter Cub,revert/BikeSprites.xcassets/bike-ct125-hunter-cub.imageset/bike-ct125-hunter-cub.png,original-render,23116,Meshes3D/bike-ct125-hunter-cub.npz
+bike-ctx1300,Honda,CTX1300,revert/BikeSprites.xcassets/bike-ctx1300.imageset/bike-ctx1300.png,original-render,21624,Meshes3D/bike-ctx1300.npz
+bike-ctx700,Honda,CTX700,revert/BikeSprites.xcassets/bike-ctx700.imageset/bike-ctx700.png,original-render,21624,Meshes3D/bike-ctx700.npz
+bike-dax-st125,Honda,Dax ST125,revert/BikeSprites.xcassets/bike-dax-st125.imageset/bike-dax-st125.png,original-render,22588,Meshes3D/bike-dax-st125.npz
+bike-forza-300,Honda,Forza 300,revert/BikeSprites.xcassets/bike-forza-300.imageset/bike-forza-300.png,original-render,29992,Meshes3D/bike-forza-300.npz
+bike-forza-350,Honda,Forza 350,revert/BikeSprites.xcassets/bike-forza-350.imageset/bike-forza-350.png,original-render,29992,Meshes3D/bike-forza-350.npz
+bike-forza-750,Honda,Forza 750,revert/BikeSprites.xcassets/bike-forza-750.imageset/bike-forza-750.png,original-render,29992,Meshes3D/bike-forza-750.npz
+bike-fury-vt1300cx,Honda,Fury VT1300CX,revert/BikeSprites.xcassets/bike-fury-vt1300cx.imageset/bike-fury-vt1300cx.png,original-render,25712,Meshes3D/bike-fury-vt1300cx.npz
+bike-gold-wing-f6b,Honda,Gold Wing F6B,revert/BikeSprites.xcassets/bike-gold-wing-f6b.imageset/bike-gold-wing-f6b.png,original-render,21624,Meshes3D/bike-gold-wing-f6b.npz
+bike-gold-wing-gl1500,Honda,Gold Wing GL1500,revert/BikeSprites.xcassets/bike-gold-wing-gl1500.imageset/bike-gold-wing-gl1500.png,original-render,21624,Meshes3D/bike-gold-wing-gl1500.npz
+bike-gold-wing-gl1800,Honda,Gold Wing GL1800,revert/BikeSprites.xcassets/bike-gold-wing-gl1800.imageset/bike-gold-wing-gl1800.png,original-render,21624,Meshes3D/bike-gold-wing-gl1800.npz
+bike-gold-wing-tour-dct,Honda,Gold Wing Tour DCT,revert/BikeSprites.xcassets/bike-gold-wing-tour-dct.imageset/bike-gold-wing-tour-dct.png,original-render,21624,Meshes3D/bike-gold-wing-tour-dct.npz
+bike-grom,Honda,Grom,revert/BikeSprites.xcassets/bike-grom.imageset/bike-grom.png,original-render,24112,Meshes3D/bike-grom.npz
+bike-hawk-gt-nt650,Honda,Hawk GT NT650,bikes/refs/honda-cb-hornet.png,family-reference,21960,Meshes3D/bike-hawk-gt-nt650.npz
+bike-integra-700,Honda,Integra 700,revert/BikeSprites.xcassets/bike-integra-700.imageset/bike-integra-700.png,original-render,29992,Meshes3D/bike-integra-700.npz
+bike-interstate-vt1300ct,Honda,Interstate VT1300CT,revert/BikeSprites.xcassets/bike-interstate-vt1300ct.imageset/bike-interstate-vt1300ct.png,original-render,25712,Meshes3D/bike-interstate-vt1300ct.npz
+bike-magna-vf750c,Honda,Magna VF750C,revert/BikeSprites.xcassets/bike-magna-vf750c.imageset/bike-magna-vf750c.png,original-render,25712,Meshes3D/bike-magna-vf750c.npz
+bike-monkey,Honda,Monkey,revert/BikeSprites.xcassets/bike-monkey.imageset/bike-monkey.png,original-render,24008,Meshes3D/bike-monkey.npz
+bike-nc700s,Honda,NC700S,revert/BikeSprites.xcassets/bike-nc700s.imageset/bike-nc700s.png,original-render,23712,Meshes3D/bike-nc700s.npz
+bike-nc700x,Honda,NC700X,revert/BikeSprites.xcassets/bike-nc700x.imageset/bike-nc700x.png,original-render,23712,Meshes3D/bike-nc700x.npz
+bike-nc750s,Honda,NC750S,revert/BikeSprites.xcassets/bike-nc750s.imageset/bike-nc750s.png,original-render,23712,Meshes3D/bike-nc750s.npz
+bike-nc750x,Honda,NC750X,revert/BikeSprites.xcassets/bike-nc750x.imageset/bike-nc750x.png,original-render,23712,Meshes3D/bike-nc750x.npz
+bike-nt1100,Honda,NT1100,revert/BikeSprites.xcassets/bike-nt1100.imageset/bike-nt1100.png,original-render,21624,Meshes3D/bike-nt1100.npz
+bike-nt700v-deauville,Honda,NT700V Deauville,revert/BikeSprites.xcassets/bike-nt700v-deauville.imageset/bike-nt700v-deauville.png,original-render,21624,Meshes3D/bike-nt700v-deauville.npz
+bike-nx650-dominator,Honda,NX650 Dominator,revert/BikeSprites.xcassets/bike-nx650-dominator.imageset/bike-nx650-dominator.png,original-render,23712,Meshes3D/bike-nx650-dominator.npz
+bike-navi,Honda,Navi,revert/BikeSprites.xcassets/bike-navi.imageset/bike-navi.png,original-render,22588,Meshes3D/bike-navi.npz
+bike-pcx-125-160,Honda,PCX 125/160,revert/BikeSprites.xcassets/bike-pcx-125-160.imageset/bike-pcx-125-160.png,original-render,29992,Meshes3D/bike-pcx-125-160.npz
+bike-rebel-1100,Honda,Rebel 1100,revert/BikeSprites.xcassets/bike-rebel-1100.imageset/bike-rebel-1100.png,original-render,25712,Meshes3D/bike-rebel-1100.npz
+bike-rebel-1100-dct,Honda,Rebel 1100 DCT,revert/BikeSprites.xcassets/bike-rebel-1100-dct.imageset/bike-rebel-1100-dct.png,original-render,25712,Meshes3D/bike-rebel-1100-dct.npz
+bike-rebel-250-cmx250c,Honda,Rebel 250 CMX250C,revert/BikeSprites.xcassets/bike-rebel-250-cmx250c.imageset/bike-rebel-250-cmx250c.png,original-render,25712,Meshes3D/bike-rebel-250-cmx250c.npz
+bike-rebel-300,Honda,Rebel 300,revert/BikeSprites.xcassets/bike-rebel-300.imageset/bike-rebel-300.png,original-render,25712,Meshes3D/bike-rebel-300.npz
+bike-rebel-500,Honda,Rebel 500,revert/BikeSprites.xcassets/bike-rebel-500.imageset/bike-rebel-500.png,original-render,25712,Meshes3D/bike-rebel-500.npz
+bike-ruckus,Honda,Ruckus,revert/BikeSprites.xcassets/bike-ruckus.imageset/bike-ruckus.png,original-render,24008,Meshes3D/bike-ruckus.npz
+bike-sh125-150,Honda,SH125/150,revert/BikeSprites.xcassets/bike-sh125-150.imageset/bike-sh125-150.png,original-render,29992,Meshes3D/bike-sh125-150.npz
+bike-sh350i,Honda,SH350i,revert/BikeSprites.xcassets/bike-sh350i.imageset/bike-sh350i.png,original-render,29992,Meshes3D/bike-sh350i.npz
+bike-st1100-pan-european,Honda,ST1100 Pan European,revert/BikeSprites.xcassets/bike-st1100-pan-european.imageset/bike-st1100-pan-european.png,original-render,21624,Meshes3D/bike-st1100-pan-european.npz
+bike-st1300-pan-european,Honda,ST1300 Pan European,revert/BikeSprites.xcassets/bike-st1300-pan-european.imageset/bike-st1300-pan-european.png,original-render,21624,Meshes3D/bike-st1300-pan-european.npz
+bike-sabre-vt1300cs,Honda,Sabre VT1300CS,revert/BikeSprites.xcassets/bike-sabre-vt1300cs.imageset/bike-sabre-vt1300cs.png,original-render,25712,Meshes3D/bike-sabre-vt1300cs.npz
+bike-shadow-aero-vt750c,Honda,Shadow Aero VT750C,revert/BikeSprites.xcassets/bike-shadow-aero-vt750c.imageset/bike-shadow-aero-vt750c.png,original-render,25712,Meshes3D/bike-shadow-aero-vt750c.npz
+bike-shadow-phantom,Honda,Shadow Phantom,revert/BikeSprites.xcassets/bike-shadow-phantom.imageset/bike-shadow-phantom.png,original-render,25712,Meshes3D/bike-shadow-phantom.npz
+bike-shadow-rs,Honda,Shadow RS,revert/BikeSprites.xcassets/bike-shadow-rs.imageset/bike-shadow-rs.png,original-render,25712,Meshes3D/bike-shadow-rs.npz
+bike-shadow-spirit-750-vt750dc,Honda,Shadow Spirit 750 VT750DC,revert/BikeSprites.xcassets/bike-shadow-spirit-750-vt750dc.imageset/bike-shadow-spirit-750-vt750dc.png,original-render,25712,Meshes3D/bike-shadow-spirit-750-vt750dc.npz
+bike-shadow-vlx-vt600c,Honda,Shadow VLX VT600C,revert/BikeSprites.xcassets/bike-shadow-vlx-vt600c.imageset/bike-shadow-vlx-vt600c.png,original-render,25712,Meshes3D/bike-shadow-vlx-vt600c.npz
+bike-shadow-vt1100c,Honda,Shadow VT1100C,revert/BikeSprites.xcassets/bike-shadow-vt1100c.imageset/bike-shadow-vt1100c.png,original-render,25712,Meshes3D/bike-shadow-vt1100c.npz
+bike-silver-wing-fjs600,Honda,Silver Wing FJS600,revert/BikeSprites.xcassets/bike-silver-wing-fjs600.imageset/bike-silver-wing-fjs600.png,original-render,29992,Meshes3D/bike-silver-wing-fjs600.npz
+bike-stateline-vt1300cr,Honda,Stateline VT1300CR,revert/BikeSprites.xcassets/bike-stateline-vt1300cr.imageset/bike-stateline-vt1300cr.png,original-render,25712,Meshes3D/bike-stateline-vt1300cr.npz
+bike-super-cub-c125,Honda,Super Cub C125,revert/BikeSprites.xcassets/bike-super-cub-c125.imageset/bike-super-cub-c125.png,original-render,24008,Meshes3D/bike-super-cub-c125.npz
+bike-trail125,Honda,Trail125,revert/BikeSprites.xcassets/bike-trail125.imageset/bike-trail125.png,original-render,24112,Meshes3D/bike-trail125.npz
+bike-vfr1200x-crosstourer,Honda,VFR1200X Crosstourer,revert/BikeSprites.xcassets/bike-vfr1200x-crosstourer.imageset/bike-vfr1200x-crosstourer.png,original-render,23712,Meshes3D/bike-vfr1200x-crosstourer.npz
+bike-vfr800x-crossrunner,Honda,VFR800X Crossrunner,revert/BikeSprites.xcassets/bike-vfr800x-crossrunner.imageset/bike-vfr800x-crossrunner.png,original-render,23712,Meshes3D/bike-vfr800x-crossrunner.npz
+bike-vtx1300,Honda,VTX1300,revert/BikeSprites.xcassets/bike-vtx1300.imageset/bike-vtx1300.png,original-render,25712,Meshes3D/bike-vtx1300.npz
+bike-vtx1800,Honda,VTX1800,revert/BikeSprites.xcassets/bike-vtx1800.imageset/bike-vtx1800.png,original-render,25712,Meshes3D/bike-vtx1800.npz
+bike-valkyrie-gl1500c,Honda,Valkyrie GL1500C,revert/BikeSprites.xcassets/bike-valkyrie-gl1500c.imageset/bike-valkyrie-gl1500c.png,original-render,21624,Meshes3D/bike-valkyrie-gl1500c.npz
+bike-valkyrie-interstate,Honda,Valkyrie Interstate,revert/BikeSprites.xcassets/bike-valkyrie-interstate.imageset/bike-valkyrie-interstate.png,original-render,21624,Meshes3D/bike-valkyrie-interstate.npz
+bike-valkyrie-rune,Honda,Valkyrie Rune,revert/BikeSprites.xcassets/bike-valkyrie-rune.imageset/bike-valkyrie-rune.png,original-render,21624,Meshes3D/bike-valkyrie-rune.npz
+bike-vision-110,Honda,Vision 110,revert/BikeSprites.xcassets/bike-vision-110.imageset/bike-vision-110.png,original-render,29992,Meshes3D/bike-vision-110.npz
+bike-x-adv,Honda,X-ADV,revert/BikeSprites.xcassets/bike-x-adv.imageset/bike-x-adv.png,original-render,23712,Meshes3D/bike-x-adv.npz
+bike-xl1000v-varadero,Honda,XL1000V Varadero,revert/BikeSprites.xcassets/bike-xl1000v-varadero.imageset/bike-xl1000v-varadero.png,original-render,23712,Meshes3D/bike-xl1000v-varadero.npz
+bike-xl600v-transalp,Honda,XL600V Transalp,revert/BikeSprites.xcassets/bike-xl600v-transalp.imageset/bike-xl600v-transalp.png,original-render,23712,Meshes3D/bike-xl600v-transalp.npz
+bike-xl650v-transalp,Honda,XL650V Transalp,revert/BikeSprites.xcassets/bike-xl650v-transalp.imageset/bike-xl650v-transalp.png,original-render,23712,Meshes3D/bike-xl650v-transalp.npz
+bike-xl700v-transalp,Honda,XL700V Transalp,revert/BikeSprites.xcassets/bike-xl700v-transalp.imageset/bike-xl700v-transalp.png,original-render,23712,Meshes3D/bike-xl700v-transalp.npz
+bike-xl750-transalp,Honda,XL750 Transalp,revert/BikeSprites.xcassets/bike-xl750-transalp.imageset/bike-xl750-transalp.png,original-render,23712,Meshes3D/bike-xl750-transalp.npz
+bike-xr250l,Honda,XR250L,revert/BikeSprites.xcassets/bike-xr250l.imageset/bike-xr250l.png,original-render,22332,Meshes3D/bike-xr250l.npz
+bike-xr400r,Honda,XR400R,revert/BikeSprites.xcassets/bike-xr400r.imageset/bike-xr400r.png,original-render,22332,Meshes3D/bike-xr400r.npz
+bike-xr650l,Honda,XR650L,revert/BikeSprites.xcassets/bike-xr650l.imageset/bike-xr650l.png,original-render,22332,Meshes3D/bike-xr650l.npz
+bike-xrv750-africa-twin,Honda,XRV750 Africa Twin,revert/BikeSprites.xcassets/bike-xrv750-africa-twin.imageset/bike-xrv750-africa-twin.png,original-render,23712,Meshes3D/bike-xrv750-africa-twin.npz
+bike-vitpilen-401,Husqvarna,Vitpilen 401,revert/BikeSprites.xcassets/bike-vitpilen-401.imageset/bike-vitpilen-401.png,original-render,24008,Meshes3D/bike-vitpilen-401.npz
+bike-vitpilen-401-2024,Husqvarna,Vitpilen 401,revert/BikeSprites.xcassets/bike-vitpilen-401-2024.imageset/bike-vitpilen-401-2024.png,original-render,24008,Meshes3D/bike-vitpilen-401-2024.npz
+bike-vitpilen-801,Husqvarna,Vitpilen 801,revert/BikeSprites.xcassets/bike-vitpilen-801.imageset/bike-vitpilen-801.png,original-render,23116,Meshes3D/bike-vitpilen-801.npz
+bike-101-scout,Indian,101 Scout,revert/BikeSprites.xcassets/bike-101-scout.imageset/bike-101-scout.png,original-render,25712,Meshes3D/bike-101-scout.npz
+bike-challenger,Indian,Challenger,revert/BikeSprites.xcassets/bike-challenger.imageset/bike-challenger.png,original-render,21624,Meshes3D/bike-challenger.npz
+bike-challenger-dark-horse,Indian,Challenger Dark Horse,revert/BikeSprites.xcassets/bike-challenger-dark-horse.imageset/bike-challenger-dark-horse.png,original-render,21624,Meshes3D/bike-challenger-dark-horse.npz
+bike-chief-bobber,Indian,Chief Bobber,revert/BikeSprites.xcassets/bike-chief-bobber.imageset/bike-chief-bobber.png,original-render,25712,Meshes3D/bike-chief-bobber.npz
+bike-chief-classic,Indian,Chief Classic,revert/BikeSprites.xcassets/bike-chief-classic.imageset/bike-chief-classic.png,original-render,25712,Meshes3D/bike-chief-classic.npz
+bike-chief-dark-horse,Indian,Chief Dark Horse,revert/BikeSprites.xcassets/bike-chief-dark-horse.imageset/bike-chief-dark-horse.png,original-render,25712,Meshes3D/bike-chief-dark-horse.npz
+bike-chief-vintage,Indian,Chief Vintage,revert/BikeSprites.xcassets/bike-chief-vintage.imageset/bike-chief-vintage.png,original-render,25712,Meshes3D/bike-chief-vintage.npz
+bike-chieftain,Indian,Chieftain,revert/BikeSprites.xcassets/bike-chieftain.imageset/bike-chieftain.png,original-render,21624,Meshes3D/bike-chieftain.npz
+bike-chieftain-dark-horse,Indian,Chieftain Dark Horse,revert/BikeSprites.xcassets/bike-chieftain-dark-horse.imageset/bike-chieftain-dark-horse.png,original-render,21624,Meshes3D/bike-chieftain-dark-horse.npz
+bike-chieftain-elite,Indian,Chieftain Elite,revert/BikeSprites.xcassets/bike-chieftain-elite.imageset/bike-chieftain-elite.png,original-render,21624,Meshes3D/bike-chieftain-elite.npz
+bike-chieftain-limited,Indian,Chieftain Limited,revert/BikeSprites.xcassets/bike-chieftain-limited.imageset/bike-chieftain-limited.png,original-render,21624,Meshes3D/bike-chieftain-limited.npz
+bike-ftr-1200,Indian,FTR 1200,revert/BikeSprites.xcassets/bike-ftr-1200.imageset/bike-ftr-1200.png,original-render,28996,Meshes3D/bike-ftr-1200.npz
+bike-ftr-r-carbon,Indian,FTR R Carbon,revert/BikeSprites.xcassets/bike-ftr-r-carbon.imageset/bike-ftr-r-carbon.png,original-render,29196,Meshes3D/bike-ftr-r-carbon.npz
+bike-ftr-rally,Indian,FTR Rally,revert/BikeSprites.xcassets/bike-ftr-rally.imageset/bike-ftr-rally.png,original-render,29196,Meshes3D/bike-ftr-rally.npz
+bike-ftr-s,Indian,FTR S,revert/BikeSprites.xcassets/bike-ftr-s.imageset/bike-ftr-s.png,original-render,28996,Meshes3D/bike-ftr-s.npz
+bike-ftr-sport,Indian,FTR Sport,revert/BikeSprites.xcassets/bike-ftr-sport.imageset/bike-ftr-sport.png,original-render,28032,Meshes3D/bike-ftr-sport.npz
+bike-pursuit,Indian,Pursuit,revert/BikeSprites.xcassets/bike-pursuit.imageset/bike-pursuit.png,original-render,21624,Meshes3D/bike-pursuit.npz
+bike-pursuit-limited,Indian,Pursuit Limited,revert/BikeSprites.xcassets/bike-pursuit-limited.imageset/bike-pursuit-limited.png,original-render,21624,Meshes3D/bike-pursuit-limited.npz
+bike-roadmaster,Indian,Roadmaster,revert/BikeSprites.xcassets/bike-roadmaster.imageset/bike-roadmaster.png,original-render,21624,Meshes3D/bike-roadmaster.npz
+bike-roadmaster-dark-horse,Indian,Roadmaster Dark Horse,revert/BikeSprites.xcassets/bike-roadmaster-dark-horse.imageset/bike-roadmaster-dark-horse.png,original-render,21624,Meshes3D/bike-roadmaster-dark-horse.npz
+bike-roadmaster-limited,Indian,Roadmaster Limited,revert/BikeSprites.xcassets/bike-roadmaster-limited.imageset/bike-roadmaster-limited.png,original-render,21624,Meshes3D/bike-roadmaster-limited.npz
+bike-scout,Indian,Scout,revert/BikeSprites.xcassets/bike-scout.imageset/bike-scout.png,original-render,25712,Meshes3D/bike-scout.npz
+bike-scout-bobber,Indian,Scout Bobber,revert/BikeSprites.xcassets/bike-scout-bobber.imageset/bike-scout-bobber.png,original-render,25712,Meshes3D/bike-scout-bobber.npz
+bike-scout-bobber-twenty,Indian,Scout Bobber Twenty,revert/BikeSprites.xcassets/bike-scout-bobber-twenty.imageset/bike-scout-bobber-twenty.png,original-render,25712,Meshes3D/bike-scout-bobber-twenty.npz
+bike-scout-rogue,Indian,Scout Rogue,revert/BikeSprites.xcassets/bike-scout-rogue.imageset/bike-scout-rogue.png,original-render,25712,Meshes3D/bike-scout-rogue.npz
+bike-scout-sixty,Indian,Scout Sixty,revert/BikeSprites.xcassets/bike-scout-sixty.imageset/bike-scout-sixty.png,original-render,25712,Meshes3D/bike-scout-sixty.npz
+bike-sport-scout,Indian,Sport Scout,revert/BikeSprites.xcassets/bike-sport-scout.imageset/bike-sport-scout.png,original-render,25712,Meshes3D/bike-sport-scout.npz
+bike-springfield,Indian,Springfield,revert/BikeSprites.xcassets/bike-springfield.imageset/bike-springfield.png,original-render,21624,Meshes3D/bike-springfield.npz
+bike-springfield-dark-horse,Indian,Springfield Dark Horse,revert/BikeSprites.xcassets/bike-springfield-dark-horse.imageset/bike-springfield-dark-horse.png,original-render,21624,Meshes3D/bike-springfield-dark-horse.npz
+bike-super-chief,Indian,Super Chief,revert/BikeSprites.xcassets/bike-super-chief.imageset/bike-super-chief.png,original-render,25712,Meshes3D/bike-super-chief.npz
+bike-super-scout,Indian,Super Scout,revert/BikeSprites.xcassets/bike-super-scout.imageset/bike-super-scout.png,original-render,25712,Meshes3D/bike-super-scout.npz
+bike-1050-adventure,KTM,1050 Adventure,revert/BikeSprites.xcassets/bike-1050-adventure.imageset/bike-1050-adventure.png,original-render,23712,Meshes3D/bike-1050-adventure.npz
+bike-1090-adventure,KTM,1090 Adventure,revert/BikeSprites.xcassets/bike-1090-adventure.imageset/bike-1090-adventure.png,original-render,23712,Meshes3D/bike-1090-adventure.npz
+bike-1190-adventure,KTM,1190 Adventure,revert/BikeSprites.xcassets/bike-1190-adventure.imageset/bike-1190-adventure.png,original-render,23712,Meshes3D/bike-1190-adventure.npz
+bike-125-duke,KTM,125 Duke,revert/BikeSprites.xcassets/bike-125-duke.imageset/bike-125-duke.png,original-render,24112,Meshes3D/bike-125-duke.npz
+bike-1290-super-adventure,KTM,1290 Super Adventure,revert/BikeSprites.xcassets/bike-1290-super-adventure.imageset/bike-1290-super-adventure.png,original-render,23712,Meshes3D/bike-1290-super-adventure.npz
+bike-1290-super-duke-gt,KTM,1290 Super Duke GT,revert/BikeSprites.xcassets/bike-1290-super-duke-gt.imageset/bike-1290-super-duke-gt.png,original-render,24112,Meshes3D/bike-1290-super-duke-gt.npz
+bike-1290-super-duke-r,KTM,1290 Super Duke R,revert/BikeSprites.xcassets/bike-1290-super-duke-r.imageset/bike-1290-super-duke-r.png,original-render,24112,Meshes3D/bike-1290-super-duke-r.npz
+bike-1390-super-duke-r,KTM,1390 Super Duke R,revert/BikeSprites.xcassets/bike-1390-super-duke-r.imageset/bike-1390-super-duke-r.png,original-render,23116,Meshes3D/bike-1390-super-duke-r.npz
+bike-200-duke,KTM,200 Duke,revert/BikeSprites.xcassets/bike-200-duke.imageset/bike-200-duke.png,original-render,21804,Meshes3D/bike-200-duke.npz
+bike-250-adventure,KTM,250 Adventure,revert/BikeSprites.xcassets/bike-250-adventure.imageset/bike-250-adventure.png,original-render,23712,Meshes3D/bike-250-adventure.npz
+bike-250-duke,KTM,250 Duke,revert/BikeSprites.xcassets/bike-250-duke.imageset/bike-250-duke.png,original-render,21804,Meshes3D/bike-250-duke.npz
+bike-390-adventure,KTM,390 Adventure,revert/BikeSprites.xcassets/bike-390-adventure.imageset/bike-390-adventure.png,original-render,23712,Meshes3D/bike-390-adventure.npz
+bike-390-duke,KTM,390 Duke,revert/BikeSprites.xcassets/bike-390-duke.imageset/bike-390-duke.png,original-render,21804,Meshes3D/bike-390-duke.npz
+bike-640-adventure,KTM,640 Adventure,revert/BikeSprites.xcassets/bike-640-adventure.imageset/bike-640-adventure.png,original-render,23712,Meshes3D/bike-640-adventure.npz
+bike-640-duke-ii,KTM,640 Duke II,revert/BikeSprites.xcassets/bike-640-duke-ii.imageset/bike-640-duke-ii.png,original-render,24008,Meshes3D/bike-640-duke-ii.npz
+bike-640-lc4-supermoto,KTM,640 LC4 Supermoto,revert/BikeSprites.xcassets/bike-640-lc4-supermoto.imageset/bike-640-lc4-supermoto.png,original-render,22332,Meshes3D/bike-640-lc4-supermoto.npz
+bike-690-duke,KTM,690 Duke,revert/BikeSprites.xcassets/bike-690-duke.imageset/bike-690-duke.png,original-render,24008,Meshes3D/bike-690-duke.npz
+bike-690-enduro-r,KTM,690 Enduro R,revert/BikeSprites.xcassets/bike-690-enduro-r.imageset/bike-690-enduro-r.png,original-render,22332,Meshes3D/bike-690-enduro-r.npz
+bike-690-smc-r,KTM,690 SMC R,revert/BikeSprites.xcassets/bike-690-smc-r.imageset/bike-690-smc-r.png,original-render,22332,Meshes3D/bike-690-smc-r.npz
+bike-790-adventure,KTM,790 Adventure,revert/BikeSprites.xcassets/bike-790-adventure.imageset/bike-790-adventure.png,original-render,23712,Meshes3D/bike-790-adventure.npz
+bike-790-duke,KTM,790 Duke,revert/BikeSprites.xcassets/bike-790-duke.imageset/bike-790-duke.png,original-render,22588,Meshes3D/bike-790-duke.npz
+bike-890-adventure,KTM,890 Adventure,revert/BikeSprites.xcassets/bike-890-adventure.imageset/bike-890-adventure.png,original-render,23712,Meshes3D/bike-890-adventure.npz
+bike-890-duke,KTM,890 Duke,revert/BikeSprites.xcassets/bike-890-duke.imageset/bike-890-duke.png,original-render,21804,Meshes3D/bike-890-duke.npz
+bike-890-duke-r,KTM,890 Duke R,revert/BikeSprites.xcassets/bike-890-duke-r.imageset/bike-890-duke-r.png,original-render,22588,Meshes3D/bike-890-duke-r.npz
+bike-950-adventure,KTM,950 Adventure,revert/BikeSprites.xcassets/bike-950-adventure.imageset/bike-950-adventure.png,original-render,23712,Meshes3D/bike-950-adventure.npz
+bike-950-supermoto,KTM,950 Supermoto,revert/BikeSprites.xcassets/bike-950-supermoto.imageset/bike-950-supermoto.png,original-render,22332,Meshes3D/bike-950-supermoto.npz
+bike-990-adventure,KTM,990 Adventure,revert/BikeSprites.xcassets/bike-990-adventure.imageset/bike-990-adventure.png,original-render,23712,Meshes3D/bike-990-adventure.npz
+bike-990-adventure-2025-present,KTM,990 Adventure,revert/BikeSprites.xcassets/bike-990-adventure-2025-present.imageset/bike-990-adventure-2025-present.png,original-render,23712,Meshes3D/bike-990-adventure-2025-present.npz
+bike-990-duke,KTM,990 Duke,revert/BikeSprites.xcassets/bike-990-duke.imageset/bike-990-duke.png,original-render,24112,Meshes3D/bike-990-duke.npz
+bike-990-sm,KTM,990 SM,revert/BikeSprites.xcassets/bike-990-sm.imageset/bike-990-sm.png,original-render,22332,Meshes3D/bike-990-sm.npz
+bike-990-super-duke,KTM,990 Super Duke,revert/BikeSprites.xcassets/bike-990-super-duke.imageset/bike-990-super-duke.png,original-render,21804,Meshes3D/bike-990-super-duke.npz
+bike-rc-125,KTM,RC 125,revert/BikeSprites.xcassets/bike-rc-125.imageset/bike-rc-125.png,original-render,27164,Meshes3D/bike-rc-125.npz
+bike-rc-200,KTM,RC 200,revert/BikeSprites.xcassets/bike-rc-200.imageset/bike-rc-200.png,original-render,28996,Meshes3D/bike-rc-200.npz
+bike-rc-390,KTM,RC 390,revert/BikeSprites.xcassets/bike-rc-390.imageset/bike-rc-390.png,original-render,28672,Meshes3D/bike-rc-390.npz
+bike-rc-390-2017,KTM,RC 390,revert/BikeSprites.xcassets/bike-rc-390-2017.imageset/bike-rc-390-2017.png,original-render,29196,Meshes3D/bike-rc-390-2017.npz
+bike-rc-390-2022,KTM,RC 390,revert/BikeSprites.xcassets/bike-rc-390-2022.imageset/bike-rc-390-2022.png,original-render,28032,Meshes3D/bike-rc-390-2022.npz
+bike-rc-8,KTM,RC 8,revert/BikeSprites.xcassets/bike-rc-8.imageset/bike-rc-8.png,original-render,27164,Meshes3D/bike-rc-8.npz
+bike-rc-8-r,KTM,RC 8 R,revert/BikeSprites.xcassets/bike-rc-8-r.imageset/bike-rc-8-r.png,original-render,28032,Meshes3D/bike-rc-8-r.npz
+bike-rc-8-r-2014,KTM,RC 8 R,revert/BikeSprites.xcassets/bike-rc-8-r-2014.imageset/bike-rc-8-r-2014.png,original-render,29196,Meshes3D/bike-rc-8-r-2014.npz
+bike-rc-8c,KTM,RC 8C,revert/BikeSprites.xcassets/bike-rc-8c.imageset/bike-rc-8c.png,original-render,29196,Meshes3D/bike-rc-8c.npz
+bike-concours-14,Kawasaki,Concours 14,revert/BikeSprites.xcassets/bike-concours-14.imageset/bike-concours-14.png,original-render,21624,Meshes3D/bike-concours-14.npz
+bike-concours-zg1000,Kawasaki,Concours ZG1000,revert/BikeSprites.xcassets/bike-concours-zg1000.imageset/bike-concours-zg1000.png,original-render,21624,Meshes3D/bike-concours-zg1000.npz
+bike-d-tracker-x,Kawasaki,D-Tracker X,revert/BikeSprites.xcassets/bike-d-tracker-x.imageset/bike-d-tracker-x.png,original-render,23712,Meshes3D/bike-d-tracker-x.npz
+bike-er-5,Kawasaki,ER-5,revert/BikeSprites.xcassets/bike-er-5.imageset/bike-er-5.png,original-render,23116,Meshes3D/bike-er-5.npz
+bike-er-6n,Kawasaki,ER-6n,revert/BikeSprites.xcassets/bike-er-6n.imageset/bike-er-6n.png,original-render,24008,Meshes3D/bike-er-6n.npz
+bike-ex500-ninja-500r,Kawasaki,EX500 Ninja 500R,revert/BikeSprites.xcassets/bike-ex500-ninja-500r.imageset/bike-ex500-ninja-500r.png,original-render,26968,Meshes3D/bike-ex500-ninja-500r.npz
+bike-eliminator-125,Kawasaki,Eliminator 125,revert/BikeSprites.xcassets/bike-eliminator-125.imageset/bike-eliminator-125.png,original-render,25712,Meshes3D/bike-eliminator-125.npz
+bike-eliminator-400,Kawasaki,Eliminator 400,revert/BikeSprites.xcassets/bike-eliminator-400.imageset/bike-eliminator-400.png,original-render,25712,Meshes3D/bike-eliminator-400.npz
+bike-eliminator-zl600,Kawasaki,Eliminator ZL600,revert/BikeSprites.xcassets/bike-eliminator-zl600.imageset/bike-eliminator-zl600.png,original-render,25712,Meshes3D/bike-eliminator-zl600.npz
+bike-gpz1100,Kawasaki,GPZ1100,revert/BikeSprites.xcassets/bike-gpz1100.imageset/bike-gpz1100.png,original-render,26968,Meshes3D/bike-gpz1100.npz
+bike-gpz250r,Kawasaki,GPZ250R,revert/BikeSprites.xcassets/bike-gpz250r.imageset/bike-gpz250r.png,original-render,27164,Meshes3D/bike-gpz250r.npz
+bike-gpz400r,Kawasaki,GPZ400R,revert/BikeSprites.xcassets/bike-gpz400r.imageset/bike-gpz400r.png,original-render,24300,Meshes3D/bike-gpz400r.npz
+bike-gpz500s,Kawasaki,GPZ500S,revert/BikeSprites.xcassets/bike-gpz500s.imageset/bike-gpz500s.png,original-render,28032,Meshes3D/bike-gpz500s.npz
+bike-gpz600r,Kawasaki,GPZ600R,revert/BikeSprites.xcassets/bike-gpz600r.imageset/bike-gpz600r.png,original-render,28032,Meshes3D/bike-gpz600r.npz
+bike-gpz900r,Kawasaki,GPZ900R,revert/BikeSprites.xcassets/bike-gpz900r.imageset/bike-gpz900r.png,original-render,28996,Meshes3D/bike-gpz900r.npz
+bike-gtr1400,Kawasaki,GTR1400,revert/BikeSprites.xcassets/bike-gtr1400.imageset/bike-gtr1400.png,original-render,21624,Meshes3D/bike-gtr1400.npz
+bike-klr650,Kawasaki,KLR650,revert/BikeSprites.xcassets/bike-klr650.imageset/bike-klr650.png,original-render,23712,Meshes3D/bike-klr650.npz
+bike-klx230,Kawasaki,KLX230,revert/BikeSprites.xcassets/bike-klx230.imageset/bike-klx230.png,original-render,23712,Meshes3D/bike-klx230.npz
+bike-klx250s,Kawasaki,KLX250S,revert/BikeSprites.xcassets/bike-klx250s.imageset/bike-klx250s.png,original-render,23712,Meshes3D/bike-klx250s.npz
+bike-klx300,Kawasaki,KLX300,revert/BikeSprites.xcassets/bike-klx300.imageset/bike-klx300.png,original-render,23712,Meshes3D/bike-klx300.npz
+bike-klx300sm,Kawasaki,KLX300SM,revert/BikeSprites.xcassets/bike-klx300sm.imageset/bike-klx300sm.png,original-render,23712,Meshes3D/bike-klx300sm.npz
+bike-ninja-1000-z1000sx,Kawasaki,Ninja 1000 Z1000SX,revert/BikeSprites.xcassets/bike-ninja-1000-z1000sx.imageset/bike-ninja-1000-z1000sx.png,original-render,28032,Meshes3D/bike-ninja-1000-z1000sx.npz
+bike-ninja-125,Kawasaki,Ninja 125,revert/BikeSprites.xcassets/bike-ninja-125.imageset/bike-ninja-125.png,original-render,29196,Meshes3D/bike-ninja-125.npz
+bike-ninja-250,Kawasaki,Ninja 250,revert/BikeSprites.xcassets/bike-ninja-250.imageset/bike-ninja-250.png,original-render,28996,Meshes3D/bike-ninja-250.npz
+bike-ninja-250-2008,Kawasaki,Ninja 250,revert/BikeSprites.xcassets/bike-ninja-250-2008.imageset/bike-ninja-250-2008.png,original-render,26968,Meshes3D/bike-ninja-250-2008.npz
+bike-ninja-250-2013,Kawasaki,Ninja 250,revert/BikeSprites.xcassets/bike-ninja-250-2013.imageset/bike-ninja-250-2013.png,original-render,24300,Meshes3D/bike-ninja-250-2013.npz
+bike-ninja-250-2018,Kawasaki,Ninja 250,revert/BikeSprites.xcassets/bike-ninja-250-2018.imageset/bike-ninja-250-2018.png,original-render,28996,Meshes3D/bike-ninja-250-2018.npz
+bike-ninja-250r-ex250,Kawasaki,Ninja 250R EX250,revert/BikeSprites.xcassets/bike-ninja-250r-ex250.imageset/bike-ninja-250r-ex250.png,original-render,24300,Meshes3D/bike-ninja-250r-ex250.npz
+bike-ninja-300,Kawasaki,Ninja 300,revert/BikeSprites.xcassets/bike-ninja-300.imageset/bike-ninja-300.png,original-render,17460,Meshes3D/bike-ninja-300.npz
+bike-ninja-400,Kawasaki,Ninja 400,revert/BikeSprites.xcassets/bike-ninja-400.imageset/bike-ninja-400.png,original-render,28032,Meshes3D/bike-ninja-400.npz
+bike-ninja-500,Kawasaki,Ninja 500,revert/BikeSprites.xcassets/bike-ninja-500.imageset/bike-ninja-500.png,original-render,27164,Meshes3D/bike-ninja-500.npz
+bike-ninja-650,Kawasaki,Ninja 650,revert/BikeSprites.xcassets/bike-ninja-650.imageset/bike-ninja-650.png,original-render,17460,Meshes3D/bike-ninja-650.npz
+bike-ninja-650-2012,Kawasaki,Ninja 650,revert/BikeSprites.xcassets/bike-ninja-650-2012.imageset/bike-ninja-650-2012.png,original-render,27164,Meshes3D/bike-ninja-650-2012.npz
+bike-ninja-650-2017,Kawasaki,Ninja 650,revert/BikeSprites.xcassets/bike-ninja-650-2017.imageset/bike-ninja-650-2017.png,original-render,24300,Meshes3D/bike-ninja-650-2017.npz
+bike-ninja-650-2020,Kawasaki,Ninja 650,revert/BikeSprites.xcassets/bike-ninja-650-2020.imageset/bike-ninja-650-2020.png,original-render,28032,Meshes3D/bike-ninja-650-2020.npz
+bike-ninja-h2,Kawasaki,Ninja H2,revert/BikeSprites.xcassets/bike-ninja-h2.imageset/bike-ninja-h2.png,original-render,24300,Meshes3D/bike-ninja-h2.npz
+bike-ninja-h2r,Kawasaki,Ninja H2R,revert/BikeSprites.xcassets/bike-ninja-h2r.imageset/bike-ninja-h2r.png,original-render,28032,Meshes3D/bike-ninja-h2r.npz
+bike-ninja-zx-10r,Kawasaki,Ninja ZX-10R,revert/BikeSprites.xcassets/bike-ninja-zx-10r.imageset/bike-ninja-zx-10r.png,original-render,24300,Meshes3D/bike-ninja-zx-10r.npz
+bike-ninja-zx-10r-2006,Kawasaki,Ninja ZX-10R,revert/BikeSprites.xcassets/bike-ninja-zx-10r-2006.imageset/bike-ninja-zx-10r-2006.png,original-render,28996,Meshes3D/bike-ninja-zx-10r-2006.npz
+bike-ninja-zx-10r-2008,Kawasaki,Ninja ZX-10R,revert/BikeSprites.xcassets/bike-ninja-zx-10r-2008.imageset/bike-ninja-zx-10r-2008.png,original-render,28672,Meshes3D/bike-ninja-zx-10r-2008.npz
+bike-ninja-zx-10r-2011,Kawasaki,Ninja ZX-10R,revert/BikeSprites.xcassets/bike-ninja-zx-10r-2011.imageset/bike-ninja-zx-10r-2011.png,original-render,17460,Meshes3D/bike-ninja-zx-10r-2011.npz
+bike-ninja-zx-10r-2016,Kawasaki,Ninja ZX-10R,revert/BikeSprites.xcassets/bike-ninja-zx-10r-2016.imageset/bike-ninja-zx-10r-2016.png,original-render,29196,Meshes3D/bike-ninja-zx-10r-2016.npz
+bike-ninja-zx-10r-2021,Kawasaki,Ninja ZX-10R,revert/BikeSprites.xcassets/bike-ninja-zx-10r-2021.imageset/bike-ninja-zx-10r-2021.png,original-render,28032,Meshes3D/bike-ninja-zx-10r-2021.npz
+bike-ninja-zx-14r,Kawasaki,Ninja ZX-14R,revert/BikeSprites.xcassets/bike-ninja-zx-14r.imageset/bike-ninja-zx-14r.png,original-render,26968,Meshes3D/bike-ninja-zx-14r.npz
+bike-ninja-zx-14r-2012,Kawasaki,Ninja ZX-14R,revert/BikeSprites.xcassets/bike-ninja-zx-14r-2012.imageset/bike-ninja-zx-14r-2012.png,original-render,29196,Meshes3D/bike-ninja-zx-14r-2012.npz
+bike-ninja-zx-4r,Kawasaki,Ninja ZX-4R,revert/BikeSprites.xcassets/bike-ninja-zx-4r.imageset/bike-ninja-zx-4r.png,original-render,27164,Meshes3D/bike-ninja-zx-4r.npz
+bike-ninja-zx-4rr,Kawasaki,Ninja ZX-4RR,revert/BikeSprites.xcassets/bike-ninja-zx-4rr.imageset/bike-ninja-zx-4rr.png,original-render,28996,Meshes3D/bike-ninja-zx-4rr.npz
+bike-ninja-zx-6r,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r.imageset/bike-ninja-zx-6r.png,original-render,28996,Meshes3D/bike-ninja-zx-6r.npz
+bike-ninja-zx-6r-1998,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-1998.imageset/bike-ninja-zx-6r-1998.png,original-render,28996,Meshes3D/bike-ninja-zx-6r-1998.npz
+bike-ninja-zx-6r-2003,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2003.imageset/bike-ninja-zx-6r-2003.png,original-render,28672,Meshes3D/bike-ninja-zx-6r-2003.npz
+bike-ninja-zx-6r-2005,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2005.imageset/bike-ninja-zx-6r-2005.png,original-render,17460,Meshes3D/bike-ninja-zx-6r-2005.npz
+bike-ninja-zx-6r-2007,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2007.imageset/bike-ninja-zx-6r-2007.png,original-render,27164,Meshes3D/bike-ninja-zx-6r-2007.npz
+bike-ninja-zx-6r-2009,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2009.imageset/bike-ninja-zx-6r-2009.png,original-render,28996,Meshes3D/bike-ninja-zx-6r-2009.npz
+bike-ninja-zx-6r-2013,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2013.imageset/bike-ninja-zx-6r-2013.png,original-render,24300,Meshes3D/bike-ninja-zx-6r-2013.npz
+bike-ninja-zx-6r-2019,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2019.imageset/bike-ninja-zx-6r-2019.png,original-render,29196,Meshes3D/bike-ninja-zx-6r-2019.npz
+bike-ninja-zx-6r-2024,Kawasaki,Ninja ZX-6R,revert/BikeSprites.xcassets/bike-ninja-zx-6r-2024.imageset/bike-ninja-zx-6r-2024.png,original-render,28032,Meshes3D/bike-ninja-zx-6r-2024.npz
+bike-ninja-zx-7r,Kawasaki,Ninja ZX-7R,revert/BikeSprites.xcassets/bike-ninja-zx-7r.imageset/bike-ninja-zx-7r.png,original-render,29196,Meshes3D/bike-ninja-zx-7r.npz
+bike-ninja-zx-7rr,Kawasaki,Ninja ZX-7RR,revert/BikeSprites.xcassets/bike-ninja-zx-7rr.imageset/bike-ninja-zx-7rr.png,original-render,24300,Meshes3D/bike-ninja-zx-7rr.npz
+bike-ninja-zx-9r,Kawasaki,Ninja ZX-9R,revert/BikeSprites.xcassets/bike-ninja-zx-9r.imageset/bike-ninja-zx-9r.png,original-render,24300,Meshes3D/bike-ninja-zx-9r.npz
+bike-ninja-zx-9r-1998,Kawasaki,Ninja ZX-9R,revert/BikeSprites.xcassets/bike-ninja-zx-9r-1998.imageset/bike-ninja-zx-9r-1998.png,original-render,24300,Meshes3D/bike-ninja-zx-9r-1998.npz
+bike-ninja-zx-9r-2000,Kawasaki,Ninja ZX-9R,revert/BikeSprites.xcassets/bike-ninja-zx-9r-2000.imageset/bike-ninja-zx-9r-2000.png,original-render,28672,Meshes3D/bike-ninja-zx-9r-2000.npz
+bike-super-sherpa,Kawasaki,Super Sherpa,revert/BikeSprites.xcassets/bike-super-sherpa.imageset/bike-super-sherpa.png,original-render,23712,Meshes3D/bike-super-sherpa.npz
+bike-versys-1000,Kawasaki,Versys 1000,revert/BikeSprites.xcassets/bike-versys-1000.imageset/bike-versys-1000.png,original-render,23712,Meshes3D/bike-versys-1000.npz
+bike-versys-300,Kawasaki,Versys 300,revert/BikeSprites.xcassets/bike-versys-300.imageset/bike-versys-300.png,original-render,23712,Meshes3D/bike-versys-300.npz
+bike-versys-650,Kawasaki,Versys 650,revert/BikeSprites.xcassets/bike-versys-650.imageset/bike-versys-650.png,original-render,23712,Meshes3D/bike-versys-650.npz
+bike-versys-x-300,Kawasaki,Versys-X 300,revert/BikeSprites.xcassets/bike-versys-x-300.imageset/bike-versys-x-300.png,original-render,23712,Meshes3D/bike-versys-x-300.npz
+bike-vulcan-1500-classic,Kawasaki,Vulcan 1500 Classic,revert/BikeSprites.xcassets/bike-vulcan-1500-classic.imageset/bike-vulcan-1500-classic.png,original-render,25712,Meshes3D/bike-vulcan-1500-classic.npz
+bike-vulcan-1500-drifter,Kawasaki,Vulcan 1500 Drifter,revert/BikeSprites.xcassets/bike-vulcan-1500-drifter.imageset/bike-vulcan-1500-drifter.png,original-render,25712,Meshes3D/bike-vulcan-1500-drifter.npz
+bike-vulcan-1600-classic,Kawasaki,Vulcan 1600 Classic,revert/BikeSprites.xcassets/bike-vulcan-1600-classic.imageset/bike-vulcan-1600-classic.png,original-render,25712,Meshes3D/bike-vulcan-1600-classic.npz
+bike-vulcan-1700-classic,Kawasaki,Vulcan 1700 Classic,revert/BikeSprites.xcassets/bike-vulcan-1700-classic.imageset/bike-vulcan-1700-classic.png,original-render,25712,Meshes3D/bike-vulcan-1700-classic.npz
+bike-vulcan-1700-nomad,Kawasaki,Vulcan 1700 Nomad,revert/BikeSprites.xcassets/bike-vulcan-1700-nomad.imageset/bike-vulcan-1700-nomad.png,original-render,25712,Meshes3D/bike-vulcan-1700-nomad.npz
+bike-vulcan-1700-vaquero,Kawasaki,Vulcan 1700 Vaquero,revert/BikeSprites.xcassets/bike-vulcan-1700-vaquero.imageset/bike-vulcan-1700-vaquero.png,original-render,25712,Meshes3D/bike-vulcan-1700-vaquero.npz
+bike-vulcan-1700-voyager,Kawasaki,Vulcan 1700 Voyager,revert/BikeSprites.xcassets/bike-vulcan-1700-voyager.imageset/bike-vulcan-1700-voyager.png,original-render,21624,Meshes3D/bike-vulcan-1700-voyager.npz
+bike-vulcan-2000,Kawasaki,Vulcan 2000,revert/BikeSprites.xcassets/bike-vulcan-2000.imageset/bike-vulcan-2000.png,original-render,25712,Meshes3D/bike-vulcan-2000.npz
+bike-vulcan-mean-streak,Kawasaki,Vulcan Mean Streak,revert/BikeSprites.xcassets/bike-vulcan-mean-streak.imageset/bike-vulcan-mean-streak.png,original-render,25712,Meshes3D/bike-vulcan-mean-streak.npz
+bike-vulcan-s,Kawasaki,Vulcan S,revert/BikeSprites.xcassets/bike-vulcan-s.imageset/bike-vulcan-s.png,original-render,25712,Meshes3D/bike-vulcan-s.npz
+bike-vulcan-vn500,Kawasaki,Vulcan VN500,revert/BikeSprites.xcassets/bike-vulcan-vn500.imageset/bike-vulcan-vn500.png,original-render,25712,Meshes3D/bike-vulcan-vn500.npz
+bike-vulcan-vn750,Kawasaki,Vulcan VN750,revert/BikeSprites.xcassets/bike-vulcan-vn750.imageset/bike-vulcan-vn750.png,original-render,25712,Meshes3D/bike-vulcan-vn750.npz
+bike-vulcan-vn800,Kawasaki,Vulcan VN800,revert/BikeSprites.xcassets/bike-vulcan-vn800.imageset/bike-vulcan-vn800.png,original-render,25712,Meshes3D/bike-vulcan-vn800.npz
+bike-vulcan-vn900,Kawasaki,Vulcan VN900,revert/BikeSprites.xcassets/bike-vulcan-vn900.imageset/bike-vulcan-vn900.png,original-render,25712,Meshes3D/bike-vulcan-vn900.npz
+bike-w175,Kawasaki,W175,revert/BikeSprites.xcassets/bike-w175.imageset/bike-w175.png,original-render,21804,Meshes3D/bike-w175.npz
+bike-w650,Kawasaki,W650,revert/BikeSprites.xcassets/bike-w650.imageset/bike-w650.png,original-render,24008,Meshes3D/bike-w650.npz
+bike-w800,Kawasaki,W800,revert/BikeSprites.xcassets/bike-w800.imageset/bike-w800.png,original-render,21804,Meshes3D/bike-w800.npz
+bike-z-h2,Kawasaki,Z H2,revert/BikeSprites.xcassets/bike-z-h2.imageset/bike-z-h2.png,original-render,21804,Meshes3D/bike-z-h2.npz
+bike-z1000,Kawasaki,Z1000,revert/BikeSprites.xcassets/bike-z1000.imageset/bike-z1000.png,original-render,22588,Meshes3D/bike-z1000.npz
+bike-z125-pro,Kawasaki,Z125 Pro,revert/BikeSprites.xcassets/bike-z125-pro.imageset/bike-z125-pro.png,original-render,21804,Meshes3D/bike-z125-pro.npz
+bike-z250,Kawasaki,Z250,revert/BikeSprites.xcassets/bike-z250.imageset/bike-z250.png,original-render,23116,Meshes3D/bike-z250.npz
+bike-z400,Kawasaki,Z400,revert/BikeSprites.xcassets/bike-z400.imageset/bike-z400.png,original-render,22588,Meshes3D/bike-z400.npz
+bike-z500,Kawasaki,Z500,revert/BikeSprites.xcassets/bike-z500.imageset/bike-z500.png,original-render,21804,Meshes3D/bike-z500.npz
+bike-z650,Kawasaki,Z650,revert/BikeSprites.xcassets/bike-z650.imageset/bike-z650.png,original-render,24112,Meshes3D/bike-z650.npz
+bike-z650rs,Kawasaki,Z650RS,revert/BikeSprites.xcassets/bike-z650rs.imageset/bike-z650rs.png,original-render,21804,Meshes3D/bike-z650rs.npz
+bike-z750,Kawasaki,Z750,revert/BikeSprites.xcassets/bike-z750.imageset/bike-z750.png,original-render,23116,Meshes3D/bike-z750.npz
+bike-z800,Kawasaki,Z800,revert/BikeSprites.xcassets/bike-z800.imageset/bike-z800.png,original-render,24008,Meshes3D/bike-z800.npz
+bike-z900,Kawasaki,Z900,revert/BikeSprites.xcassets/bike-z900.imageset/bike-z900.png,original-render,22588,Meshes3D/bike-z900.npz
+bike-z900rs,Kawasaki,Z900RS,revert/BikeSprites.xcassets/bike-z900rs.imageset/bike-z900rs.png,original-render,24008,Meshes3D/bike-z900rs.npz
+bike-zr-7,Kawasaki,ZR-7,revert/BikeSprites.xcassets/bike-zr-7.imageset/bike-zr-7.png,original-render,21804,Meshes3D/bike-zr-7.npz
+bike-zrx1100,Kawasaki,ZRX1100,revert/BikeSprites.xcassets/bike-zrx1100.imageset/bike-zrx1100.png,original-render,22588,Meshes3D/bike-zrx1100.npz
+bike-zrx1200-daeg,Kawasaki,ZRX1200 Daeg,revert/BikeSprites.xcassets/bike-zrx1200-daeg.imageset/bike-zrx1200-daeg.png,original-render,24112,Meshes3D/bike-zrx1200-daeg.npz
+bike-zrx1200r,Kawasaki,ZRX1200R,revert/BikeSprites.xcassets/bike-zrx1200r.imageset/bike-zrx1200r.png,original-render,22588,Meshes3D/bike-zrx1200r.npz
+bike-zrx1200s,Kawasaki,ZRX1200S,revert/BikeSprites.xcassets/bike-zrx1200s.imageset/bike-zrx1200s.png,original-render,21804,Meshes3D/bike-zrx1200s.npz
+bike-zx-10r,Kawasaki,ZX-10R,revert/BikeSprites.xcassets/bike-zx-10r.imageset/bike-zx-10r.png,original-render,27164,Meshes3D/bike-zx-10r.npz
+bike-zx-10rr,Kawasaki,ZX-10RR,revert/BikeSprites.xcassets/bike-zx-10rr.imageset/bike-zx-10rr.png,original-render,28996,Meshes3D/bike-zx-10rr.npz
+bike-zx-12r,Kawasaki,ZX-12R,revert/BikeSprites.xcassets/bike-zx-12r.imageset/bike-zx-12r.png,original-render,28996,Meshes3D/bike-zx-12r.npz
+bike-zx-14,Kawasaki,ZX-14,revert/BikeSprites.xcassets/bike-zx-14.imageset/bike-zx-14.png,original-render,28996,Meshes3D/bike-zx-14.npz
+bike-zx-14r,Kawasaki,ZX-14R,revert/BikeSprites.xcassets/bike-zx-14r.imageset/bike-zx-14r.png,original-render,28672,Meshes3D/bike-zx-14r.npz
+bike-zx-4rr,Kawasaki,ZX-4RR,revert/BikeSprites.xcassets/bike-zx-4rr.imageset/bike-zx-4rr.png,original-render,24300,Meshes3D/bike-zx-4rr.npz
+bike-zx-6r,Kawasaki,ZX-6R,revert/BikeSprites.xcassets/bike-zx-6r.imageset/bike-zx-6r.png,original-render,24300,Meshes3D/bike-zx-6r.npz
+bike-zx-6rr,Kawasaki,ZX-6RR,revert/BikeSprites.xcassets/bike-zx-6rr.imageset/bike-zx-6rr.png,original-render,28032,Meshes3D/bike-zx-6rr.npz
+bike-zx-7r,Kawasaki,ZX-7R,revert/BikeSprites.xcassets/bike-zx-7r.imageset/bike-zx-7r.png,original-render,17460,Meshes3D/bike-zx-7r.npz
+bike-zx-9r,Kawasaki,ZX-9R,revert/BikeSprites.xcassets/bike-zx-9r.imageset/bike-zx-9r.png,original-render,27164,Meshes3D/bike-zx-9r.npz
+bike-zxr750,Kawasaki,ZXR750,revert/BikeSprites.xcassets/bike-zxr750.imageset/bike-zxr750.png,original-render,17460,Meshes3D/bike-zxr750.npz
+bike-zzr1100-zx-11,Kawasaki,ZZR1100 ZX-11,revert/BikeSprites.xcassets/bike-zzr1100-zx-11.imageset/bike-zzr1100-zx-11.png,original-render,28672,Meshes3D/bike-zzr1100-zx-11.npz
+bike-zzr600,Kawasaki,ZZR600,revert/BikeSprites.xcassets/bike-zzr600.imageset/bike-zzr600.png,original-render,21624,Meshes3D/bike-zzr600.npz
+bike-zephyr-1100,Kawasaki,Zephyr 1100,revert/BikeSprites.xcassets/bike-zephyr-1100.imageset/bike-zephyr-1100.png,original-render,23116,Meshes3D/bike-zephyr-1100.npz
+bike-zephyr-550,Kawasaki,Zephyr 550,revert/BikeSprites.xcassets/bike-zephyr-550.imageset/bike-zephyr-550.png,original-render,23116,Meshes3D/bike-zephyr-550.npz
+bike-zephyr-750,Kawasaki,Zephyr 750,revert/BikeSprites.xcassets/bike-zephyr-750.imageset/bike-zephyr-750.png,original-render,22588,Meshes3D/bike-zephyr-750.npz
+bike-brutale-1000,MV Agusta,Brutale 1000,revert/BikeSprites.xcassets/bike-brutale-1000.imageset/bike-brutale-1000.png,original-render,24008,Meshes3D/bike-brutale-1000.npz
+bike-brutale-750,MV Agusta,Brutale 750,revert/BikeSprites.xcassets/bike-brutale-750.imageset/bike-brutale-750.png,original-render,24112,Meshes3D/bike-brutale-750.npz
+bike-brutale-800,MV Agusta,Brutale 800,revert/BikeSprites.xcassets/bike-brutale-800.imageset/bike-brutale-800.png,original-render,23116,Meshes3D/bike-brutale-800.npz
+bike-f3-675,MV Agusta,F3 675,revert/BikeSprites.xcassets/bike-f3-675.imageset/bike-f3-675.png,original-render,17460,Meshes3D/bike-f3-675.npz
+bike-f3-800,MV Agusta,F3 800,revert/BikeSprites.xcassets/bike-f3-800.imageset/bike-f3-800.png,original-render,28672,Meshes3D/bike-f3-800.npz
+bike-f4-1000,MV Agusta,F4 1000,revert/BikeSprites.xcassets/bike-f4-1000.imageset/bike-f4-1000.png,original-render,17460,Meshes3D/bike-f4-1000.npz
+bike-f4-1000-2010,MV Agusta,F4 1000,revert/BikeSprites.xcassets/bike-f4-1000-2010.imageset/bike-f4-1000-2010.png,original-render,17460,Meshes3D/bike-f4-1000-2010.npz
+bike-f4-750,MV Agusta,F4 750,revert/BikeSprites.xcassets/bike-f4-750.imageset/bike-f4-750.png,original-render,26968,Meshes3D/bike-f4-750.npz
+bike-superveloce-800,MV Agusta,Superveloce 800,revert/BikeSprites.xcassets/bike-superveloce-800.imageset/bike-superveloce-800.png,original-render,27164,Meshes3D/bike-superveloce-800.npz
+bike-bear-650,Royal Enfield,Bear 650,revert/BikeSprites.xcassets/bike-bear-650.imageset/bike-bear-650.png,original-render,34312,Meshes3D/bike-bear-650.npz
+bike-bullet-350,Royal Enfield,Bullet 350,revert/BikeSprites.xcassets/bike-bullet-350.imageset/bike-bullet-350.png,original-render,34312,Meshes3D/bike-bullet-350.npz
+bike-bullet-350-uce,Royal Enfield,Bullet 350 UCE,revert/BikeSprites.xcassets/bike-bullet-350-uce.imageset/bike-bullet-350-uce.png,original-render,34312,Meshes3D/bike-bullet-350-uce.npz
+bike-bullet-500,Royal Enfield,Bullet 500,revert/BikeSprites.xcassets/bike-bullet-500.imageset/bike-bullet-500.png,original-render,34312,Meshes3D/bike-bullet-500.npz
+bike-classic-350,Royal Enfield,Classic 350,revert/BikeSprites.xcassets/bike-classic-350.imageset/bike-classic-350.png,original-render,34312,Meshes3D/bike-classic-350.npz
+bike-classic-500,Royal Enfield,Classic 500,revert/BikeSprites.xcassets/bike-classic-500.imageset/bike-classic-500.png,original-render,34312,Meshes3D/bike-classic-500.npz
+bike-classic-650,Royal Enfield,Classic 650,revert/BikeSprites.xcassets/bike-classic-650.imageset/bike-classic-650.png,original-render,34312,Meshes3D/bike-classic-650.npz
+bike-continental-gt-535,Royal Enfield,Continental GT 535,revert/BikeSprites.xcassets/bike-continental-gt-535.imageset/bike-continental-gt-535.png,original-render,34312,Meshes3D/bike-continental-gt-535.npz
+bike-continental-gt-650,Royal Enfield,Continental GT 650,revert/BikeSprites.xcassets/bike-continental-gt-650.imageset/bike-continental-gt-650.png,original-render,24112,Meshes3D/bike-continental-gt-650.npz
+bike-electra-350,Royal Enfield,Electra 350,revert/BikeSprites.xcassets/bike-electra-350.imageset/bike-electra-350.png,original-render,34312,Meshes3D/bike-electra-350.npz
+bike-goan-classic-350,Royal Enfield,Goan Classic 350,revert/BikeSprites.xcassets/bike-goan-classic-350.imageset/bike-goan-classic-350.png,original-render,34312,Meshes3D/bike-goan-classic-350.npz
+bike-guerrilla-450,Royal Enfield,Guerrilla 450,revert/BikeSprites.xcassets/bike-guerrilla-450.imageset/bike-guerrilla-450.png,original-render,34312,Meshes3D/bike-guerrilla-450.npz
+bike-himalayan-411,Royal Enfield,Himalayan 411,revert/BikeSprites.xcassets/bike-himalayan-411.imageset/bike-himalayan-411.png,original-render,23712,Meshes3D/bike-himalayan-411.npz
+bike-himalayan-450,Royal Enfield,Himalayan 450,revert/BikeSprites.xcassets/bike-himalayan-450.imageset/bike-himalayan-450.png,original-render,23712,Meshes3D/bike-himalayan-450.npz
+bike-hunter-350,Royal Enfield,Hunter 350,revert/BikeSprites.xcassets/bike-hunter-350.imageset/bike-hunter-350.png,original-render,34312,Meshes3D/bike-hunter-350.npz
+bike-interceptor-650,Royal Enfield,Interceptor 650,revert/BikeSprites.xcassets/bike-interceptor-650.imageset/bike-interceptor-650.png,original-render,34312,Meshes3D/bike-interceptor-650.npz
+bike-meteor-350,Royal Enfield,Meteor 350,revert/BikeSprites.xcassets/bike-meteor-350.imageset/bike-meteor-350.png,original-render,34312,Meshes3D/bike-meteor-350.npz
+bike-scram-411,Royal Enfield,Scram 411,revert/BikeSprites.xcassets/bike-scram-411.imageset/bike-scram-411.png,original-render,23712,Meshes3D/bike-scram-411.npz
+bike-scram-440,Royal Enfield,Scram 440,revert/BikeSprites.xcassets/bike-scram-440.imageset/bike-scram-440.png,original-render,23712,Meshes3D/bike-scram-440.npz
+bike-shotgun-650,Royal Enfield,Shotgun 650,revert/BikeSprites.xcassets/bike-shotgun-650.imageset/bike-shotgun-650.png,original-render,34312,Meshes3D/bike-shotgun-650.npz
+bike-super-meteor-650,Royal Enfield,Super Meteor 650,revert/BikeSprites.xcassets/bike-super-meteor-650.imageset/bike-super-meteor-650.png,original-render,34312,Meshes3D/bike-super-meteor-650.npz
+bike-thunderbird-350,Royal Enfield,Thunderbird 350,revert/BikeSprites.xcassets/bike-thunderbird-350.imageset/bike-thunderbird-350.png,original-render,34312,Meshes3D/bike-thunderbird-350.npz
+bike-thunderbird-500,Royal Enfield,Thunderbird 500,revert/BikeSprites.xcassets/bike-thunderbird-500.imageset/bike-thunderbird-500.png,original-render,34312,Meshes3D/bike-thunderbird-500.npz
+bike-b-king-gsx1300bk,Suzuki,B-King GSX1300BK,revert/BikeSprites.xcassets/bike-b-king-gsx1300bk.imageset/bike-b-king-gsx1300bk.png,original-render,24112,Meshes3D/bike-b-king-gsx1300bk.npz
+bike-bandit-1200,Suzuki,Bandit 1200,revert/BikeSprites.xcassets/bike-bandit-1200.imageset/bike-bandit-1200.png,original-render,21804,Meshes3D/bike-bandit-1200.npz
+bike-bandit-1250,Suzuki,Bandit 1250,revert/BikeSprites.xcassets/bike-bandit-1250.imageset/bike-bandit-1250.png,original-render,21804,Meshes3D/bike-bandit-1250.npz
+bike-bandit-600,Suzuki,Bandit 600,revert/BikeSprites.xcassets/bike-bandit-600.imageset/bike-bandit-600.png,original-render,21804,Meshes3D/bike-bandit-600.npz
+bike-bandit-650,Suzuki,Bandit 650,revert/BikeSprites.xcassets/bike-bandit-650.imageset/bike-bandit-650.png,original-render,21804,Meshes3D/bike-bandit-650.npz
+bike-boulevard-c109r,Suzuki,Boulevard C109R,revert/BikeSprites.xcassets/bike-boulevard-c109r.imageset/bike-boulevard-c109r.png,original-render,25712,Meshes3D/bike-boulevard-c109r.npz
+bike-boulevard-c50,Suzuki,Boulevard C50,revert/BikeSprites.xcassets/bike-boulevard-c50.imageset/bike-boulevard-c50.png,original-render,25712,Meshes3D/bike-boulevard-c50.npz
+bike-boulevard-c90,Suzuki,Boulevard C90,revert/BikeSprites.xcassets/bike-boulevard-c90.imageset/bike-boulevard-c90.png,original-render,25712,Meshes3D/bike-boulevard-c90.npz
+bike-boulevard-m109r,Suzuki,Boulevard M109R,revert/BikeSprites.xcassets/bike-boulevard-m109r.imageset/bike-boulevard-m109r.png,original-render,25712,Meshes3D/bike-boulevard-m109r.npz
+bike-boulevard-m50,Suzuki,Boulevard M50,revert/BikeSprites.xcassets/bike-boulevard-m50.imageset/bike-boulevard-m50.png,original-render,25712,Meshes3D/bike-boulevard-m50.npz
+bike-boulevard-m90,Suzuki,Boulevard M90,revert/BikeSprites.xcassets/bike-boulevard-m90.imageset/bike-boulevard-m90.png,original-render,25712,Meshes3D/bike-boulevard-m90.npz
+bike-boulevard-s40-ls650-savage,Suzuki,Boulevard S40 LS650 Savage,revert/BikeSprites.xcassets/bike-boulevard-s40-ls650-savage.imageset/bike-boulevard-s40-ls650-savage.png,original-render,25712,Meshes3D/bike-boulevard-s40-ls650-savage.npz
+bike-boulevard-s50,Suzuki,Boulevard S50,revert/BikeSprites.xcassets/bike-boulevard-s50.imageset/bike-boulevard-s50.png,original-render,25712,Meshes3D/bike-boulevard-s50.npz
+bike-boulevard-s83,Suzuki,Boulevard S83,revert/BikeSprites.xcassets/bike-boulevard-s83.imageset/bike-boulevard-s83.png,original-render,25712,Meshes3D/bike-boulevard-s83.npz
+bike-burgman-125,Suzuki,Burgman 125,revert/BikeSprites.xcassets/bike-burgman-125.imageset/bike-burgman-125.png,original-render,29992,Meshes3D/bike-burgman-125.npz
+bike-burgman-200,Suzuki,Burgman 200,revert/BikeSprites.xcassets/bike-burgman-200.imageset/bike-burgman-200.png,original-render,29992,Meshes3D/bike-burgman-200.npz
+bike-burgman-400,Suzuki,Burgman 400,revert/BikeSprites.xcassets/bike-burgman-400.imageset/bike-burgman-400.png,original-render,29992,Meshes3D/bike-burgman-400.npz
+bike-burgman-650,Suzuki,Burgman 650,revert/BikeSprites.xcassets/bike-burgman-650.imageset/bike-burgman-650.png,original-render,29992,Meshes3D/bike-burgman-650.npz
+bike-dl1000-v-strom,Suzuki,DL1000 V-Strom,revert/BikeSprites.xcassets/bike-dl1000-v-strom.imageset/bike-dl1000-v-strom.png,original-render,23712,Meshes3D/bike-dl1000-v-strom.npz
+bike-dl650-v-strom,Suzuki,DL650 V-Strom,revert/BikeSprites.xcassets/bike-dl650-v-strom.imageset/bike-dl650-v-strom.png,original-render,23712,Meshes3D/bike-dl650-v-strom.npz
+bike-dl650-v-strom-2017-present,Suzuki,DL650 V-Strom,revert/BikeSprites.xcassets/bike-dl650-v-strom-2017-present.imageset/bike-dl650-v-strom-2017-present.png,original-render,23712,Meshes3D/bike-dl650-v-strom-2017-present.npz
+bike-dr-z400s,Suzuki,DR-Z400S,revert/BikeSprites.xcassets/bike-dr-z400s.imageset/bike-dr-z400s.png,original-render,22332,Meshes3D/bike-dr-z400s.npz
+bike-dr-z400sm,Suzuki,DR-Z400SM,revert/BikeSprites.xcassets/bike-dr-z400sm.imageset/bike-dr-z400sm.png,original-render,22332,Meshes3D/bike-dr-z400sm.npz
+bike-dr-z4s,Suzuki,DR-Z4S,revert/BikeSprites.xcassets/bike-dr-z4s.imageset/bike-dr-z4s.png,original-render,22332,Meshes3D/bike-dr-z4s.npz
+bike-dr-z4sm,Suzuki,DR-Z4SM,revert/BikeSprites.xcassets/bike-dr-z4sm.imageset/bike-dr-z4sm.png,original-render,22332,Meshes3D/bike-dr-z4sm.npz
+bike-dr350,Suzuki,DR350,revert/BikeSprites.xcassets/bike-dr350.imageset/bike-dr350.png,original-render,22332,Meshes3D/bike-dr350.npz
+bike-dr650se,Suzuki,DR650SE,revert/BikeSprites.xcassets/bike-dr650se.imageset/bike-dr650se.png,original-render,22332,Meshes3D/bike-dr650se.npz
+bike-dr800s-big,Suzuki,DR800S Big,revert/BikeSprites.xcassets/bike-dr800s-big.imageset/bike-dr800s-big.png,original-render,22332,Meshes3D/bike-dr800s-big.npz
+bike-gs500,Suzuki,GS500,revert/BikeSprites.xcassets/bike-gs500.imageset/bike-gs500.png,original-render,24112,Meshes3D/bike-gs500.npz
+bike-gs500f,Suzuki,GS500F,revert/BikeSprites.xcassets/bike-gs500f.imageset/bike-gs500f.png,original-render,24008,Meshes3D/bike-gs500f.npz
+bike-gsr600,Suzuki,GSR600,revert/BikeSprites.xcassets/bike-gsr600.imageset/bike-gsr600.png,original-render,24112,Meshes3D/bike-gsr600.npz
+bike-gsr750,Suzuki,GSR750,revert/BikeSprites.xcassets/bike-gsr750.imageset/bike-gsr750.png,original-render,23116,Meshes3D/bike-gsr750.npz
+bike-gsx-8r,Suzuki,GSX-8R,revert/BikeSprites.xcassets/bike-gsx-8r.imageset/bike-gsx-8r.png,original-render,28032,Meshes3D/bike-gsx-8r.npz
+bike-gsx-8s,Suzuki,GSX-8S,revert/BikeSprites.xcassets/bike-gsx-8s.imageset/bike-gsx-8s.png,original-render,24008,Meshes3D/bike-gsx-8s.npz
+bike-gsx-r1000,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000.imageset/bike-gsx-r1000.png,original-render,27164,Meshes3D/bike-gsx-r1000.npz
+bike-gsx-r1000-2003,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000-2003.imageset/bike-gsx-r1000-2003.png,original-render,28996,Meshes3D/bike-gsx-r1000-2003.npz
+bike-gsx-r1000-2005,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000-2005.imageset/bike-gsx-r1000-2005.png,original-render,28672,Meshes3D/bike-gsx-r1000-2005.npz
+bike-gsx-r1000-2007,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000-2007.imageset/bike-gsx-r1000-2007.png,original-render,17460,Meshes3D/bike-gsx-r1000-2007.npz
+bike-gsx-r1000-2009,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000-2009.imageset/bike-gsx-r1000-2009.png,original-render,27164,Meshes3D/bike-gsx-r1000-2009.npz
+bike-gsx-r1000-2012,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000-2012.imageset/bike-gsx-r1000-2012.png,original-render,28996,Meshes3D/bike-gsx-r1000-2012.npz
+bike-gsx-r1000-2017,Suzuki,GSX-R1000,revert/BikeSprites.xcassets/bike-gsx-r1000-2017.imageset/bike-gsx-r1000-2017.png,original-render,28032,Meshes3D/bike-gsx-r1000-2017.npz
+bike-gsx-r1000r,Suzuki,GSX-R1000R,revert/BikeSprites.xcassets/bike-gsx-r1000r.imageset/bike-gsx-r1000r.png,original-render,28996,Meshes3D/bike-gsx-r1000r.npz
+bike-gsx-r1100,Suzuki,GSX-R1100,revert/BikeSprites.xcassets/bike-gsx-r1100.imageset/bike-gsx-r1100.png,original-render,26968,Meshes3D/bike-gsx-r1100.npz
+bike-gsx-r1100-1989,Suzuki,GSX-R1100,revert/BikeSprites.xcassets/bike-gsx-r1100-1989.imageset/bike-gsx-r1100-1989.png,original-render,26968,Meshes3D/bike-gsx-r1100-1989.npz
+bike-gsx-r1100-1993,Suzuki,GSX-R1100,revert/BikeSprites.xcassets/bike-gsx-r1100-1993.imageset/bike-gsx-r1100-1993.png,original-render,28672,Meshes3D/bike-gsx-r1100-1993.npz
+bike-gsx-r125,Suzuki,GSX-R125,revert/BikeSprites.xcassets/bike-gsx-r125.imageset/bike-gsx-r125.png,original-render,28032,Meshes3D/bike-gsx-r125.npz
+bike-gsx-r250,Suzuki,GSX-R250,revert/BikeSprites.xcassets/bike-gsx-r250.imageset/bike-gsx-r250.png,original-render,17460,Meshes3D/bike-gsx-r250.npz
+bike-gsx-r250r,Suzuki,GSX-R250R,revert/BikeSprites.xcassets/bike-gsx-r250r.imageset/bike-gsx-r250r.png,original-render,27164,Meshes3D/bike-gsx-r250r.npz
+bike-gsx-r400,Suzuki,GSX-R400,revert/BikeSprites.xcassets/bike-gsx-r400.imageset/bike-gsx-r400.png,original-render,29196,Meshes3D/bike-gsx-r400.npz
+bike-gsx-r400-1988,Suzuki,GSX-R400,revert/BikeSprites.xcassets/bike-gsx-r400-1988.imageset/bike-gsx-r400-1988.png,original-render,28996,Meshes3D/bike-gsx-r400-1988.npz
+bike-gsx-r600,Suzuki,GSX-R600,revert/BikeSprites.xcassets/bike-gsx-r600.imageset/bike-gsx-r600.png,original-render,24300,Meshes3D/bike-gsx-r600.npz
+bike-gsx-r600-2001,Suzuki,GSX-R600,revert/BikeSprites.xcassets/bike-gsx-r600-2001.imageset/bike-gsx-r600-2001.png,original-render,24300,Meshes3D/bike-gsx-r600-2001.npz
+bike-gsx-r600-2004,Suzuki,GSX-R600,revert/BikeSprites.xcassets/bike-gsx-r600-2004.imageset/bike-gsx-r600-2004.png,original-render,27164,Meshes3D/bike-gsx-r600-2004.npz
+bike-gsx-r600-2006,Suzuki,GSX-R600,revert/BikeSprites.xcassets/bike-gsx-r600-2006.imageset/bike-gsx-r600-2006.png,original-render,28996,Meshes3D/bike-gsx-r600-2006.npz
+bike-gsx-r600-2008,Suzuki,GSX-R600,revert/BikeSprites.xcassets/bike-gsx-r600-2008.imageset/bike-gsx-r600-2008.png,original-render,28672,Meshes3D/bike-gsx-r600-2008.npz
+bike-gsx-r600-2011,Suzuki,GSX-R600,revert/BikeSprites.xcassets/bike-gsx-r600-2011.imageset/bike-gsx-r600-2011.png,original-render,17460,Meshes3D/bike-gsx-r600-2011.npz
+bike-gsx-r750,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750.imageset/bike-gsx-r750.png,original-render,29196,Meshes3D/bike-gsx-r750.npz
+bike-gsx-r750-1988,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-1988.imageset/bike-gsx-r750-1988.png,original-render,28996,Meshes3D/bike-gsx-r750-1988.npz
+bike-gsx-r750-1990,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-1990.imageset/bike-gsx-r750-1990.png,original-render,29196,Meshes3D/bike-gsx-r750-1990.npz
+bike-gsx-r750-1992,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-1992.imageset/bike-gsx-r750-1992.png,original-render,24300,Meshes3D/bike-gsx-r750-1992.npz
+bike-gsx-r750-1996,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-1996.imageset/bike-gsx-r750-1996.png,original-render,26968,Meshes3D/bike-gsx-r750-1996.npz
+bike-gsx-r750-2000,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-2000.imageset/bike-gsx-r750-2000.png,original-render,28996,Meshes3D/bike-gsx-r750-2000.npz
+bike-gsx-r750-2006,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-2006.imageset/bike-gsx-r750-2006.png,original-render,27164,Meshes3D/bike-gsx-r750-2006.npz
+bike-gsx-r750-2008,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-2008.imageset/bike-gsx-r750-2008.png,original-render,28996,Meshes3D/bike-gsx-r750-2008.npz
+bike-gsx-r750-2011,Suzuki,GSX-R750,revert/BikeSprites.xcassets/bike-gsx-r750-2011.imageset/bike-gsx-r750-2011.png,original-render,28672,Meshes3D/bike-gsx-r750-2011.npz
+bike-gsx-s1000,Suzuki,GSX-S1000,revert/BikeSprites.xcassets/bike-gsx-s1000.imageset/bike-gsx-s1000.png,original-render,21804,Meshes3D/bike-gsx-s1000.npz
+bike-gsx-s1000-2021,Suzuki,GSX-S1000,revert/BikeSprites.xcassets/bike-gsx-s1000-2021.imageset/bike-gsx-s1000-2021.png,original-render,23116,Meshes3D/bike-gsx-s1000-2021.npz
+bike-gsx-s1000f,Suzuki,GSX-S1000F,revert/BikeSprites.xcassets/bike-gsx-s1000f.imageset/bike-gsx-s1000f.png,original-render,23116,Meshes3D/bike-gsx-s1000f.npz
+bike-gsx-s1000gt,Suzuki,GSX-S1000GT,revert/BikeSprites.xcassets/bike-gsx-s1000gt.imageset/bike-gsx-s1000gt.png,original-render,22588,Meshes3D/bike-gsx-s1000gt.npz
+bike-gsx-s1000gx,Suzuki,GSX-S1000GX,revert/BikeSprites.xcassets/bike-gsx-s1000gx.imageset/bike-gsx-s1000gx.png,original-render,24008,Meshes3D/bike-gsx-s1000gx.npz
+bike-gsx-s125,Suzuki,GSX-S125,revert/BikeSprites.xcassets/bike-gsx-s125.imageset/bike-gsx-s125.png,original-render,22588,Meshes3D/bike-gsx-s125.npz
+bike-gsx-s750,Suzuki,GSX-S750,revert/BikeSprites.xcassets/bike-gsx-s750.imageset/bike-gsx-s750.png,original-render,24008,Meshes3D/bike-gsx-s750.npz
+bike-gsx-s950,Suzuki,GSX-S950,revert/BikeSprites.xcassets/bike-gsx-s950.imageset/bike-gsx-s950.png,original-render,21804,Meshes3D/bike-gsx-s950.npz
+bike-gsx1400,Suzuki,GSX1400,revert/BikeSprites.xcassets/bike-gsx1400.imageset/bike-gsx1400.png,original-render,24300,Meshes3D/bike-gsx1400.npz
+bike-gsx250r,Suzuki,GSX250R,revert/BikeSprites.xcassets/bike-gsx250r.imageset/bike-gsx250r.png,original-render,26968,Meshes3D/bike-gsx250r.npz
+bike-gsx600f-katana,Suzuki,GSX600F Katana,revert/BikeSprites.xcassets/bike-gsx600f-katana.imageset/bike-gsx600f-katana.png,original-render,26968,Meshes3D/bike-gsx600f-katana.npz
+bike-gsx750f-katana,Suzuki,GSX750F Katana,revert/BikeSprites.xcassets/bike-gsx750f-katana.imageset/bike-gsx750f-katana.png,original-render,28032,Meshes3D/bike-gsx750f-katana.npz
+bike-gladius-sfv650,Suzuki,Gladius SFV650,revert/BikeSprites.xcassets/bike-gladius-sfv650.imageset/bike-gladius-sfv650.png,original-render,22588,Meshes3D/bike-gladius-sfv650.npz
+bike-hayabusa,Suzuki,Hayabusa,revert/BikeSprites.xcassets/bike-hayabusa.imageset/bike-hayabusa.png,original-render,21624,Meshes3D/bike-hayabusa.npz
+bike-hayabusa-2008,Suzuki,Hayabusa,revert/BikeSprites.xcassets/bike-hayabusa-2008.imageset/bike-hayabusa-2008.png,original-render,21624,Meshes3D/bike-hayabusa-2008.npz
+bike-hayabusa-2021,Suzuki,Hayabusa,revert/BikeSprites.xcassets/bike-hayabusa-2021.imageset/bike-hayabusa-2021.png,original-render,21624,Meshes3D/bike-hayabusa-2021.npz
+bike-inazuma-gw250,Suzuki,Inazuma GW250,revert/BikeSprites.xcassets/bike-inazuma-gw250.imageset/bike-inazuma-gw250.png,original-render,22588,Meshes3D/bike-inazuma-gw250.npz
+bike-katana,Suzuki,Katana,revert/BikeSprites.xcassets/bike-katana.imageset/bike-katana.png,original-render,24008,Meshes3D/bike-katana.npz
+bike-m1800r,Suzuki,M1800R,revert/BikeSprites.xcassets/bike-m1800r.imageset/bike-m1800r.png,original-render,25712,Meshes3D/bike-m1800r.npz
+bike-marauder-1600,Suzuki,Marauder 1600,revert/BikeSprites.xcassets/bike-marauder-1600.imageset/bike-marauder-1600.png,original-render,25712,Meshes3D/bike-marauder-1600.npz
+bike-marauder-gz250,Suzuki,Marauder GZ250,revert/BikeSprites.xcassets/bike-marauder-gz250.imageset/bike-marauder-gz250.png,original-render,25712,Meshes3D/bike-marauder-gz250.npz
+bike-marauder-vz800,Suzuki,Marauder VZ800,revert/BikeSprites.xcassets/bike-marauder-vz800.imageset/bike-marauder-vz800.png,original-render,25712,Meshes3D/bike-marauder-vz800.npz
+bike-rf600r,Suzuki,RF600R,revert/BikeSprites.xcassets/bike-rf600r.imageset/bike-rf600r.png,original-render,17460,Meshes3D/bike-rf600r.npz
+bike-rf900r,Suzuki,RF900R,revert/BikeSprites.xcassets/bike-rf900r.imageset/bike-rf900r.png,original-render,26968,Meshes3D/bike-rf900r.npz
+bike-sv1000,Suzuki,SV1000,revert/BikeSprites.xcassets/bike-sv1000.imageset/bike-sv1000.png,original-render,21804,Meshes3D/bike-sv1000.npz
+bike-sv650,Suzuki,SV650,revert/BikeSprites.xcassets/bike-sv650.imageset/bike-sv650.png,original-render,23116,Meshes3D/bike-sv650.npz
+bike-sv650-2016-present,Suzuki,SV650,revert/BikeSprites.xcassets/bike-sv650-2016-present.imageset/bike-sv650-2016-present.png,original-render,23116,Meshes3D/bike-sv650-2016-present.npz
+bike-sv650s,Suzuki,SV650S,revert/BikeSprites.xcassets/bike-sv650s.imageset/bike-sv650s.png,original-render,23116,Meshes3D/bike-sv650s.npz
+bike-sv650x,Suzuki,SV650X,revert/BikeSprites.xcassets/bike-sv650x.imageset/bike-sv650x.png,original-render,23116,Meshes3D/bike-sv650x.npz
+bike-tl1000r,Suzuki,TL1000R,revert/BikeSprites.xcassets/bike-tl1000r.imageset/bike-tl1000r.png,original-render,26968,Meshes3D/bike-tl1000r.npz
+bike-tl1000s,Suzuki,TL1000S,revert/BikeSprites.xcassets/bike-tl1000s.imageset/bike-tl1000s.png,original-render,28996,Meshes3D/bike-tl1000s.npz
+bike-tu250x,Suzuki,TU250X,revert/BikeSprites.xcassets/bike-tu250x.imageset/bike-tu250x.png,original-render,25712,Meshes3D/bike-tu250x.npz
+bike-v-strom-1000,Suzuki,V-Strom 1000,revert/BikeSprites.xcassets/bike-v-strom-1000.imageset/bike-v-strom-1000.png,original-render,23712,Meshes3D/bike-v-strom-1000.npz
+bike-v-strom-1050,Suzuki,V-Strom 1050,revert/BikeSprites.xcassets/bike-v-strom-1050.imageset/bike-v-strom-1050.png,original-render,23712,Meshes3D/bike-v-strom-1050.npz
+bike-v-strom-1050xt,Suzuki,V-Strom 1050XT,revert/BikeSprites.xcassets/bike-v-strom-1050xt.imageset/bike-v-strom-1050xt.png,original-render,23712,Meshes3D/bike-v-strom-1050xt.npz
+bike-v-strom-250,Suzuki,V-Strom 250,revert/BikeSprites.xcassets/bike-v-strom-250.imageset/bike-v-strom-250.png,original-render,23712,Meshes3D/bike-v-strom-250.npz
+bike-v-strom-800,Suzuki,V-Strom 800,revert/BikeSprites.xcassets/bike-v-strom-800.imageset/bike-v-strom-800.png,original-render,23712,Meshes3D/bike-v-strom-800.npz
+bike-v-strom-800de,Suzuki,V-Strom 800DE,revert/BikeSprites.xcassets/bike-v-strom-800de.imageset/bike-v-strom-800de.png,original-render,23712,Meshes3D/bike-v-strom-800de.npz
+bike-vl1500-intruder-lc,Suzuki,VL1500 Intruder LC,revert/BikeSprites.xcassets/bike-vl1500-intruder-lc.imageset/bike-vl1500-intruder-lc.png,original-render,25712,Meshes3D/bike-vl1500-intruder-lc.npz
+bike-vl800-volusia,Suzuki,VL800 Volusia,revert/BikeSprites.xcassets/bike-vl800-volusia.imageset/bike-vl800-volusia.png,original-render,25712,Meshes3D/bike-vl800-volusia.npz
+bike-vs1400-intruder,Suzuki,VS1400 Intruder,revert/BikeSprites.xcassets/bike-vs1400-intruder.imageset/bike-vs1400-intruder.png,original-render,25712,Meshes3D/bike-vs1400-intruder.npz
+bike-vs700-intruder,Suzuki,VS700 Intruder,revert/BikeSprites.xcassets/bike-vs700-intruder.imageset/bike-vs700-intruder.png,original-render,25712,Meshes3D/bike-vs700-intruder.npz
+bike-vs750-intruder,Suzuki,VS750 Intruder,revert/BikeSprites.xcassets/bike-vs750-intruder.imageset/bike-vs750-intruder.png,original-render,25712,Meshes3D/bike-vs750-intruder.npz
+bike-vs800-intruder,Suzuki,VS800 Intruder,revert/BikeSprites.xcassets/bike-vs800-intruder.imageset/bike-vs800-intruder.png,original-render,25712,Meshes3D/bike-vs800-intruder.npz
+bike-xf650-freewind,Suzuki,XF650 Freewind,revert/BikeSprites.xcassets/bike-xf650-freewind.imageset/bike-xf650-freewind.png,original-render,23712,Meshes3D/bike-xf650-freewind.npz
+bike-adventurer-900,Triumph,Adventurer 900,revert/BikeSprites.xcassets/bike-adventurer-900.imageset/bike-adventurer-900.png,original-render,25712,Meshes3D/bike-adventurer-900.npz
+bike-america,Triumph,America,revert/BikeSprites.xcassets/bike-america.imageset/bike-america.png,original-render,25712,Meshes3D/bike-america.npz
+bike-bobber,Triumph,Bobber,revert/BikeSprites.xcassets/bike-bobber.imageset/bike-bobber.png,original-render,25712,Meshes3D/bike-bobber.npz
+bike-bobber-tfc,Triumph,Bobber TFC,revert/BikeSprites.xcassets/bike-bobber-tfc.imageset/bike-bobber-tfc.png,original-render,25712,Meshes3D/bike-bobber-tfc.npz
+bike-bonneville-790-865,Triumph,Bonneville 790/865,revert/BikeSprites.xcassets/bike-bonneville-790-865.imageset/bike-bonneville-790-865.png,original-render,34312,Meshes3D/bike-bonneville-790-865.npz
+bike-bonneville-se,Triumph,Bonneville SE,revert/BikeSprites.xcassets/bike-bonneville-se.imageset/bike-bonneville-se.png,original-render,34312,Meshes3D/bike-bonneville-se.npz
+bike-bonneville-t100,Triumph,Bonneville T100,revert/BikeSprites.xcassets/bike-bonneville-t100.imageset/bike-bonneville-t100.png,original-render,34312,Meshes3D/bike-bonneville-t100.npz
+bike-bonneville-t120,Triumph,Bonneville T120,revert/BikeSprites.xcassets/bike-bonneville-t120.imageset/bike-bonneville-t120.png,original-render,34312,Meshes3D/bike-bonneville-t120.npz
+bike-daytona-1200,Triumph,Daytona 1200,revert/BikeSprites.xcassets/bike-daytona-1200.imageset/bike-daytona-1200.png,original-render,17460,Meshes3D/bike-daytona-1200.npz
+bike-daytona-600,Triumph,Daytona 600,revert/BikeSprites.xcassets/bike-daytona-600.imageset/bike-daytona-600.png,original-render,26968,Meshes3D/bike-daytona-600.npz
+bike-daytona-650,Triumph,Daytona 650,revert/BikeSprites.xcassets/bike-daytona-650.imageset/bike-daytona-650.png,original-render,17460,Meshes3D/bike-daytona-650.npz
+bike-daytona-660,Triumph,Daytona 660,revert/BikeSprites.xcassets/bike-daytona-660.imageset/bike-daytona-660.png,original-render,28032,Meshes3D/bike-daytona-660.npz
+bike-daytona-675,Triumph,Daytona 675,revert/BikeSprites.xcassets/bike-daytona-675.imageset/bike-daytona-675.png,original-render,24300,Meshes3D/bike-daytona-675.npz
+bike-daytona-675-2009,Triumph,Daytona 675,revert/BikeSprites.xcassets/bike-daytona-675-2009.imageset/bike-daytona-675-2009.png,original-render,24300,Meshes3D/bike-daytona-675-2009.npz
+bike-daytona-675-2013,Triumph,Daytona 675,revert/BikeSprites.xcassets/bike-daytona-675-2013.imageset/bike-daytona-675-2013.png,original-render,27164,Meshes3D/bike-daytona-675-2013.npz
+bike-daytona-675r,Triumph,Daytona 675R,revert/BikeSprites.xcassets/bike-daytona-675r.imageset/bike-daytona-675r.png,original-render,28032,Meshes3D/bike-daytona-675r.npz
+bike-daytona-750,Triumph,Daytona 750,revert/BikeSprites.xcassets/bike-daytona-750.imageset/bike-daytona-750.png,original-render,28032,Meshes3D/bike-daytona-750.npz
+bike-daytona-765-moto2-edition,Triumph,Daytona 765 Moto2 Edition,revert/BikeSprites.xcassets/bike-daytona-765-moto2-edition.imageset/bike-daytona-765-moto2-edition.png,original-render,28672,Meshes3D/bike-daytona-765-moto2-edition.npz
+bike-daytona-900,Triumph,Daytona 900,revert/BikeSprites.xcassets/bike-daytona-900.imageset/bike-daytona-900.png,original-render,28672,Meshes3D/bike-daytona-900.npz
+bike-daytona-955i,Triumph,Daytona 955i,revert/BikeSprites.xcassets/bike-daytona-955i.imageset/bike-daytona-955i.png,original-render,28032,Meshes3D/bike-daytona-955i.npz
+bike-daytona-moto2-765,Triumph,Daytona Moto2 765,revert/BikeSprites.xcassets/bike-daytona-moto2-765.imageset/bike-daytona-moto2-765.png,original-render,29196,Meshes3D/bike-daytona-moto2-765.npz
+bike-legend-tt,Triumph,Legend TT,revert/BikeSprites.xcassets/bike-legend-tt.imageset/bike-legend-tt.png,original-render,25712,Meshes3D/bike-legend-tt.npz
+bike-rocket-3-gt,Triumph,Rocket 3 GT,revert/BikeSprites.xcassets/bike-rocket-3-gt.imageset/bike-rocket-3-gt.png,original-render,25712,Meshes3D/bike-rocket-3-gt.npz
+bike-rocket-3-r,Triumph,Rocket 3 R,revert/BikeSprites.xcassets/bike-rocket-3-r.imageset/bike-rocket-3-r.png,original-render,25712,Meshes3D/bike-rocket-3-r.npz
+bike-rocket-iii,Triumph,Rocket III,revert/BikeSprites.xcassets/bike-rocket-iii.imageset/bike-rocket-iii.png,original-render,25712,Meshes3D/bike-rocket-iii.npz
+bike-scrambler-1200-xc,Triumph,Scrambler 1200 XC,revert/BikeSprites.xcassets/bike-scrambler-1200-xc.imageset/bike-scrambler-1200-xc.png,original-render,34312,Meshes3D/bike-scrambler-1200-xc.npz
+bike-scrambler-1200-xe,Triumph,Scrambler 1200 XE,revert/BikeSprites.xcassets/bike-scrambler-1200-xe.imageset/bike-scrambler-1200-xe.png,original-render,34312,Meshes3D/bike-scrambler-1200-xe.npz
+bike-scrambler-400-x,Triumph,Scrambler 400 X,revert/BikeSprites.xcassets/bike-scrambler-400-x.imageset/bike-scrambler-400-x.png,original-render,34312,Meshes3D/bike-scrambler-400-x.npz
+bike-scrambler-400-xc,Triumph,Scrambler 400 XC,revert/BikeSprites.xcassets/bike-scrambler-400-xc.imageset/bike-scrambler-400-xc.png,original-render,34312,Meshes3D/bike-scrambler-400-xc.npz
+bike-scrambler-900,Triumph,Scrambler 900,revert/BikeSprites.xcassets/bike-scrambler-900.imageset/bike-scrambler-900.png,original-render,34312,Meshes3D/bike-scrambler-900.npz
+bike-speed-1200-rx,Triumph,Speed 1200 RX,revert/BikeSprites.xcassets/bike-speed-1200-rx.imageset/bike-speed-1200-rx.png,original-render,23116,Meshes3D/bike-speed-1200-rx.npz
+bike-speed-400,Triumph,Speed 400,revert/BikeSprites.xcassets/bike-speed-400.imageset/bike-speed-400.png,original-render,24112,Meshes3D/bike-speed-400.npz
+bike-speed-four,Triumph,Speed Four,revert/BikeSprites.xcassets/bike-speed-four.imageset/bike-speed-four.png,original-render,27164,Meshes3D/bike-speed-four.npz
+bike-speed-t4,Triumph,Speed T4,revert/BikeSprites.xcassets/bike-speed-t4.imageset/bike-speed-t4.png,original-render,24112,Meshes3D/bike-speed-t4.npz
+bike-speed-triple,Triumph,Speed Triple,revert/BikeSprites.xcassets/bike-speed-triple.imageset/bike-speed-triple.png,original-render,22588,Meshes3D/bike-speed-triple.npz
+bike-speed-triple-1050,Triumph,Speed Triple 1050,revert/BikeSprites.xcassets/bike-speed-triple-1050.imageset/bike-speed-triple-1050.png,original-render,23116,Meshes3D/bike-speed-triple-1050.npz
+bike-speed-triple-1200-rs,Triumph,Speed Triple 1200 RS,revert/BikeSprites.xcassets/bike-speed-triple-1200-rs.imageset/bike-speed-triple-1200-rs.png,original-render,24008,Meshes3D/bike-speed-triple-1200-rs.npz
+bike-speed-triple-r,Triumph,Speed Triple R,revert/BikeSprites.xcassets/bike-speed-triple-r.imageset/bike-speed-triple-r.png,original-render,24008,Meshes3D/bike-speed-triple-r.npz
+bike-speed-twin-1200,Triumph,Speed Twin 1200,revert/BikeSprites.xcassets/bike-speed-twin-1200.imageset/bike-speed-twin-1200.png,original-render,24008,Meshes3D/bike-speed-twin-1200.npz
+bike-speed-twin-900,Triumph,Speed Twin 900,revert/BikeSprites.xcassets/bike-speed-twin-900.imageset/bike-speed-twin-900.png,original-render,24112,Meshes3D/bike-speed-twin-900.npz
+bike-speedmaster,Triumph,Speedmaster,revert/BikeSprites.xcassets/bike-speedmaster.imageset/bike-speedmaster.png,original-render,25712,Meshes3D/bike-speedmaster.npz
+bike-speedmaster-1200,Triumph,Speedmaster 1200,revert/BikeSprites.xcassets/bike-speedmaster-1200.imageset/bike-speedmaster-1200.png,original-render,25712,Meshes3D/bike-speedmaster-1200.npz
+bike-sprint-gt,Triumph,Sprint GT,revert/BikeSprites.xcassets/bike-sprint-gt.imageset/bike-sprint-gt.png,original-render,17460,Meshes3D/bike-sprint-gt.npz
+bike-sprint-rs,Triumph,Sprint RS,revert/BikeSprites.xcassets/bike-sprint-rs.imageset/bike-sprint-rs.png,original-render,27164,Meshes3D/bike-sprint-rs.npz
+bike-sprint-st,Triumph,Sprint ST,revert/BikeSprites.xcassets/bike-sprint-st.imageset/bike-sprint-st.png,original-render,28996,Meshes3D/bike-sprint-st.npz
+bike-street-cup,Triumph,Street Cup,revert/BikeSprites.xcassets/bike-street-cup.imageset/bike-street-cup.png,original-render,34312,Meshes3D/bike-street-cup.npz
+bike-street-scrambler,Triumph,Street Scrambler,revert/BikeSprites.xcassets/bike-street-scrambler.imageset/bike-street-scrambler.png,original-render,34312,Meshes3D/bike-street-scrambler.npz
+bike-street-triple-675,Triumph,Street Triple 675,revert/BikeSprites.xcassets/bike-street-triple-675.imageset/bike-street-triple-675.png,original-render,21804,Meshes3D/bike-street-triple-675.npz
+bike-street-triple-675-2013,Triumph,Street Triple 675,revert/BikeSprites.xcassets/bike-street-triple-675-2013.imageset/bike-street-triple-675-2013.png,original-render,24008,Meshes3D/bike-street-triple-675-2013.npz
+bike-street-triple-765,Triumph,Street Triple 765,revert/BikeSprites.xcassets/bike-street-triple-765.imageset/bike-street-triple-765.png,original-render,21804,Meshes3D/bike-street-triple-765.npz
+bike-street-triple-765-2023,Triumph,Street Triple 765,revert/BikeSprites.xcassets/bike-street-triple-765-2023.imageset/bike-street-triple-765-2023.png,original-render,22588,Meshes3D/bike-street-triple-765-2023.npz
+bike-street-twin,Triumph,Street Twin,revert/BikeSprites.xcassets/bike-street-twin.imageset/bike-street-twin.png,original-render,34312,Meshes3D/bike-street-twin.npz
+bike-t595-daytona,Triumph,T595 Daytona,revert/BikeSprites.xcassets/bike-t595-daytona.imageset/bike-t595-daytona.png,original-render,28996,Meshes3D/bike-t595-daytona.npz
+bike-tt600,Triumph,TT600,revert/BikeSprites.xcassets/bike-tt600.imageset/bike-tt600.png,original-render,28672,Meshes3D/bike-tt600.npz
+bike-thruxton-1200,Triumph,Thruxton 1200,revert/BikeSprites.xcassets/bike-thruxton-1200.imageset/bike-thruxton-1200.png,original-render,34312,Meshes3D/bike-thruxton-1200.npz
+bike-thruxton-900,Triumph,Thruxton 900,revert/BikeSprites.xcassets/bike-thruxton-900.imageset/bike-thruxton-900.png,original-render,34312,Meshes3D/bike-thruxton-900.npz
+bike-thruxton-rs,Triumph,Thruxton RS,revert/BikeSprites.xcassets/bike-thruxton-rs.imageset/bike-thruxton-rs.png,original-render,34312,Meshes3D/bike-thruxton-rs.npz
+bike-thunderbird-1600,Triumph,Thunderbird 1600,revert/BikeSprites.xcassets/bike-thunderbird-1600.imageset/bike-thunderbird-1600.png,original-render,25712,Meshes3D/bike-thunderbird-1600.npz
+bike-thunderbird-900,Triumph,Thunderbird 900,revert/BikeSprites.xcassets/bike-thunderbird-900.imageset/bike-thunderbird-900.png,original-render,25712,Meshes3D/bike-thunderbird-900.npz
+bike-thunderbird-sport,Triumph,Thunderbird Sport,revert/BikeSprites.xcassets/bike-thunderbird-sport.imageset/bike-thunderbird-sport.png,original-render,25712,Meshes3D/bike-thunderbird-sport.npz
+bike-thunderbird-storm,Triumph,Thunderbird Storm,revert/BikeSprites.xcassets/bike-thunderbird-storm.imageset/bike-thunderbird-storm.png,original-render,25712,Meshes3D/bike-thunderbird-storm.npz
+bike-tiger-1050,Triumph,Tiger 1050,revert/BikeSprites.xcassets/bike-tiger-1050.imageset/bike-tiger-1050.png,original-render,23712,Meshes3D/bike-tiger-1050.npz
+bike-tiger-1050-sport,Triumph,Tiger 1050 Sport,revert/BikeSprites.xcassets/bike-tiger-1050-sport.imageset/bike-tiger-1050-sport.png,original-render,23712,Meshes3D/bike-tiger-1050-sport.npz
+bike-tiger-1200-gt,Triumph,Tiger 1200 GT,revert/BikeSprites.xcassets/bike-tiger-1200-gt.imageset/bike-tiger-1200-gt.png,original-render,23712,Meshes3D/bike-tiger-1200-gt.npz
+bike-tiger-1200-rally,Triumph,Tiger 1200 Rally,revert/BikeSprites.xcassets/bike-tiger-1200-rally.imageset/bike-tiger-1200-rally.png,original-render,23712,Meshes3D/bike-tiger-1200-rally.npz
+bike-tiger-660-sport,Triumph,Tiger 660 Sport,revert/BikeSprites.xcassets/bike-tiger-660-sport.imageset/bike-tiger-660-sport.png,original-render,23712,Meshes3D/bike-tiger-660-sport.npz
+bike-tiger-800,Triumph,Tiger 800,revert/BikeSprites.xcassets/bike-tiger-800.imageset/bike-tiger-800.png,original-render,23712,Meshes3D/bike-tiger-800.npz
+bike-tiger-800xc,Triumph,Tiger 800XC,revert/BikeSprites.xcassets/bike-tiger-800xc.imageset/bike-tiger-800xc.png,original-render,23712,Meshes3D/bike-tiger-800xc.npz
+bike-tiger-850-sport,Triumph,Tiger 850 Sport,revert/BikeSprites.xcassets/bike-tiger-850-sport.imageset/bike-tiger-850-sport.png,original-render,23712,Meshes3D/bike-tiger-850-sport.npz
+bike-tiger-885i,Triumph,Tiger 885i,revert/BikeSprites.xcassets/bike-tiger-885i.imageset/bike-tiger-885i.png,original-render,23712,Meshes3D/bike-tiger-885i.npz
+bike-tiger-900,Triumph,Tiger 900,revert/BikeSprites.xcassets/bike-tiger-900.imageset/bike-tiger-900.png,original-render,23712,Meshes3D/bike-tiger-900.npz
+bike-tiger-900-rally,Triumph,Tiger 900 Rally,revert/BikeSprites.xcassets/bike-tiger-900-rally.imageset/bike-tiger-900-rally.png,original-render,23712,Meshes3D/bike-tiger-900-rally.npz
+bike-tiger-955i,Triumph,Tiger 955i,revert/BikeSprites.xcassets/bike-tiger-955i.imageset/bike-tiger-955i.png,original-render,23712,Meshes3D/bike-tiger-955i.npz
+bike-tiger-explorer-1200,Triumph,Tiger Explorer 1200,revert/BikeSprites.xcassets/bike-tiger-explorer-1200.imageset/bike-tiger-explorer-1200.png,original-render,23712,Meshes3D/bike-tiger-explorer-1200.npz
+bike-trident-660,Triumph,Trident 660,revert/BikeSprites.xcassets/bike-trident-660.imageset/bike-trident-660.png,original-render,23116,Meshes3D/bike-trident-660.npz
+bike-trident-750,Triumph,Trident 750,revert/BikeSprites.xcassets/bike-trident-750.imageset/bike-trident-750.png,original-render,23116,Meshes3D/bike-trident-750.npz
+bike-trident-900,Triumph,Trident 900,revert/BikeSprites.xcassets/bike-trident-900.imageset/bike-trident-900.png,original-render,22588,Meshes3D/bike-trident-900.npz
+bike-trophy-1200,Triumph,Trophy 1200,revert/BikeSprites.xcassets/bike-trophy-1200.imageset/bike-trophy-1200.png,original-render,21624,Meshes3D/bike-trophy-1200.npz
+bike-trophy-1215,Triumph,Trophy 1215,revert/BikeSprites.xcassets/bike-trophy-1215.imageset/bike-trophy-1215.png,original-render,21624,Meshes3D/bike-trophy-1215.npz
+bike-trophy-900,Triumph,Trophy 900,revert/BikeSprites.xcassets/bike-trophy-900.imageset/bike-trophy-900.png,original-render,21624,Meshes3D/bike-trophy-900.npz
+bike-bolt-xv950,Yamaha,Bolt XV950,revert/BikeSprites.xcassets/bike-bolt-xv950.imageset/bike-bolt-xv950.png,original-render,25712,Meshes3D/bike-bolt-xv950.npz
+bike-fj-09,Yamaha,FJ-09,revert/BikeSprites.xcassets/bike-fj-09.imageset/bike-fj-09.png,original-render,21624,Meshes3D/bike-fj-09.npz
+bike-fj1200,Yamaha,FJ1200,revert/BikeSprites.xcassets/bike-fj1200.imageset/bike-fj1200.png,original-render,21624,Meshes3D/bike-fj1200.npz
+bike-fjr1300,Yamaha,FJR1300,revert/BikeSprites.xcassets/bike-fjr1300.imageset/bike-fjr1300.png,original-render,21624,Meshes3D/bike-fjr1300.npz
+bike-fz-07,Yamaha,FZ-07,revert/BikeSprites.xcassets/bike-fz-07.imageset/bike-fz-07.png,original-render,24112,Meshes3D/bike-fz-07.npz
+bike-fz-09,Yamaha,FZ-09,revert/BikeSprites.xcassets/bike-fz-09.imageset/bike-fz-09.png,original-render,24008,Meshes3D/bike-fz-09.npz
+bike-fz-10,Yamaha,FZ-10,revert/BikeSprites.xcassets/bike-fz-10.imageset/bike-fz-10.png,original-render,21804,Meshes3D/bike-fz-10.npz
+bike-fz1,Yamaha,FZ1,revert/BikeSprites.xcassets/bike-fz1.imageset/bike-fz1.png,original-render,23116,Meshes3D/bike-fz1.npz
+bike-fz6,Yamaha,FZ6,revert/BikeSprites.xcassets/bike-fz6.imageset/bike-fz6.png,original-render,23116,Meshes3D/bike-fz6.npz
+bike-fz6r,Yamaha,FZ6R,revert/BikeSprites.xcassets/bike-fz6r.imageset/bike-fz6r.png,original-render,24112,Meshes3D/bike-fz6r.npz
+bike-fz8,Yamaha,FZ8,revert/BikeSprites.xcassets/bike-fz8.imageset/bike-fz8.png,original-render,22588,Meshes3D/bike-fz8.npz
+bike-fzr1000,Yamaha,FZR1000,revert/BikeSprites.xcassets/bike-fzr1000.imageset/bike-fzr1000.png,original-render,26968,Meshes3D/bike-fzr1000.npz
+bike-fzr1000-1989,Yamaha,FZR1000,revert/BikeSprites.xcassets/bike-fzr1000-1989.imageset/bike-fzr1000-1989.png,original-render,26968,Meshes3D/bike-fzr1000-1989.npz
+bike-fzr250,Yamaha,FZR250,revert/BikeSprites.xcassets/bike-fzr250.imageset/bike-fzr250.png,original-render,28032,Meshes3D/bike-fzr250.npz
+bike-fzr250r,Yamaha,FZR250R,revert/BikeSprites.xcassets/bike-fzr250r.imageset/bike-fzr250r.png,original-render,26968,Meshes3D/bike-fzr250r.npz
+bike-fzr400,Yamaha,FZR400,revert/BikeSprites.xcassets/bike-fzr400.imageset/bike-fzr400.png,original-render,28672,Meshes3D/bike-fzr400.npz
+bike-fzr400rr,Yamaha,FZR400RR,revert/BikeSprites.xcassets/bike-fzr400rr.imageset/bike-fzr400rr.png,original-render,27164,Meshes3D/bike-fzr400rr.npz
+bike-fzr600,Yamaha,FZR600,revert/BikeSprites.xcassets/bike-fzr600.imageset/bike-fzr600.png,original-render,17460,Meshes3D/bike-fzr600.npz
+bike-mt-03,Yamaha,MT-03,revert/BikeSprites.xcassets/bike-mt-03.imageset/bike-mt-03.png,original-render,24008,Meshes3D/bike-mt-03.npz
+bike-mt-07,Yamaha,MT-07,revert/BikeSprites.xcassets/bike-mt-07.imageset/bike-mt-07.png,original-render,23116,Meshes3D/bike-mt-07.npz
+bike-mt-09,Yamaha,MT-09,revert/BikeSprites.xcassets/bike-mt-09.imageset/bike-mt-09.png,original-render,22588,Meshes3D/bike-mt-09.npz
+bike-mt-09-sp,Yamaha,MT-09 SP,revert/BikeSprites.xcassets/bike-mt-09-sp.imageset/bike-mt-09-sp.png,original-render,24112,Meshes3D/bike-mt-09-sp.npz
+bike-mt-10,Yamaha,MT-10,revert/BikeSprites.xcassets/bike-mt-10.imageset/bike-mt-10.png,original-render,24112,Meshes3D/bike-mt-10.npz
+bike-mt-10-sp,Yamaha,MT-10 SP,revert/BikeSprites.xcassets/bike-mt-10-sp.imageset/bike-mt-10-sp.png,original-render,24008,Meshes3D/bike-mt-10-sp.npz
+bike-mt-125,Yamaha,MT-125,revert/BikeSprites.xcassets/bike-mt-125.imageset/bike-mt-125.png,original-render,24112,Meshes3D/bike-mt-125.npz
+bike-majesty-yp250,Yamaha,Majesty YP250,revert/BikeSprites.xcassets/bike-majesty-yp250.imageset/bike-majesty-yp250.png,original-render,29992,Meshes3D/bike-majesty-yp250.npz
+bike-nmax-125-155,Yamaha,NMAX 125/155,revert/BikeSprites.xcassets/bike-nmax-125-155.imageset/bike-nmax-125-155.png,original-render,29992,Meshes3D/bike-nmax-125-155.npz
+bike-niken,Yamaha,Niken,revert/BikeSprites.xcassets/bike-niken.imageset/bike-niken.png,original-render,29992,Meshes3D/bike-niken.npz
+bike-raider-xv1900,Yamaha,Raider XV1900,revert/BikeSprites.xcassets/bike-raider-xv1900.imageset/bike-raider-xv1900.png,original-render,25712,Meshes3D/bike-raider-xv1900.npz
+bike-roadliner,Yamaha,Roadliner,revert/BikeSprites.xcassets/bike-roadliner.imageset/bike-roadliner.png,original-render,25712,Meshes3D/bike-roadliner.npz
+bike-royal-star-venture-xvz13,Yamaha,Royal Star Venture XVZ13,revert/BikeSprites.xcassets/bike-royal-star-venture-xvz13.imageset/bike-royal-star-venture-xvz13.png,original-render,25712,Meshes3D/bike-royal-star-venture-xvz13.npz
+bike-scr950,Yamaha,SCR950,revert/BikeSprites.xcassets/bike-scr950.imageset/bike-scr950.png,original-render,25712,Meshes3D/bike-scr950.npz
+bike-sr400,Yamaha,SR400,revert/BikeSprites.xcassets/bike-sr400.imageset/bike-sr400.png,original-render,22332,Meshes3D/bike-sr400.npz
+bike-star-eluder,Yamaha,Star Eluder,revert/BikeSprites.xcassets/bike-star-eluder.imageset/bike-star-eluder.png,original-render,25712,Meshes3D/bike-star-eluder.npz
+bike-stratoliner,Yamaha,Stratoliner,revert/BikeSprites.xcassets/bike-stratoliner.imageset/bike-stratoliner.png,original-render,25712,Meshes3D/bike-stratoliner.npz
+bike-stryker,Yamaha,Stryker,revert/BikeSprites.xcassets/bike-stryker.imageset/bike-stryker.png,original-render,25712,Meshes3D/bike-stryker.npz
+bike-tdm850,Yamaha,TDM850,revert/BikeSprites.xcassets/bike-tdm850.imageset/bike-tdm850.png,original-render,23712,Meshes3D/bike-tdm850.npz
+bike-tdm900,Yamaha,TDM900,revert/BikeSprites.xcassets/bike-tdm900.imageset/bike-tdm900.png,original-render,23712,Meshes3D/bike-tdm900.npz
+bike-tmax,Yamaha,TMAX,revert/BikeSprites.xcassets/bike-tmax.imageset/bike-tmax.png,original-render,29992,Meshes3D/bike-tmax.npz
+bike-tw200,Yamaha,TW200,revert/BikeSprites.xcassets/bike-tw200.imageset/bike-tw200.png,original-render,22332,Meshes3D/bike-tw200.npz
+bike-tracer-700,Yamaha,Tracer 700,revert/BikeSprites.xcassets/bike-tracer-700.imageset/bike-tracer-700.png,original-render,21624,Meshes3D/bike-tracer-700.npz
+bike-tracer-9-gt,Yamaha,Tracer 9 GT,revert/BikeSprites.xcassets/bike-tracer-9-gt.imageset/bike-tracer-9-gt.png,original-render,21624,Meshes3D/bike-tracer-9-gt.npz
+bike-tracer-900,Yamaha,Tracer 900,revert/BikeSprites.xcassets/bike-tracer-900.imageset/bike-tracer-900.png,original-render,21624,Meshes3D/bike-tracer-900.npz
+bike-tricity-125-155-300,Yamaha,Tricity 125/155/300,revert/BikeSprites.xcassets/bike-tricity-125-155-300.imageset/bike-tricity-125-155-300.png,original-render,29992,Meshes3D/bike-tricity-125-155-300.npz
+bike-t-n-r-700,Yamaha,Ténéré 700,revert/BikeSprites.xcassets/bike-t-n-r-700.imageset/bike-t-n-r-700.png,original-render,23712,Meshes3D/bike-t-n-r-700.npz
+bike-t-n-r-700-world-raid,Yamaha,Ténéré 700 World Raid,revert/BikeSprites.xcassets/bike-t-n-r-700-world-raid.imageset/bike-t-n-r-700-world-raid.png,original-render,23712,Meshes3D/bike-t-n-r-700-world-raid.npz
+bike-v-star-1100-xvs1100,Yamaha,V-Star 1100 XVS1100,revert/BikeSprites.xcassets/bike-v-star-1100-xvs1100.imageset/bike-v-star-1100-xvs1100.png,original-render,25712,Meshes3D/bike-v-star-1100-xvs1100.npz
+bike-v-star-1300,Yamaha,V-Star 1300,revert/BikeSprites.xcassets/bike-v-star-1300.imageset/bike-v-star-1300.png,original-render,25712,Meshes3D/bike-v-star-1300.npz
+bike-v-star-250,Yamaha,V-Star 250,revert/BikeSprites.xcassets/bike-v-star-250.imageset/bike-v-star-250.png,original-render,25712,Meshes3D/bike-v-star-250.npz
+bike-v-star-650-xvs650,Yamaha,V-Star 650 XVS650,revert/BikeSprites.xcassets/bike-v-star-650-xvs650.imageset/bike-v-star-650-xvs650.png,original-render,25712,Meshes3D/bike-v-star-650-xvs650.npz
+bike-v-star-950,Yamaha,V-Star 950,revert/BikeSprites.xcassets/bike-v-star-950.imageset/bike-v-star-950.png,original-render,25712,Meshes3D/bike-v-star-950.npz
+bike-vmax-1700,Yamaha,VMAX 1700,revert/BikeSprites.xcassets/bike-vmax-1700.imageset/bike-vmax-1700.png,original-render,25712,Meshes3D/bike-vmax-1700.npz
+bike-vmx1200-v-max,Yamaha,VMX1200 V-Max,revert/BikeSprites.xcassets/bike-vmx1200-v-max.imageset/bike-vmx1200-v-max.png,original-render,25712,Meshes3D/bike-vmx1200-v-max.npz
+bike-vino-50,Yamaha,Vino 50,revert/BikeSprites.xcassets/bike-vino-50.imageset/bike-vino-50.png,original-render,29992,Meshes3D/bike-vino-50.npz
+bike-wr250r,Yamaha,WR250R,revert/BikeSprites.xcassets/bike-wr250r.imageset/bike-wr250r.png,original-render,22332,Meshes3D/bike-wr250r.npz
+bike-wr250x,Yamaha,WR250X,revert/BikeSprites.xcassets/bike-wr250x.imageset/bike-wr250x.png,original-render,22332,Meshes3D/bike-wr250x.npz
+bike-xj6-diversion,Yamaha,XJ6 Diversion,revert/BikeSprites.xcassets/bike-xj6-diversion.imageset/bike-xj6-diversion.png,original-render,24008,Meshes3D/bike-xj6-diversion.npz
+bike-xj600-diversion,Yamaha,XJ600 Diversion,revert/BikeSprites.xcassets/bike-xj600-diversion.imageset/bike-xj600-diversion.png,original-render,22588,Meshes3D/bike-xj600-diversion.npz
+bike-xj900s-diversion,Yamaha,XJ900S Diversion,revert/BikeSprites.xcassets/bike-xj900s-diversion.imageset/bike-xj900s-diversion.png,original-render,23116,Meshes3D/bike-xj900s-diversion.npz
+bike-xjr1200,Yamaha,XJR1200,revert/BikeSprites.xcassets/bike-xjr1200.imageset/bike-xjr1200.png,original-render,22588,Meshes3D/bike-xjr1200.npz
+bike-xjr1300,Yamaha,XJR1300,revert/BikeSprites.xcassets/bike-xjr1300.imageset/bike-xjr1300.png,original-render,21804,Meshes3D/bike-xjr1300.npz
+bike-xmax-125-250-300-400,Yamaha,XMAX 125/250/300/400,revert/BikeSprites.xcassets/bike-xmax-125-250-300-400.imageset/bike-xmax-125-250-300-400.png,original-render,29992,Meshes3D/bike-xmax-125-250-300-400.npz
+bike-xsr125,Yamaha,XSR125,revert/BikeSprites.xcassets/bike-xsr125.imageset/bike-xsr125.png,original-render,21804,Meshes3D/bike-xsr125.npz
+bike-xsr700,Yamaha,XSR700,revert/BikeSprites.xcassets/bike-xsr700.imageset/bike-xsr700.png,original-render,22588,Meshes3D/bike-xsr700.npz
+bike-xsr900,Yamaha,XSR900,revert/BikeSprites.xcassets/bike-xsr900.imageset/bike-xsr900.png,original-render,24112,Meshes3D/bike-xsr900.npz
+bike-xsr900-gp,Yamaha,XSR900 GP,revert/BikeSprites.xcassets/bike-xsr900-gp.imageset/bike-xsr900-gp.png,original-render,24112,Meshes3D/bike-xsr900-gp.npz
+bike-xt1200z-super-t-n-r,Yamaha,XT1200Z Super Ténéré,revert/BikeSprites.xcassets/bike-xt1200z-super-t-n-r.imageset/bike-xt1200z-super-t-n-r.png,original-render,23712,Meshes3D/bike-xt1200z-super-t-n-r.npz
+bike-xt225,Yamaha,XT225,revert/BikeSprites.xcassets/bike-xt225.imageset/bike-xt225.png,original-render,22332,Meshes3D/bike-xt225.npz
+bike-xt250,Yamaha,XT250,revert/BikeSprites.xcassets/bike-xt250.imageset/bike-xt250.png,original-render,22332,Meshes3D/bike-xt250.npz
+bike-xt600e,Yamaha,XT600E,revert/BikeSprites.xcassets/bike-xt600e.imageset/bike-xt600e.png,original-render,22332,Meshes3D/bike-xt600e.npz
+bike-xt660r,Yamaha,XT660R,revert/BikeSprites.xcassets/bike-xt660r.imageset/bike-xt660r.png,original-render,22332,Meshes3D/bike-xt660r.npz
+bike-xt660x,Yamaha,XT660X,revert/BikeSprites.xcassets/bike-xt660x.imageset/bike-xt660x.png,original-render,22332,Meshes3D/bike-xt660x.npz
+bike-xt660z-t-n-r,Yamaha,XT660Z Ténéré,revert/BikeSprites.xcassets/bike-xt660z-t-n-r.imageset/bike-xt660z-t-n-r.png,original-render,23712,Meshes3D/bike-xt660z-t-n-r.npz
+bike-xtz660-t-n-r,Yamaha,XTZ660 Ténéré,revert/BikeSprites.xcassets/bike-xtz660-t-n-r.imageset/bike-xtz660-t-n-r.png,original-render,23712,Meshes3D/bike-xtz660-t-n-r.npz
+bike-xtz750-super-t-n-r,Yamaha,XTZ750 Super Ténéré,revert/BikeSprites.xcassets/bike-xtz750-super-t-n-r.imageset/bike-xtz750-super-t-n-r.png,original-render,23712,Meshes3D/bike-xtz750-super-t-n-r.npz
+bike-xv1100-virago,Yamaha,XV1100 Virago,revert/BikeSprites.xcassets/bike-xv1100-virago.imageset/bike-xv1100-virago.png,original-render,25712,Meshes3D/bike-xv1100-virago.npz
+bike-xv1600-road-star,Yamaha,XV1600 Road Star,revert/BikeSprites.xcassets/bike-xv1600-road-star.imageset/bike-xv1600-road-star.png,original-render,25712,Meshes3D/bike-xv1600-road-star.npz
+bike-xv1700-road-star-warrior,Yamaha,XV1700 Road Star Warrior,revert/BikeSprites.xcassets/bike-xv1700-road-star-warrior.imageset/bike-xv1700-road-star-warrior.png,original-render,25712,Meshes3D/bike-xv1700-road-star-warrior.npz
+bike-xv250-virago,Yamaha,XV250 Virago,revert/BikeSprites.xcassets/bike-xv250-virago.imageset/bike-xv250-virago.png,original-render,25712,Meshes3D/bike-xv250-virago.npz
+bike-xv535-virago,Yamaha,XV535 Virago,revert/BikeSprites.xcassets/bike-xv535-virago.imageset/bike-xv535-virago.png,original-render,25712,Meshes3D/bike-xv535-virago.npz
+bike-xv750-virago,Yamaha,XV750 Virago,revert/BikeSprites.xcassets/bike-xv750-virago.imageset/bike-xv750-virago.png,original-render,25712,Meshes3D/bike-xv750-virago.npz
+bike-yzf-r1,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1.imageset/bike-yzf-r1.png,original-render,28032,Meshes3D/bike-yzf-r1.npz
+bike-yzf-r1-2000,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2000.imageset/bike-yzf-r1-2000.png,original-render,17460,Meshes3D/bike-yzf-r1-2000.npz
+bike-yzf-r1-2002,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2002.imageset/bike-yzf-r1-2002.png,original-render,27164,Meshes3D/bike-yzf-r1-2002.npz
+bike-yzf-r1-2004,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2004.imageset/bike-yzf-r1-2004.png,original-render,28996,Meshes3D/bike-yzf-r1-2004.npz
+bike-yzf-r1-2007,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2007.imageset/bike-yzf-r1-2007.png,original-render,24300,Meshes3D/bike-yzf-r1-2007.npz
+bike-yzf-r1-2009,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2009.imageset/bike-yzf-r1-2009.png,original-render,28032,Meshes3D/bike-yzf-r1-2009.npz
+bike-yzf-r1-2015,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2015.imageset/bike-yzf-r1-2015.png,original-render,28672,Meshes3D/bike-yzf-r1-2015.npz
+bike-yzf-r1-2020,Yamaha,YZF-R1,revert/BikeSprites.xcassets/bike-yzf-r1-2020.imageset/bike-yzf-r1-2020.png,original-render,27164,Meshes3D/bike-yzf-r1-2020.npz
+bike-yzf-r125,Yamaha,YZF-R125,revert/BikeSprites.xcassets/bike-yzf-r125.imageset/bike-yzf-r125.png,original-render,17460,Meshes3D/bike-yzf-r125.npz
+bike-yzf-r125-2014,Yamaha,YZF-R125,revert/BikeSprites.xcassets/bike-yzf-r125-2014.imageset/bike-yzf-r125-2014.png,original-render,28996,Meshes3D/bike-yzf-r125-2014.npz
+bike-yzf-r125-2019,Yamaha,YZF-R125,revert/BikeSprites.xcassets/bike-yzf-r125-2019.imageset/bike-yzf-r125-2019.png,original-render,28032,Meshes3D/bike-yzf-r125-2019.npz
+bike-yzf-r15,Yamaha,YZF-R15,revert/BikeSprites.xcassets/bike-yzf-r15.imageset/bike-yzf-r15.png,original-render,28672,Meshes3D/bike-yzf-r15.npz
+bike-yzf-r15-2011,Yamaha,YZF-R15,revert/BikeSprites.xcassets/bike-yzf-r15-2011.imageset/bike-yzf-r15-2011.png,original-render,24300,Meshes3D/bike-yzf-r15-2011.npz
+bike-yzf-r15-2017,Yamaha,YZF-R15,revert/BikeSprites.xcassets/bike-yzf-r15-2017.imageset/bike-yzf-r15-2017.png,original-render,29196,Meshes3D/bike-yzf-r15-2017.npz
+bike-yzf-r15-2021,Yamaha,YZF-R15,revert/BikeSprites.xcassets/bike-yzf-r15-2021.imageset/bike-yzf-r15-2021.png,original-render,17460,Meshes3D/bike-yzf-r15-2021.npz
+bike-yzf-r1m,Yamaha,YZF-R1M,revert/BikeSprites.xcassets/bike-yzf-r1m.imageset/bike-yzf-r1m.png,original-render,28672,Meshes3D/bike-yzf-r1m.npz
+bike-yzf-r1s,Yamaha,YZF-R1S,revert/BikeSprites.xcassets/bike-yzf-r1s.imageset/bike-yzf-r1s.png,original-render,28996,Meshes3D/bike-yzf-r1s.npz
+bike-yzf-r25,Yamaha,YZF-R25,revert/BikeSprites.xcassets/bike-yzf-r25.imageset/bike-yzf-r25.png,original-render,24300,Meshes3D/bike-yzf-r25.npz
+bike-yzf-r25-2019,Yamaha,YZF-R25,revert/BikeSprites.xcassets/bike-yzf-r25-2019.imageset/bike-yzf-r25-2019.png,original-render,17460,Meshes3D/bike-yzf-r25-2019.npz
+bike-yzf-r3,Yamaha,YZF-R3,revert/BikeSprites.xcassets/bike-yzf-r3.imageset/bike-yzf-r3.png,original-render,26968,Meshes3D/bike-yzf-r3.npz
+bike-yzf-r3-2019,Yamaha,YZF-R3,revert/BikeSprites.xcassets/bike-yzf-r3-2019.imageset/bike-yzf-r3-2019.png,original-render,28996,Meshes3D/bike-yzf-r3-2019.npz
+bike-yzf-r3-2025,Yamaha,YZF-R3,revert/BikeSprites.xcassets/bike-yzf-r3-2025.imageset/bike-yzf-r3-2025.png,original-render,28032,Meshes3D/bike-yzf-r3-2025.npz
+bike-yzf-r6,Yamaha,YZF-R6,revert/BikeSprites.xcassets/bike-yzf-r6.imageset/bike-yzf-r6.png,original-render,28672,Meshes3D/bike-yzf-r6.npz
+bike-yzf-r6-2001,Yamaha,YZF-R6,revert/BikeSprites.xcassets/bike-yzf-r6-2001.imageset/bike-yzf-r6-2001.png,original-render,28672,Meshes3D/bike-yzf-r6-2001.npz
+bike-yzf-r6-2003,Yamaha,YZF-R6,revert/BikeSprites.xcassets/bike-yzf-r6-2003.imageset/bike-yzf-r6-2003.png,original-render,17460,Meshes3D/bike-yzf-r6-2003.npz
+bike-yzf-r6-2006,Yamaha,YZF-R6,revert/BikeSprites.xcassets/bike-yzf-r6-2006.imageset/bike-yzf-r6-2006.png,original-render,26968,Meshes3D/bike-yzf-r6-2006.npz
+bike-yzf-r6-2008,Yamaha,YZF-R6,revert/BikeSprites.xcassets/bike-yzf-r6-2008.imageset/bike-yzf-r6-2008.png,original-render,29196,Meshes3D/bike-yzf-r6-2008.npz
+bike-yzf-r6-2017,Yamaha,YZF-R6,revert/BikeSprites.xcassets/bike-yzf-r6-2017.imageset/bike-yzf-r6-2017.png,original-render,29196,Meshes3D/bike-yzf-r6-2017.npz
+bike-yzf-r6s,Yamaha,YZF-R6S,revert/BikeSprites.xcassets/bike-yzf-r6s.imageset/bike-yzf-r6s.png,original-render,28032,Meshes3D/bike-yzf-r6s.npz
+bike-yzf-r7,Yamaha,YZF-R7,revert/BikeSprites.xcassets/bike-yzf-r7.imageset/bike-yzf-r7.png,original-render,24300,Meshes3D/bike-yzf-r7.npz
+bike-yzf-r9,Yamaha,YZF-R9,revert/BikeSprites.xcassets/bike-yzf-r9.imageset/bike-yzf-r9.png,original-render,28032,Meshes3D/bike-yzf-r9.npz
+bike-yzf1000r-thunderace,Yamaha,YZF1000R Thunderace,revert/BikeSprites.xcassets/bike-yzf1000r-thunderace.imageset/bike-yzf1000r-thunderace.png,original-render,28996,Meshes3D/bike-yzf1000r-thunderace.npz
+bike-yzf600r-thundercat,Yamaha,YZF600R Thundercat,revert/BikeSprites.xcassets/bike-yzf600r-thundercat.imageset/bike-yzf600r-thundercat.png,original-render,17460,Meshes3D/bike-yzf600r-thundercat.npz
+bike-yzf750r,Yamaha,YZF750R,revert/BikeSprites.xcassets/bike-yzf750r.imageset/bike-yzf750r.png,original-render,24300,Meshes3D/bike-yzf750r.npz
+bike-zuma-50-125,Yamaha,Zuma 50/125,revert/BikeSprites.xcassets/bike-zuma-50-125.imageset/bike-zuma-50-125.png,original-render,29992,Meshes3D/bike-zuma-50-125.npz
