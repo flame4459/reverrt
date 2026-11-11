@@ -1,0 +1,45 @@
+name: Idea or feature request
+description: Something Revert should do that it doesn't yet.
+title: "[idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome — plenty of what is in the app now started as a "this
+        would be annoying on a bike" note. One caveat: this is a solo,
+        non-profit project, so "good idea" and "will happen" are different things.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like it to do?
+      placeholder: "Let me send a loop to a friend as a link so they can ride it too."
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter on a bike?
+      description: The context helps — a glove-on, sunlight-glare, no-signal reality check.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where would it live?
+      options:
+        - Route planning / loops
+        - Navigation / rerouting
+        - Ride recording / stats
+        - Garage / bikes
+        - Voice prompts / voice packs
+        - CarPlay
+        - Widget / Live Activity
+        - Offline data
+        - Settings / About
+        - Not sure
+    validations:
+      required: true

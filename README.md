@@ -128,6 +128,31 @@ only consumes the generated `revert/BikeSprites.xcassets`. Bikes
 without artwork fall back to an SF Symbol, so the app is fully usable without
 regenerating anything.
 
+## Bugs and ideas
+
+Found a bug, a wrong turn or something that made you swear inside your helmet?
+**Open an issue — that's the only support channel:**
+
+<https://github.com/flame4459/reverrt/issues/new/choose>
+
+Pick **Bug report** and fill in the form. What makes a report fixable:
+
+| Include | Where |
+| --- | --- |
+| What you did, what happened, what you expected | the form |
+| App version | About → This build → Version |
+| iPhone and iOS version | Settings → General → About |
+| Screenshots | drag them into the issue |
+| Diagnostics file | About → Share diagnostics (no coordinates, no place names) |
+
+Please **don't post your exact address or live location** — a general area is
+enough. Route-planner complaints are much easier to reproduce if you say the
+start area, the distance and the loop shape you chose.
+
+Feature ideas go through the same page ("Idea or feature request"). This is a
+solo, non-profit project, so a good idea and a shipped feature are different
+things — but they do get read.
+
 ## Community
 
 **Revert is free, non-profit and community-based.** It is not sold, has no ads,

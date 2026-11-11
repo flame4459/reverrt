@@ -1,0 +1,98 @@
+name: Bug report
+description: Something in Revert is broken, wrong or crashes. No account needed.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. This is a one-person community project, so a
+        clear report is the difference between a fix and a shrug.
+
+        **Please don't paste your exact home address or live location** — a
+        general area is enough. There is a "Where in the app?" field below and a
+        spot for the diagnostics file, which never contains coordinates.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: "The loop planner sent me down a dead end, then reported the route as saved."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shorter and more repeatable, the faster it gets fixed.
+      placeholder: |
+        1. Open Revert and tap Plan
+        2. Choose a start near ...
+        3. Set 80 km and tap Find a loop
+        4. The route doubles back on itself
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where in the app?
+      options:
+        - Route planning / loops
+        - Navigation / rerouting
+        - Ride recording / lean angle
+        - Garage / bikes
+        - Voice prompts / voice packs
+        - CarPlay
+        - Widget / Live Activity
+        - Offline data
+        - Settings / About
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: About → "This build" → Version.
+      placeholder: "1.0 (1)"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: iPhone and iOS version
+      placeholder: "iPhone 15 Pro, iOS 26.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional but very useful)
+      description: About → Share diagnostics, then drag the .txt file in here. Coarse events and error text only — no coordinates, no place names.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Screenshots or anything else
+      description: Drag images straight into this box.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I checked the known gaps in AUDIT_REPORT.md
+          required: false
+        - label: I'm on the latest commit from main
+          required: false
