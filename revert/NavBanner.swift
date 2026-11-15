@@ -17,9 +17,11 @@ struct NavBanner: View {
         nav.stepDistance > 0 && nav.stepDistance <= 91.5
     }
 
-    /// Fraction of the 300 m approach still to run.
+    /// Fraction of the 300 m approach still to run. To the start, measure the
+    /// approach maneuver; on the route, the next turn.
     private var turnProgressFraction: Double {
-        min(max(nav.stepDistance / 300, 0), 1)
+        let meters = nav.joined ? nav.stepDistance : nav.approachStepDistance
+        return min(max(meters / 300, 0), 1)
     }
 
     private var alertTint: Color {
@@ -33,18 +35,37 @@ struct NavBanner: View {
             maneuverBadge
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(eyebrow)
-                    .font(.system(size: 9, weight: .heavy, design: .rounded))
-                    .tracking(1.6)
-                    .foregroundStyle(alertTint.opacity(0.9))
+                HStack(spacing: 7) {
+                    Text(eyebrow)
+                        .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
+                        .tracking(1.6)
+                        .foregroundStyle(alertTint.opacity(0.9))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+
+                    if nav.joined, nav.totalLaps > 1 {
+                        Text("LAP \(nav.lap)/\(nav.totalLaps)")
+                            .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
+                            .tracking(0.9)
+                            .foregroundStyle(alertTint)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(alertTint.opacity(0.14), in: Capsule())
+                            .overlay(Capsule().stroke(alertTint.opacity(0.25), lineWidth: 0.6))
+                            .lineLimit(1)
+                    }
+                }
                 Text(title)
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .font(.scaledSystem(size: 20, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.68)
+                if nav.joined, let lanes = nav.step?.laneGuidance {
+                    LaneStrip(guidance: lanes)
+                }
                 if let next = nextLine {
                     Text(next)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.scaledSystem(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(MapUI.secondaryInk)
                         .lineLimit(1)
                 }
@@ -54,24 +75,26 @@ struct NavBanner: View {
 
             VStack(alignment: .trailing, spacing: 1) {
                 Text(primaryDistance)
-                    .font(.system(size: nav.arrived ? 18 : 22, weight: .heavy, design: .rounded))
+                    .font(.scaledSystem(size: nav.arrived ? 18 : 22, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Text(distanceCaption)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .font(.scaledSystem(size: 9, weight: .bold, design: .rounded))
                     .tracking(0.8)
                     .foregroundStyle(MapUI.secondaryInk)
                 if !nav.arrived, nav.remaining > 0 {
-                    Text("\(navDistance(nav.remaining)) left")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    Text(nav.joined
+                         ? "\(navDistance(nav.remaining)) left"
+                         : "\(navDistance(nav.remaining)) loop")
+                        .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(alertTint.opacity(0.85))
                         .lineLimit(1)
                 }
             }
 
-            if !nav.joined, let c = nav.startCoordinate {
+            if !nav.joined, !nav.approachActive, let c = nav.startCoordinate {
                 Button { openMaps(to: c) } label: {
                     Image(systemName: "map.fill")
                         .font(.subheadline.weight(.bold))
@@ -85,7 +108,7 @@ struct NavBanner: View {
 
             Button { showingStopConfirmation = true } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(.scaledSystem(size: 12, weight: .heavy))
                     .foregroundStyle(.white.opacity(0.8))
                     .frame(width: 30, height: 30)
                     .background(.white.opacity(0.08), in: Circle())
@@ -131,7 +154,7 @@ struct NavBanner: View {
                 .frame(width: 42, height: 42)
 
             Image(systemName: icon)
-                .font(.system(size: 24, weight: .heavy))
+                .font(.scaledSystem(size: 24, weight: .heavy))
                 .foregroundStyle(alertTint)
                 .symbolEffect(.pulse, options: .repeating, isActive: isNearJunction && !nav.arrived && !reduceMotion)
                 .shadow(color: alertTint.opacity(0.55), radius: 7)
@@ -140,30 +163,42 @@ struct NavBanner: View {
     }
 
     private var eyebrow: String {
-        if nav.arrived { return "RIDE COMPLETE" }
-        if !nav.joined { return "TO THE ROUTE" }
-        if nav.rerouting { return "RECALCULATING" }
+        // The lap chip shares this row on a circuit, so keep the label short
+        // enough that it is not truncated on a phone mount.
+        if nav.arrived { return nav.totalLaps > 1 ? "FINISH" : "RIDE COMPLETE" }
+        if !nav.joined { return "TO THE START" }
+        if nav.rerouting { return nav.totalLaps > 1 ? "REROUTE" : "RECALCULATING" }
         if nav.offRoute { return "OFF ROUTE" }
         if isNearJunction { return "TURN NOW" }
-        return "NEXT MANEUVER"
+        return nav.totalLaps > 1 ? "NEXT" : "NEXT MANEUVER"
     }
 
     private var icon: String {
         if nav.arrived { return "flag.checkered" }
-        if !nav.joined { return "location.north.line" }
+        if !nav.joined {
+            return nav.approachActive ? nav.approachSymbol : "location.north.line"
+        }
         if nav.rerouting || nav.offRoute { return "arrow.triangle.2.circlepath" }
         return nav.step?.symbol ?? "arrow.up"
     }
 
     private var title: String {
         if nav.arrived { return "Route complete" }
-        if !nav.joined { return "Head to the start" }
+        if !nav.joined {
+            if nav.approachActive, let instruction = nav.approachInstruction {
+                return instruction
+            }
+            return "Head to the start"
+        }
         if nav.rerouting { return "Finding a way back…" }
         if nav.offRoute { return "Off route" }
         return nav.step?.instruction ?? "Follow the route"
     }
 
     private var nextLine: String? {
+        if !nav.arrived, !nav.joined, nav.approachActive {
+            return "\(navDistance(nav.approachRemaining)) to the start"
+        }
         guard !nav.arrived, nav.joined, !nav.offRoute, !nav.rerouting else { return nil }
         if isNearJunction, let next = nav.nextStep, next.turn != .arrive {
             return "Then \(next.instruction)"
@@ -171,29 +206,52 @@ struct NavBanner: View {
         if let expected = nav.estimatedTimeRemaining, expected > 0 {
             let formatted = Duration.seconds(expected)
                 .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
-            return "ETA \(formatted)  •  \(Int(nav.currentSpeedMps * (Units.isMetric ? 3.6 : 2.23694))) \(Units.speedUnit)"
+            return "ETA \(formatted)"
         }
-        return "\(Int(nav.currentSpeedMps * (Units.isMetric ? 3.6 : 2.23694))) \(Units.speedUnit)"
+        return nil
     }
 
     private var primaryDistance: String {
         if nav.arrived { return "DONE" }
-        if !nav.joined { return navDistance(nav.distanceToStart) }
+        if !nav.joined {
+            return navDistance(nav.approachActive ? nav.approachStepDistance : nav.distanceToStart)
+        }
         if nav.offRoute || nav.rerouting { return navDistance(nav.remaining) }
         return navDistance(nav.stepDistance)
     }
 
     private var distanceCaption: String {
         if nav.arrived { return "NICE RIDE" }
-        if !nav.joined { return "AWAY" }
+        if !nav.joined { return nav.approachActive ? "TO TURN" : "AWAY" }
         if nav.offRoute || nav.rerouting { return "ROUTE LEFT" }
         return "TO TURN"
     }
 
     private func openMaps(to c: CLLocationCoordinate2D) {
         let location = CLLocation(latitude: c.latitude, longitude: c.longitude)
-        let item = MKMapItem(location: location, address: nil)
+        let item = MKMapItem.revert(location: location)
         item.name = "Route start"
         item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
+    }
+}
+
+
+/// Lane strip: one arrow per lane, left to right, with the ones that serve the
+/// coming manoeuvre lit. Hidden when OSM has no `turn:lanes` for the approach.
+private struct LaneStrip: View {
+    let guidance: LaneGuidance
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(Array(guidance.lanes.enumerated()), id: \.offset) { index, lane in
+                Image(systemName: lane.symbol)
+                    .font(.scaledSystem(size: 12, weight: .bold))
+                    .foregroundStyle(guidance.recommended.contains(index)
+                                     ? MapUI.cyan
+                                     : MapUI.textTertiary.opacity(0.5))
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(guidance.phrase)
     }
 }

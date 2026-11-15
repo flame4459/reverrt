@@ -11,6 +11,7 @@ struct PulseInsightsView: View {
     private var totalTime: Double { rides.reduce(0) { $0 + $1.durationSeconds } }
     private var longest: Double { rides.map(\.distanceMeters).max() ?? 0 }
     private var bestLean: Double { rides.map(\.maxLeanAngleDegrees).max() ?? 0 }
+    private var hasMotorcycle: Bool { rides.contains { $0.vehicleKind == .motorcycle } }
     private var averageDistance: Double {
         rides.isEmpty ? 0 : totalDistance / Double(rides.count)
     }
@@ -62,8 +63,14 @@ struct PulseInsightsView: View {
     }
 
     private var header: some View {
-        PulseScreenHeader(eyebrow: "RIDE ANALYTICS", title: "Your insights") {
-            PulseCircleButton(systemImage: "xmark", tint: Pulse.mutedStrong, label: "Close insights") {
+        ScreenHeader(eyebrow: "",
+                     title: "Your insights",
+                     variant: .compact,
+                     identifier: AccessibilityID.Insights.title) {
+            PulseCircleButton(systemImage: "xmark",
+                              tint: Pulse.mutedStrong,
+                              label: "Close insights",
+                              identifier: AccessibilityID.Insights.close) {
                 dismiss()
             }
         }
@@ -82,12 +89,12 @@ struct PulseInsightsView: View {
                     .tracking(-1.6)
                     .foregroundStyle(Pulse.ink)
                 Text(Units.distanceUnit.uppercased())
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(.scaledSystem(size: 12, weight: .heavy))
                     .tracking(1)
                     .foregroundStyle(Pulse.accent)
             }
             Text("Across \(rides.count) saved ride\(rides.count == 1 ? "" : "s")")
-                .font(.system(size: 12))
+                .font(.scaledSystem(size: 12))
                 .foregroundStyle(Pulse.muted)
         }
         .padding(16)
@@ -115,9 +122,21 @@ struct PulseInsightsView: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
             PulseMetric(label: "Average ride", value: distanceValue(averageDistance), unit: Units.distanceUnit)
             PulseMetric(label: "Longest ride", value: distanceValue(longest), unit: Units.distanceUnit)
-            PulseMetric(label: "Total time", value: hoursText(totalTime), unit: "hrs")
-            PulseMetric(label: "Max lean", value: "\(Int(bestLean.rounded()))°", unit: "deg", tint: MapUI.magenta)
+            PulseMetric(label: "Total time", value: RevertFormat.duration(totalTime))
+            if hasMotorcycle {
+                PulseMetric(label: "Max lean", value: "\(Int(bestLean.rounded()))°", tint: Pulse.lean)
+            } else {
+                PulseMetric(label: "Cars", value: "\(rides.filter(\.isCar).count)", tint: MapUI.emerald)
+            }
         }
+    }
+
+    private var activityRides: [Ride] {
+        Array(rides.prefix(8))
+    }
+
+    private var maxActivityDistance: Double {
+        max(activityRides.map(\.distanceMeters).max() ?? 0, 1)
     }
 
     private var activity: some View {
@@ -125,48 +144,49 @@ struct PulseInsightsView: View {
             PulseSectionHeader(title: "Ride activity")
                 .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("DISTANCE PER RIDE  •  LAST \(recentRides.count)")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.8)
+            if activityRides.isEmpty {
+                Text("No rides to chart yet.")
+                    .font(.scaledSystem(size: 12))
                     .foregroundStyle(Pulse.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .pulseCard()
+            } else {
+                VStack(spacing: 11) {
+                    ForEach(activityRides) { ride in
+                        HStack(spacing: 9) {
+                            Text(RevertFormat.shortDate(ride.startDate))
+                                .font(.scaledSystem(size: 10, weight: .semibold))
+                                .foregroundStyle(Pulse.mutedStrong)
+                                .frame(width: 52, alignment: .leading)
 
-                HStack(alignment: .bottom, spacing: 6) {
-                    let peak = recentRides.map(\.distanceMeters).max() ?? 1
-                    let emptySlots = max(0, 10 - recentRides.count)
-                    ForEach(0..<emptySlots, id: \.self) { _ in
-                        Capsule()
-                            .fill(Pulse.line.opacity(0.55))
-                            .frame(height: 5)
-                            .frame(maxWidth: .infinity)
-                            .accessibilityHidden(true)
-                    }
-                    ForEach(recentRides) { ride in
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Pulse.accentBright, Pulse.accentDeep],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .frame(height: max(6, 82 * (ride.distanceMeters / max(peak, 1))))
-                            .frame(maxWidth: .infinity)
-                            .accessibilityLabel("\(Units.distanceText(ride.distanceMeters, decimals: 1))")
+                            GeometryReader { proxy in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Pulse.line.opacity(0.55))
+                                    Capsule()
+                                        .fill(Pulse.accentGradient)
+                                        .frame(width: max(6, proxy.size.width * min(ride.distanceMeters / maxActivityDistance, 1)))
+                                }
+                            }
+                            .frame(height: 7)
+
+                            Text(Units.distanceText(ride.distanceMeters, decimals: 1))
+                                .font(.scaledSystem(size: 10.5, weight: .semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(Pulse.ink)
+                                .frame(width: 62, alignment: .trailing)
+
+                            Text(RevertFormat.duration(ride.durationSeconds))
+                                .font(.scaledSystem(size: 9.5))
+                                .foregroundStyle(Pulse.muted)
+                                .frame(width: 48, alignment: .trailing)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(RevertFormat.shortDate(ride.startDate)), \(Units.distanceText(ride.distanceMeters, decimals: 1)), \(RevertFormat.duration(ride.durationSeconds))")
                     }
                 }
-                .frame(height: 92, alignment: .bottom)
-
-                HStack {
-                    Text("EARLIER")
-                    Spacer()
-                    Text("RECENT")
-                }
-                .font(.system(size: 8.5, weight: .heavy))
-                .tracking(0.8)
-                .foregroundStyle(Pulse.muted)
+                .pulseCard()
             }
-            .pulseCard()
         }
     }
 
@@ -195,13 +215,6 @@ struct PulseInsightsView: View {
                     detail: favoriteBike ?? "—",
                     tint: Pulse.warning
                 )
-                divider
-                analysisRow(
-                    icon: "clock.arrow.circlepath",
-                    title: "Time in the saddle",
-                    detail: hoursText(totalTime) + " h",
-                    tint: Pulse.accent
-                )
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
@@ -213,12 +226,12 @@ struct PulseInsightsView: View {
 
             HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.scaledSystem(size: 9, weight: .bold))
                     .padding(.top, 2)
                 Text("Insights are calculated on this iPhone from the rides in History. Ride History is the only place they are stored.")
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.system(size: 10))
+            .font(.scaledSystem(size: 10))
             .foregroundStyle(Pulse.muted)
             .padding(.top, 4)
         }
@@ -233,16 +246,16 @@ struct PulseInsightsView: View {
     private func analysisRow(icon: String, title: String, detail: String, tint: Color) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.scaledSystem(size: 12, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 26, height: 26)
                 .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.scaledSystem(size: 12, weight: .medium))
                 .foregroundStyle(Pulse.ink)
             Spacer(minLength: 8)
             Text(detail)
-                .font(.system(size: 12, weight: .bold))
+                .font(.scaledSystem(size: 12, weight: .bold))
                 .foregroundStyle(Pulse.mutedStrong)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -252,10 +265,7 @@ struct PulseInsightsView: View {
     }
 
     private func distanceValue(_ meters: Double) -> String {
-        String(format: "%.1f", Units.distanceValue(meters))
+        RevertFormat.number(Units.distanceValue(meters), decimals: 1)
     }
 
-    private func hoursText(_ seconds: Double) -> String {
-        String(format: "%.1f", seconds / 3_600)
-    }
 }

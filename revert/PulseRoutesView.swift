@@ -10,6 +10,7 @@ import UIKit
 /// with a full-screen map available when the rider wants more room.
 struct PulseRoutesView: View {
     @Environment(NavigationManager.self) private var nav
+    @Environment(\.modelContext) private var context
     let planner: RoutePlanner
 
     var onOpenCockpit: () -> Void
@@ -21,10 +22,13 @@ struct PulseRoutesView: View {
     @AppStorage("saved.work.lat") private var workLat = 0.0
     @AppStorage("saved.work.lon") private var workLon = 0.0
     @AppStorage("recent.destinations") private var recentDestinationsData = ""
+    @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedLoops: [SavedRoute]
+    @Query(sort: \Ride.startDate, order: .reverse) private var rides: [Ride]
 
     @State private var preference: DirectionPreference = .fastest
     @SceneStorage("routes.destination") private var destinationText = ""
     @SceneStorage("routes.committedDestination") private var committedDestination = ""
+    @SceneStorage("routes.focusOnAppear") private var focusOnAppear = false
     @State private var pin: CLLocationCoordinate2D?
     @State private var waypoints: [CLLocationCoordinate2D] = []
     @State private var addingWaypoint = false
@@ -40,6 +44,13 @@ struct PulseRoutesView: View {
     )
     @State private var savePrompt: SavedPlace?
     @State private var showingFullMap = false
+    @State private var leaderboardTarget: LeaderboardTarget?
+    @State private var pendingVehicleRoute: PendingVehicleRoute?
+    @State private var showingVehicleChoice = false
+    @State private var renamingRoute: SavedRoute?
+    @State private var showingSprint = false
+    @State private var sprintStarted = false
+    @State private var board = RivalBoard.shared
     @FocusState private var searchFocused: Bool
 
     // MARK: Derived state
@@ -104,7 +115,19 @@ struct PulseRoutesView: View {
                     PulseRouteNote(text: error, systemImage: "exclamationmark.triangle.fill", tint: Pulse.warning)
                 }
 
-                mapCard
+                if pin != nil || hasResults || !waypoints.isEmpty {
+                    mapCard
+                }
+
+                if !rivalGroups.isEmpty {
+                    rivalTimesSection
+                        .id("rivalTimes")
+                }
+
+                if !savedLoops.isEmpty {
+                    savedLoopsSection
+                        .id("savedLoops")
+                }
 
                 if hasResults, let route = selectedRoute {
                     resultsSection(route)
@@ -121,6 +144,7 @@ struct PulseRoutesView: View {
                 }
 
                 scenicCard
+                sprintCard
                 footnote
             }
                 .padding(.horizontal, PulseMetrics.screenPadding)
@@ -128,11 +152,25 @@ struct PulseRoutesView: View {
                 .padding(.bottom, 26)
             }
             .scrollIndicators(.hidden)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !hasResults {
+                    routesFooter
+                }
+            }
         .scrollDismissesKeyboard(.interactively)
         .pulseBackground()
         .animation(RevertMotion.smooth, value: suggestions.map(\.id))
         .animation(RevertMotion.smooth, value: hasResults)
         .onAppear {
+            #if DEBUG
+            if CommandLine.arguments.contains("-debugScrollRivals") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                    withAnimation(RevertMotion.smooth) {
+                        scrollProxy.scrollTo("rivalTimes", anchor: .top)
+                    }
+                }
+            }
+            #endif
             guard let route = planner.results.first else { return }
             if selected == nil { selected = route.id }
             if pin == nil { pin = route.destination }
@@ -145,6 +183,24 @@ struct PulseRoutesView: View {
         }
         .onAppear {
             #if DEBUG
+            if CommandLine.arguments.contains("-debugSprint") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    showingSprint = true
+                }
+            }
+            if CommandLine.arguments.contains("-debugLeaderboard") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+                    guard let saved = savedLoops.first(where: { !ridesFor($0).isEmpty }) ?? savedLoops.first else { return }
+                    leaderboardTarget = LeaderboardTarget(
+                        title: saved.name,
+                        key: saved.fingerprintKey,
+                        savedRouteID: saved.id,
+                        routeName: saved.name,
+                        laps: saved.laps,
+                        isSprint: saved.isSprint
+                    )
+                }
+            }
             if CommandLine.arguments.contains("-debugPulseRoute") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     guard let origin = nav.lastLocation?.coordinate else { return }
@@ -161,6 +217,19 @@ struct PulseRoutesView: View {
                 }
             }
             #endif
+            if focusOnAppear {
+                focusOnAppear = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    searchFocused = true
+                }
+            }
+        }
+        .onChange(of: focusOnAppear) { _, requested in
+            guard requested else { return }
+            focusOnAppear = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                searchFocused = true
+            }
         }
         .onChange(of: planner.results.first?.id) { _, _ in
             guard let route = planner.results.first else { return }
@@ -193,6 +262,37 @@ struct PulseRoutesView: View {
                 addingWaypoint: $addingWaypoint,
                 onTap: addWaypoint
             )
+        }
+        .sheet(isPresented: $showingSprint, onDismiss: {
+            if sprintStarted {
+                sprintStarted = false
+                onOpenCockpit()
+            }
+        }) {
+            SprintPlannerView(onStart: { sprintStarted = true })
+        }
+        .sheet(item: $leaderboardTarget) { target in
+            RouteLeaderboardView(
+                title: target.title,
+                routeKey: target.key,
+                savedRouteID: target.savedRouteID,
+                routeName: target.routeName,
+                laps: target.laps,
+                isSprint: target.isSprint
+            )
+        }
+        .confirmationDialog("Car or bike today?",
+                            isPresented: $showingVehicleChoice,
+                            titleVisibility: .visible,
+                            presenting: pendingVehicleRoute) { pending in
+            Button("Bike") { beginVehicleRoute(pending, kind: .motorcycle) }
+            Button("Car") { beginVehicleRoute(pending, kind: .car) }
+            Button("Cancel") { pendingVehicleRoute = nil }
+        } message: { _ in
+            Text("This choice changes the cockpit and the vehicle noted on the leaderboard. Garage default: \(VehiclePreferences.primaryKind.title).")
+        }
+        .sheet(item: $renamingRoute) { saved in
+            SavedRouteRenameSheet(saved: saved)
         }
         .alert("Save this place?", isPresented: Binding(
             get: { savePrompt != nil },
@@ -232,12 +332,19 @@ struct PulseRoutesView: View {
     // MARK: Header
 
     private var header: some View {
-        PulseScreenHeader(eyebrow: "PLAN YOUR WAY", title: "Route planner") {
+        ScreenHeader(eyebrow: "PLAN YOUR WAY",
+                     title: "Route planner",
+                     variant: .compact,
+                     identifier: AccessibilityID.Routes.title) {
             HStack(spacing: 8) {
-                PulseCircleButton(systemImage: "map", label: "Open full map") {
+                PulseCircleButton(systemImage: "map",
+                                  label: "Open full map",
+                                  identifier: AccessibilityID.Routes.openMap) {
                     showingFullMap = true
                 }
-                PulseCircleButton(systemImage: "star", label: "Manage saved places") {
+                PulseCircleButton(systemImage: "star",
+                                  label: "Manage saved places",
+                                  identifier: AccessibilityID.Routes.savedPlaces) {
                     onOpenSavedPlaces()
                 }
             }
@@ -275,7 +382,7 @@ struct PulseRoutesView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 11, weight: .semibold))
+            .font(.scaledSystem(size: 11, weight: .semibold))
             .foregroundStyle(Pulse.mutedStrong)
 
             HStack(spacing: 9) {
@@ -299,7 +406,7 @@ struct PulseRoutesView: View {
 
             if let route {
                 Text(route.displayName ?? "Active route")
-                    .font(.system(size: 10))
+                    .font(.scaledSystem(size: 10))
                     .foregroundStyle(Pulse.muted)
             }
         }
@@ -325,11 +432,11 @@ struct PulseRoutesView: View {
                         .frame(width: 9, height: 9)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("FROM")
-                            .font(.system(size: 9, weight: .heavy))
+                            .font(.scaledSystem(size: 9, weight: .heavy))
                             .tracking(1.3)
                             .foregroundStyle(Pulse.muted)
                         Text("Your location")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.scaledSystem(size: 13, weight: .semibold))
                             .foregroundStyle(Pulse.ink)
                     }
                     Spacer(minLength: 6)
@@ -348,13 +455,14 @@ struct PulseRoutesView: View {
 
                 HStack(spacing: 11) {
                     Image(systemName: "mappin.and.ellipse")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.scaledSystem(size: 15, weight: .bold))
                         .foregroundStyle(Pulse.coral)
                         .frame(width: 22)
 
                     TextField("Where to?", text: $destinationText)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.scaledSystem(size: 15, weight: .semibold))
                         .foregroundStyle(Pulse.ink)
+                        .accessibilityIdentifier(AccessibilityID.Routes.destination)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled(false)
                         .submitLabel(.search)
@@ -370,7 +478,7 @@ struct PulseRoutesView: View {
                             clearDestination()
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 16))
+                                .font(.scaledSystem(size: 16))
                                 .foregroundStyle(Pulse.muted)
                         }
                         .buttonStyle(.plain)
@@ -388,7 +496,7 @@ struct PulseRoutesView: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 Text("RIDE STYLE")
-                    .font(.system(size: 9, weight: .heavy))
+                    .font(.scaledSystem(size: 9, weight: .heavy))
                     .tracking(1.4)
                     .foregroundStyle(Pulse.muted)
                 PulseSegmented(options: DirectionPreference.allCases, selection: $preference) { option in
@@ -399,28 +507,7 @@ struct PulseRoutesView: View {
                     }
                 }
                 Text(preference.blurb)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Pulse.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if planner.isBusy || resolvingDestination {
-                HStack(spacing: 9) {
-                    ProgressView().controlSize(.small).tint(Pulse.accent)
-                    Text(resolvingDestination ? "Finding that destination…" : "Building your route…")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Pulse.mutedStrong)
-                    Spacer(minLength: 0)
-                }
-                .frame(minHeight: 44)
-            } else if canPreview && !hasResults {
-                Button(action: previewRoute) {
-                    Label("Preview route", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                }
-                .buttonStyle(PulsePrimaryButtonStyle())
-            } else if !hasResults {
-                Text("Set a destination to see distance, curves and a route preview.")
-                    .font(.system(size: 10))
+                    .font(.scaledSystem(size: 10))
                     .foregroundStyle(Pulse.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -436,13 +523,75 @@ struct PulseRoutesView: View {
         }
     }
 
+    // MARK: Footer
+
+    private var routesFooter: some View {
+        Group {
+            if planner.isBusy || resolvingDestination {
+                HStack(spacing: 9) {
+                    ProgressView().controlSize(.small).tint(Pulse.accent)
+                    Text(resolvingDestination ? "Finding that destination…" : "Building your route…")
+                        .font(.scaledSystem(size: 12, weight: .semibold))
+                        .foregroundStyle(Pulse.mutedStrong)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+                .background(Pulse.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Pulse.line, lineWidth: 0.8)
+                }
+            } else if canPreview {
+                Button {
+                    RevertHaptics.tap()
+                    previewRoute()
+                } label: {
+                    Label(footerTitle, systemImage: footerSymbol)
+                }
+                .buttonStyle(PulsePrimaryButtonStyle())
+                .accessibilityIdentifier(AccessibilityID.Routes.findRoute)
+            } else {
+                Button {} label: {
+                    Label(footerTitle, systemImage: footerSymbol)
+                }
+                .buttonStyle(PulseGhostButtonStyle())
+                .disabled(true)
+                .accessibilityIdentifier(AccessibilityID.Routes.findRoute)
+            }
+        }
+        .padding(.horizontal, PulseMetrics.screenPadding)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+        .background {
+            Rectangle()
+                .fill(Pulse.canvas)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Pulse.line)
+                        .frame(height: 0.8)
+                }
+                .ignoresSafeArea()
+        }
+    }
+
+    private var footerTitle: String {
+        if canPreview { return "Find route" }
+        return origin == nil ? "Waiting for GPS" : "Enter a destination"
+    }
+
+    private var footerSymbol: String {
+        if canPreview { return "arrow.triangle.turn.up.right.diamond.fill" }
+        return origin == nil ? "location.slash" : "mappin.and.ellipse"
+    }
+
     // MARK: Map
 
     private var mapCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .center, spacing: 8) {
                 Text(waypoints.isEmpty ? "Direct route" : "\(waypoints.count) stop\(waypoints.count == 1 ? "" : "s")")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.scaledSystem(size: 11, weight: .bold))
                     .foregroundStyle(Pulse.mutedStrong)
 
                 Spacer(minLength: 0)
@@ -453,7 +602,7 @@ struct PulseRoutesView: View {
                 } label: {
                     Label(addingWaypoint ? "Done" : "Add stop",
                           systemImage: addingWaypoint ? "checkmark" : "plus")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.scaledSystem(size: 10, weight: .bold))
                         .foregroundStyle(addingWaypoint ? Pulse.accentInk : Pulse.accent)
                         .padding(.horizontal, 10)
                         .frame(height: 28)
@@ -469,14 +618,14 @@ struct PulseRoutesView: View {
                         ForEach(Array(waypoints.enumerated()), id: \.offset) { index, _ in
                             HStack(spacing: 5) {
                                 Text("Stop \(index + 1)")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.scaledSystem(size: 10, weight: .bold))
                                 Button {
                                     RevertHaptics.tap()
                                     waypoints.remove(at: index)
                                     if pin != nil { previewRoute() }
                                 } label: {
                                     Image(systemName: "xmark")
-                                        .font(.system(size: 8, weight: .heavy))
+                                        .font(.scaledSystem(size: 8, weight: .heavy))
                                         .foregroundStyle(Pulse.muted)
                                 }
                                 .buttonStyle(.plain)
@@ -554,7 +703,7 @@ struct PulseRoutesView: View {
                         Image(systemName: "hand.tap.fill")
                         Text("Tap the map to add a stop")
                     }
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.scaledSystem(size: 10, weight: .bold))
                     .foregroundStyle(Pulse.accentInk)
                     .padding(.horizontal, 10)
                     .frame(height: 28)
@@ -573,7 +722,7 @@ struct PulseRoutesView: View {
 
     private func mapControlLabel(systemImage: String) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.scaledSystem(size: 12, weight: .semibold))
             .foregroundStyle(Pulse.accent)
             .frame(width: 32, height: 32)
             .background(Pulse.bar.opacity(0.85), in: Circle())
@@ -591,7 +740,7 @@ struct PulseRoutesView: View {
                         .tracking(1.8)
                         .foregroundStyle(Pulse.accent)
                     Text(destinationText.isEmpty ? "Your destination" : destinationText)
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.scaledSystem(size: 18, weight: .bold))
                         .foregroundStyle(Pulse.ink)
                         .lineLimit(2)
                 }
@@ -611,8 +760,7 @@ struct PulseRoutesView: View {
                     route: option,
                     index: index,
                     isBest: index == 0,
-                    isSelected: option.id == selected,
-                    preference: preference
+                    isSelected: option.id == selected
                 ) {
                     RevertHaptics.select()
                     selected = option.id
@@ -635,7 +783,7 @@ struct PulseRoutesView: View {
                     .foregroundStyle(Pulse.ink)
                 if let time = route.expectedTravelTime {
                     Text(Duration.seconds(time).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.scaledSystem(size: 12, weight: .semibold))
                         .foregroundStyle(Pulse.mutedStrong)
                 }
                 Spacer(minLength: 0)
@@ -658,6 +806,7 @@ struct PulseRoutesView: View {
                     Label("Start navigation", systemImage: "location.north.fill")
                 }
                 .buttonStyle(PulsePrimaryButtonStyle())
+                .accessibilityIdentifier(AccessibilityID.Routes.start)
                 .disabled(route.isOfflinePreview)
                 .opacity(route.isOfflinePreview ? 0.55 : 1)
 
@@ -679,11 +828,11 @@ struct PulseRoutesView: View {
     private func routeStat(_ label: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label.uppercased())
-                .font(.system(size: 8, weight: .heavy))
+                .font(.scaledSystem(size: 8, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(Pulse.muted)
             Text(value)
-                .font(.system(size: 12, weight: .bold))
+                .font(.scaledSystem(size: 12, weight: .bold))
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -712,11 +861,13 @@ struct PulseRoutesView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Label("Elevation", systemImage: "mountain.2")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.scaledSystem(size: 12, weight: .semibold))
                             .foregroundStyle(Pulse.ink)
                         Spacer()
-                        Text("\(Units.elevationText(route.climbMeters)) climb")
-                            .font(.system(size: 10, weight: .semibold))
+                        Text(route.descentMeters > 0
+                             ? "\(Units.elevationText(route.climbMeters)) up · \(Units.elevationText(route.descentMeters)) down"
+                             : "\(Units.elevationText(route.climbMeters)) climb")
+                            .font(.scaledSystem(size: 10, weight: .semibold))
                             .foregroundStyle(Pulse.accent)
                     }
                     RideElevationChart(values: route.elevationProfile.map(\.elevation), totalMeters: route.length)
@@ -728,12 +879,12 @@ struct PulseRoutesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("TURN-BY-TURN")
-                        .font(.system(size: 9, weight: .heavy))
+                        .font(.scaledSystem(size: 9, weight: .heavy))
                         .tracking(1.4)
                         .foregroundStyle(Pulse.muted)
                     Spacer()
                     Text("\(route.steps.count) steps")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.scaledSystem(size: 9, weight: .semibold))
                         .foregroundStyle(Pulse.muted)
                 }
                 .padding(.horizontal, 2)
@@ -742,17 +893,17 @@ struct PulseRoutesView: View {
                     ForEach(Array(route.steps.prefix(5).enumerated()), id: \.element.id) { index, step in
                         HStack(spacing: 10) {
                             Image(systemName: step.symbol)
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.scaledSystem(size: 12, weight: .bold))
                                 .foregroundStyle(Pulse.accent)
                                 .frame(width: 28, height: 28)
                                 .background(Pulse.accent.opacity(0.10), in: Circle())
                             Text(step.instruction)
-                                .font(.system(size: 12))
+                                .font(.scaledSystem(size: 12))
                                 .foregroundStyle(Pulse.ink)
                                 .lineLimit(2)
                             Spacer(minLength: 6)
                             Text(Units.distanceText(step.distance, decimals: 1))
-                                .font(.system(size: 9.5, weight: .semibold))
+                                .font(.scaledSystem(size: 9.5, weight: .semibold))
                                 .monospacedDigit()
                                 .foregroundStyle(Pulse.muted)
                         }
@@ -813,7 +964,7 @@ struct PulseRoutesView: View {
 
             if recentDestinations.isEmpty {
                 Text("Destinations you preview are kept here for a one-tap return.")
-                    .font(.system(size: 10))
+                    .font(.scaledSystem(size: 10))
                     .foregroundStyle(Pulse.muted)
             } else {
                 VStack(spacing: 8) {
@@ -835,6 +986,258 @@ struct PulseRoutesView: View {
         }
     }
 
+    // MARK: Saved loops
+
+    private var savedLoopsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PulseSectionHeader(title: "Saved loops", actionTitle: nil, action: nil)
+
+            ForEach(savedLoops.prefix(6)) { saved in
+                HStack(spacing: 6) {
+                    Button {
+                        rideSaved(saved)
+                    } label: {
+                        HStack(spacing: 10) {
+                            RevertIconBadge(
+                                systemImage: saved.isLoop
+                                    ? "arrow.triangle.2.circlepath"
+                                    : (saved.isSprint
+                                       ? "flag.checkered"
+                                       : "arrow.triangle.turn.up.right.diamond"),
+                                tint: Pulse.accent,
+                                size: 36,
+                                radius: 11
+                            )
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(saved.name)
+                                    .font(.scaledSystem(size: 13, weight: .semibold))
+                                    .foregroundStyle(Pulse.ink)
+                                    .lineLimit(1)
+                                Text(savedSubtitle(saved))
+                                    .font(.scaledSystem(size: 10))
+                                    .foregroundStyle(Pulse.muted)
+                                    .lineLimit(1)
+                                if let best = bestTime(for: saved) {
+                                    Text("Best \(Units.clock(best))")
+                                        .font(.scaledSystem(size: 9.5, weight: .bold))
+                                        .foregroundStyle(Pulse.emerald)
+                                }
+                            }
+
+                            Spacer(minLength: 4)
+
+                            Image(systemName: "play.fill")
+                                .font(.scaledSystem(size: 11, weight: .bold))
+                                .foregroundStyle(Pulse.accent)
+                                .frame(width: 34, height: 34)
+                                .background(Pulse.accent.opacity(0.12), in: Circle())
+                        }
+                        .padding(10)
+                        .background(Pulse.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Pulse.lineSoft, lineWidth: 0.8)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Ride \(saved.name) again")
+
+                    Button {
+                        RevertHaptics.tap()
+                        leaderboardTarget = LeaderboardTarget(
+                            title: saved.name,
+                            key: saved.fingerprintKey,
+                            savedRouteID: saved.id,
+                            routeName: saved.name,
+                            laps: saved.laps,
+                            isSprint: saved.isSprint
+                        )
+                    } label: {
+                        Image(systemName: "trophy")
+                            .font(.scaledSystem(size: 13, weight: .bold))
+                            .foregroundStyle(Pulse.warning)
+                            .frame(width: 44, height: 54)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Rivals for \(saved.name)")
+                }
+                .contextMenu {
+                    Button {
+                        rideSaved(saved)
+                    } label: {
+                        Label("Ride again", systemImage: "play.fill")
+                    }
+                    Button {
+                        leaderboardTarget = LeaderboardTarget(
+                            title: saved.name,
+                            key: saved.fingerprintKey,
+                            savedRouteID: saved.id,
+                            routeName: saved.name,
+                            laps: saved.laps,
+                            isSprint: saved.isSprint
+                        )
+                    } label: {
+                        Label("Rivals", systemImage: "trophy")
+                    }
+                    Divider()
+                    Button {
+                        RevertHaptics.tap()
+                        renamingRoute = saved
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        context.delete(saved)
+                        try? context.save()
+                    } label: {
+                        Label("Delete loop", systemImage: "trash")
+                    }
+                }
+            }
+
+            Text("Tap a loop to ride it again. The trophy is the local leaderboard, including times friends send as links.")
+                .font(.scaledSystem(size: 10))
+                .foregroundStyle(Pulse.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .pulseCard()
+    }
+
+    private func savedSubtitle(_ saved: SavedRoute) -> String {
+        let count = ridesFor(saved).count
+        let rides = count == 1 ? "1 ride" : "\(count) rides"
+        let format = saved.isSprint
+            ? "Sprint"
+            : "\(saved.laps) lap\(saved.laps == 1 ? "" : "s")"
+        return "\(Units.distanceText(saved.distanceMeters, decimals: 1))  •  \(format)  •  \(rides)"
+    }
+
+    private func ridesFor(_ saved: SavedRoute) -> [Ride] {
+        let key = saved.fingerprintKey
+        return rides.filter { ride in
+            if ride.savedRouteID == saved.id { return true }
+            if let rideKey = ride.routeKey, !rideKey.isEmpty, rideKey == key { return true }
+            return ride.routeName == saved.name
+        }
+    }
+
+    private func bestTime(for saved: SavedRoute) -> Double? {
+        ridesFor(saved).map(\.durationSeconds).min()
+    }
+
+    private func rideSaved(_ saved: SavedRoute) {
+        guard let route = saved.plannedRoute() else { return }
+        pendingVehicleRoute = PendingVehicleRoute(route: route, roads: saved.roads)
+        showingVehicleChoice = true
+    }
+
+    private func beginVehicleRoute(_ pending: PendingVehicleRoute, kind: VehicleKind) {
+        RevertHaptics.success()
+        nav.start(pending.route, roads: pending.roads, vehicleKind: kind)
+        pendingVehicleRoute = nil
+        onOpenCockpit()
+    }
+
+    // MARK: Rival times
+
+    private struct RivalGroup: Identifiable {
+        let key: String
+        let name: String
+        let count: Int
+        let best: Double
+        let laps: Int
+        let isSprint: Bool
+        let hasReplay: Bool
+        var id: String { key }
+    }
+
+    private var rivalGroups: [RivalGroup] {
+        Dictionary(grouping: board.results, by: \.routeKey).compactMap { key, results in
+            guard let first = results.first else { return nil }
+            return RivalGroup(
+                key: key,
+                name: first.routeName,
+                count: results.count,
+                best: results.map(\.durationSeconds).min() ?? 0,
+                laps: results.compactMap(\.laps).max() ?? 1,
+                isSprint: results.contains { $0.isSprint == true },
+                hasReplay: results.contains { $0.hasReplay }
+            )
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private var rivalTimesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PulseSectionHeader(title: "Rival times")
+
+            ForEach(rivalGroups) { group in
+                Button {
+                    RevertHaptics.tap()
+                    leaderboardTarget = LeaderboardTarget(
+                        title: group.name,
+                        key: group.key,
+                        savedRouteID: nil,
+                        routeName: group.name,
+                        laps: group.laps,
+                        isSprint: group.isSprint
+                    )
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "trophy.fill")
+                            .font(.scaledSystem(size: 15, weight: .bold))
+                            .foregroundStyle(Pulse.warning)
+                            .frame(width: 36, height: 36)
+                            .background(Pulse.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.name)
+                                .font(.scaledSystem(size: 13, weight: .semibold))
+                                .foregroundStyle(Pulse.ink)
+                                .lineLimit(1)
+                            HStack(spacing: 4) {
+                                Text(group.isSprint
+                                     ? "Sprint · \(group.count) imported"
+                                     : "\(group.laps) lap\(group.laps == 1 ? "" : "s") · \(group.count) imported")
+                                if group.hasReplay {
+                                    Image(systemName: "play.circle.fill")
+                                        .foregroundStyle(Pulse.accent)
+                                }
+                            }
+                            .font(.scaledSystem(size: 10))
+                            .foregroundStyle(Pulse.muted)
+                        }
+
+                        Spacer(minLength: 4)
+
+                        Text(Units.clock(group.best))
+                            .font(.scaledSystem(size: 13, weight: .bold).monospacedDigit())
+                            .foregroundStyle(Pulse.emerald)
+
+                        Image(systemName: "chevron.right")
+                            .font(.scaledSystem(size: 9, weight: .bold))
+                            .foregroundStyle(Pulse.muted)
+                    }
+                    .padding(10)
+                    .background(Pulse.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Pulse.lineSoft, lineWidth: 0.8)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Times friends sent as links. Open one to see the board, or ride the same loop to add your own.")
+                .font(.scaledSystem(size: 10))
+                .foregroundStyle(Pulse.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .pulseCard()
+    }
+
     // MARK: Scenic planner
 
     private var scenicCard: some View {
@@ -852,14 +1255,14 @@ struct PulseRoutesView: View {
                 }
                 Spacer(minLength: 6)
                 Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.scaledSystem(size: 19, weight: .semibold))
                     .foregroundStyle(Pulse.accent)
                     .frame(width: 42, height: 42)
                     .background(Pulse.iconWell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
             Text("Pick a start, a distance and a road style. The planner finds the bends and brings back the strongest loops.")
-                .font(.system(size: 11.5))
+                .font(.scaledSystem(size: 11.5))
                 .foregroundStyle(Pulse.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -891,15 +1294,69 @@ struct PulseRoutesView: View {
         }
     }
 
+    private var sprintCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("POINT TO POINT")
+                        .font(PulseType.eyebrow)
+                        .tracking(1.8)
+                        .foregroundStyle(Pulse.warning)
+                    Text("Run a sprint")
+                        .font(PulseType.display(21))
+                        .tracking(-0.4)
+                        .foregroundStyle(Pulse.ink)
+                }
+                Spacer(minLength: 6)
+                Image(systemName: "flag.checkered")
+                    .font(.scaledSystem(size: 18, weight: .semibold))
+                    .foregroundStyle(Pulse.warning)
+                    .frame(width: 42, height: 42)
+                    .background(Pulse.iconWell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            Text("Pick one road to start on and another to finish. One run, timed from the start line — no laps, no circuit.")
+                .font(.scaledSystem(size: 11.5))
+                .foregroundStyle(Pulse.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                RevertHaptics.tap()
+                showingSprint = true
+            } label: {
+                Label("Build a sprint", systemImage: "flag.checkered")
+            }
+            .buttonStyle(PulseGhostButtonStyle(minHeight: 46))
+        }
+        .padding(15)
+        .background {
+            RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous)
+                .fill(Pulse.cardGradient)
+                .overlay(alignment: .topTrailing) {
+                    RadialGradient(
+                        colors: [Pulse.warning.opacity(0.10), .clear],
+                        center: .topTrailing,
+                        startRadius: 0,
+                        endRadius: 180
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous)
+                        .strokeBorder(Pulse.lineSoft, lineWidth: 0.8)
+                }
+        }
+    }
+
     private var footnote: some View {
         HStack(alignment: .top, spacing: 7) {
             Image(systemName: "info.circle")
-                .font(.system(size: 9, weight: .bold))
+                .font(.scaledSystem(size: 9, weight: .bold))
                 .padding(.top, 2)
             Text("Route previews use MapKit and the ride style you choose. Starting navigation opens the cockpit; nothing leaves this iPhone.")
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 10))
+        .font(.scaledSystem(size: 10))
         .foregroundStyle(Pulse.muted)
         .padding(.top, 2)
     }
@@ -997,8 +1454,8 @@ struct PulseRoutesView: View {
     }
 
     private func start(_ route: PlannedRoute) {
-        nav.start(route, roads: planner.roads)
-        onOpenCockpit()
+        pendingVehicleRoute = PendingVehicleRoute(route: route, roads: planner.roads)
+        showingVehicleChoice = true
     }
 
     private func clearDestination() {
@@ -1199,7 +1656,6 @@ struct PulseRouteOption: View {
     let index: Int
     let isBest: Bool
     let isSelected: Bool
-    let preference: DirectionPreference
     let onSelect: () -> Void
 
     private var letter: String {
@@ -1216,7 +1672,7 @@ struct PulseRouteOption: View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
                 Text(letter)
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.scaledSystem(size: 15, weight: .heavy))
                     .foregroundStyle(isSelected ? Pulse.accentInk : Pulse.accent)
                     .frame(width: 36, height: 36)
                     .background(isSelected ? Pulse.accent : Pulse.accent.opacity(0.12), in: Circle())
@@ -1224,11 +1680,11 @@ struct PulseRouteOption: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Text("Option \(letter)")
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .font(.scaledSystem(size: 12.5, weight: .semibold))
                             .foregroundStyle(Pulse.ink)
                         if isBest {
                             Text("BEST")
-                                .font(.system(size: 7.5, weight: .black))
+                                .font(.scaledSystem(size: 7.5, weight: .black))
                                 .tracking(0.8)
                                 .foregroundStyle(Pulse.accentInk)
                                 .padding(.horizontal, 5)
@@ -1238,15 +1694,15 @@ struct PulseRouteOption: View {
                     }
                     HStack(spacing: 4) {
                         Text(Units.distanceText(route.length, decimals: 1))
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.scaledSystem(size: 11, weight: .bold))
                             .foregroundStyle(Pulse.accent)
                         if let timeText {
                             Text("•  \(timeText)")
-                                .font(.system(size: 10))
+                                .font(.scaledSystem(size: 10))
                                 .foregroundStyle(Pulse.muted)
                         }
                         Text("•  \(route.curviness)/5 curves")
-                            .font(.system(size: 10))
+                            .font(.scaledSystem(size: 10))
                             .foregroundStyle(Pulse.muted)
                     }
                 }
@@ -1254,7 +1710,7 @@ struct PulseRouteOption: View {
                 Spacer(minLength: 4)
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.scaledSystem(size: 18, weight: .semibold))
                     .foregroundStyle(isSelected ? Pulse.accent : Pulse.muted)
             }
             .padding(12)
@@ -1285,12 +1741,12 @@ struct PulseRouteNote: View {
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .bold))
+                .font(.scaledSystem(size: 10, weight: .bold))
                 .padding(.top, 1)
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 11))
+        .font(.scaledSystem(size: 11))
         .foregroundStyle(tint)
     }
 }
@@ -1298,7 +1754,7 @@ struct PulseRouteNote: View {
 struct PulseGhostIconStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 10, weight: .bold))
+            .font(.scaledSystem(size: 10, weight: .bold))
             .foregroundStyle(Pulse.mutedStrong)
             .frame(width: 30, height: 30)
             .background(Pulse.iconWell, in: Circle())
@@ -1341,9 +1797,9 @@ struct PulsePlannerMapSheet: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .heavy))
+                            .font(.scaledSystem(size: 11, weight: .heavy))
                         Text("Done")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.scaledSystem(size: 12, weight: .bold))
                     }
                     .foregroundStyle(Pulse.accent)
                     .padding(.horizontal, 12)
@@ -1353,9 +1809,10 @@ struct PulsePlannerMapSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close full map")
+                .accessibilityIdentifier(AccessibilityID.Routes.closeMap)
 
                 Text("Route map")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.scaledSystem(size: 14, weight: .bold))
                     .foregroundStyle(Pulse.ink)
                     .padding(.horizontal, 12)
                     .frame(height: 40)
@@ -1370,7 +1827,7 @@ struct PulsePlannerMapSheet: View {
                 } label: {
                     Label(addingWaypoint ? "Done" : "Add stop",
                           systemImage: addingWaypoint ? "checkmark" : "plus")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.scaledSystem(size: 11, weight: .bold))
                         .foregroundStyle(addingWaypoint ? Pulse.accentInk : Pulse.accent)
                         .padding(.horizontal, 12)
                         .frame(height: 40)
@@ -1384,7 +1841,7 @@ struct PulsePlannerMapSheet: View {
 
             if addingWaypoint {
                 Text("Tap the map to add a stop")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.scaledSystem(size: 11, weight: .bold))
                     .foregroundStyle(Pulse.accentInk)
                     .padding(.horizontal, 12)
                     .frame(height: 30)
@@ -1396,4 +1853,16 @@ struct PulsePlannerMapSheet: View {
         }
         .preferredColorScheme(.dark)
     }
+}
+
+
+/// One saved loop opened in the Rivals sheet.
+private struct LeaderboardTarget: Identifiable {
+    let id = UUID()
+    let title: String
+    let key: String
+    let savedRouteID: UUID?
+    let routeName: String?
+    var laps = 1
+    var isSprint = false
 }

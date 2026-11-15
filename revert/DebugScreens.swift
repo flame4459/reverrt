@@ -51,6 +51,10 @@ enum DebugScreens {
     static var isGarage: Bool { CommandLine.arguments.contains("-debugGarage") }
     static var isOffline: Bool { CommandLine.arguments.contains("-debugOffline") }
     static var isCarPlayMap: Bool { CommandLine.arguments.contains("-debugCarPlayMap") }
+    static var isDebugReports: Bool { CommandLine.arguments.contains("-debugReports") }
+    static var isRideDebug: Bool { CommandLine.arguments.contains("-debugRideDebug") }
+    static var isWidgetDiagnostics: Bool { CommandLine.arguments.contains("-debugWidgetDiagnostics") }
+    static var isFeatureLab: Bool { CommandLine.arguments.contains("-debugFeatureLab") }
     static var menu: CentralMenuDestination? {
         if CommandLine.arguments.contains("-debugPlan") { return .plan }
         if CommandLine.arguments.contains("-debugSettings") { return .settings }

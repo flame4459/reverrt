@@ -70,71 +70,106 @@ final class PulseShellUITests: XCTestCase {
             }
         }
 
-        XCTAssertTrue(app.staticTexts["Your next ride"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Home"].exists)
-        XCTAssertTrue(app.buttons["Routes"].exists)
-        XCTAssertTrue(app.buttons["Garage"].exists)
-        XCTAssertTrue(app.buttons["History"].exists)
+        XCTAssertTrue(app.screenTitle(UITestID.Home.title).waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons[UITestID.TabBar.home].exists)
+        XCTAssertTrue(app.buttons[UITestID.TabBar.routes].exists)
+        XCTAssertTrue(app.buttons[UITestID.TabBar.garage].exists)
+        XCTAssertTrue(app.buttons[UITestID.TabBar.history].exists)
     }
 
     func testDashboardToRoutesAndBack() {
-        XCTAssertTrue(app.staticTexts["Your next ride"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.screenTitle(UITestID.Home.title).waitForExistence(timeout: 10))
 
-        XCTAssertTrue(app.buttons["Routes"].firstMatch.waitForExistence(timeout: 5))
-        app.buttons["Routes"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[UITestID.TabBar.routes].firstMatch.waitForExistence(timeout: 5))
+        app.buttons[UITestID.TabBar.routes].firstMatch.tap()
         sleep(2)
 
-        XCTAssertTrue(app.staticTexts["Route planner"].waitForExistence(timeout: 8),
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 8),
                       "Routes must open the Midnight Pulse route planner")
-        XCTAssertTrue(app.textFields["Where to?"].waitForExistence(timeout: 8),
+        XCTAssertTrue(app.textFields[UITestID.Routes.destination].waitForExistence(timeout: 8),
                       "The planner must keep destination search")
-        XCTAssertTrue(app.buttons["Home"].exists,
+        XCTAssertTrue(app.buttons[UITestID.TabBar.home].exists,
                       "The tab bar stays visible on Routes, so there is always a way out")
         XCTAssertFalse(app.buttons["Expand ride planner"].exists,
                        "The legacy ride-planner sheet must not be used on Routes")
 
-        app.buttons["Home"].firstMatch.tap()
+        app.buttons[UITestID.TabBar.home].firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Your next ride"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Home.title).waitForExistence(timeout: 8))
+    }
+
+    func testHomeDestinationOpensPlanner() {
+        let field = app.textFields[UITestID.Home.destination].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10),
+                      "Home should expose the destination input")
+        field.tap()
+        field.typeText("Central Park\n")
+
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 10),
+                      "Submitting the Home destination should open the planner")
+        XCTAssertTrue(app.textFields[UITestID.Routes.destination].waitForExistence(timeout: 8),
+                      "The draft destination should carry into the planner")
+        let carried = app.textFields[UITestID.Routes.destination].value as? String
+        XCTAssertTrue(carried?.contains("Central Park") == true,
+                      "The Home destination should be pre-filled in the planner, got \(carried ?? "nil")")
+        XCTAssertTrue(app.control(UITestID.Routes.findRoute).exists,
+                      "The planner should keep its bottom CTA")
+    }
+
+    func testCockpitNoRouteOpensPlanner() {
+        XCTAssertTrue(app.buttons[UITestID.TabBar.ride].firstMatch.waitForExistence(timeout: 10))
+        app.buttons[UITestID.TabBar.ride].firstMatch.tap()
+
+        XCTAssertTrue(app.control(UITestID.Cockpit.planRoute).waitForExistence(timeout: 8),
+                      "The no-route cockpit should offer a route-planning action")
+        XCTAssertFalse(app.staticTexts["NO DATA"].exists,
+                       "The cockpit should not show a placeholder speed-limit card")
+        app.control(UITestID.Cockpit.planRoute).tap()
+
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 10),
+                      "Planning from the cockpit should land on the route planner")
     }
 
     func testPlannerSearchFullMapAndStartNavigation() {
-        app.buttons["Routes"].firstMatch.tap()
+        app.buttons[UITestID.TabBar.routes].firstMatch.tap()
         sleep(2)
 
         // The map can expand without leaving the new UI, and has an obvious exit.
-        app.buttons["Open full map"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Close full map"].waitForExistence(timeout: 8))
-        app.buttons["Close full map"].firstMatch.tap()
+        app.control(UITestID.Routes.openMap).firstMatch.tap()
+        XCTAssertTrue(app.control(UITestID.Routes.closeMap).waitForExistence(timeout: 8))
+        app.control(UITestID.Routes.closeMap).firstMatch.tap()
         sleep(1)
-        XCTAssertTrue(app.staticTexts["Route planner"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 8))
 
-        let field = app.textFields["Where to?"].firstMatch
+        let field = app.textFields[UITestID.Routes.destination].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 8))
         field.tap()
         field.typeText("Central Park, New York\n")
 
         XCTAssertTrue(app.staticTexts["ROUTE READY"].waitForExistence(timeout: 60),
                       "A resolved destination should build a route preview")
-        XCTAssertTrue(app.buttons["Start navigation"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.control(UITestID.Routes.start).firstMatch.waitForExistence(timeout: 5))
 
-        // Starting navigation opens the cockpit, and closing it returns to the
-        // planner rather than stranding the rider.
-        app.buttons["Start navigation"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Close ride screen"].waitForExistence(timeout: 12),
+        // Starting a route asks which vehicle is being used today; answer it
+        // before the cockpit is presented.
+        app.control(UITestID.Routes.start).firstMatch.tap()
+        if app.buttons["Car"].waitForExistence(timeout: 3) {
+            app.buttons["Car"].tap()
+        }
+        XCTAssertTrue(app.control(UITestID.Cockpit.close).waitForExistence(timeout: 12),
                       "Start navigation should open the cockpit")
-        app.buttons["Close ride screen"].firstMatch.tap()
+        app.control(UITestID.Cockpit.close).firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Route planner"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 10),
                       "Closing the cockpit should return to the route planner")
-        XCTAssertTrue(app.buttons["Home"].exists)
+        XCTAssertTrue(app.buttons[UITestID.TabBar.home].exists)
     }
 
     func testGarageBikeDetailHasBackButton() {
-        XCTAssertTrue(app.buttons["Garage"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Garage"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[UITestID.TabBar.garage].firstMatch.waitForExistence(timeout: 10))
+        app.buttons[UITestID.TabBar.garage].firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Your machines"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Garage.title).waitForExistence(timeout: 8))
 
         let bike = app.buttons.matching(
             NSPredicate(format: "label CONTAINS %@", "Street Triple")
@@ -153,14 +188,14 @@ final class PulseShellUITests: XCTestCase {
         XCTAssertTrue(back.waitForExistence(timeout: 5), "Bike detail lost its back button")
         back.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Your machines"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Garage.title).waitForExistence(timeout: 8))
     }
 
     func testHistoryRideDetailHasBackButton() {
-        XCTAssertTrue(app.buttons["History"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["History"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[UITestID.TabBar.history].firstMatch.waitForExistence(timeout: 10))
+        app.buttons[UITestID.TabBar.history].firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Ride history"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.History.title).waitForExistence(timeout: 8))
 
         // The ride rows live below the summary cards; bring them into view
         // before tapping, the way a rider would scroll.
@@ -185,13 +220,13 @@ final class PulseShellUITests: XCTestCase {
         XCTAssertTrue(back.waitForExistence(timeout: 5), "Ride detail lost its back button")
         back.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Ride history"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.History.title).waitForExistence(timeout: 8))
     }
 
     func testColorSchemesSwitchAndPersist() {
-        XCTAssertTrue(app.buttons["Color scheme"].firstMatch.waitForExistence(timeout: 10),
+        XCTAssertTrue(app.control(UITestID.Home.colorScheme).firstMatch.waitForExistence(timeout: 10),
                       "The palette shortcut should be on the dashboard")
-        app.buttons["Color scheme"].firstMatch.tap()
+        app.control(UITestID.Home.colorScheme).firstMatch.tap()
         sleep(2)
 
         for name in ["Midnight Pulse", "Kawasaki Lime Green", "Suzuki Grand Prix",
@@ -210,17 +245,17 @@ final class PulseShellUITests: XCTestCase {
         XCTAssertTrue(kawasaki.isSelected, "Selecting a scheme should update the picker")
         attach("color-scheme-kawasaki")
 
-        app.buttons["Done"].firstMatch.tap()
+        app.control(UITestID.Settings.done).tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Your next ride"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Home.title).waitForExistence(timeout: 8))
         attach("color-scheme-kawasaki-home")
 
         // The scheme must survive a cold launch.
         app.terminate()
         app.launch()
         sleep(3)
-        XCTAssertTrue(app.buttons["Color scheme"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Color scheme"].firstMatch.tap()
+        XCTAssertTrue(app.control(UITestID.Home.colorScheme).firstMatch.waitForExistence(timeout: 10))
+        app.control(UITestID.Home.colorScheme).firstMatch.tap()
         sleep(2)
         let persisted = app.buttons.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "Kawasaki Lime Green")
@@ -234,61 +269,85 @@ final class PulseShellUITests: XCTestCase {
         ).firstMatch
         midnight.tap()
         sleep(1)
-        app.buttons["Done"].firstMatch.tap()
+        app.control(UITestID.Settings.done).tap()
     }
 
     func testLandscapeLayout() {
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(3)
 
-        XCTAssertTrue(app.staticTexts["Your next ride"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.screenTitle(UITestID.Home.title).waitForExistence(timeout: 10),
                       "The dashboard must survive a rotation")
-        XCTAssertTrue(app.buttons["Routes"].exists)
+        XCTAssertTrue(app.buttons[UITestID.TabBar.routes].exists)
         attach("pulse-landscape-home")
 
-        app.buttons["Routes"].firstMatch.tap()
+        app.buttons[UITestID.TabBar.routes].firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Route planner"].waitForExistence(timeout: 8),
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 8),
                       "The planner must render in landscape")
-        XCTAssertTrue(app.buttons["Home"].exists,
+        XCTAssertTrue(app.buttons[UITestID.TabBar.home].exists,
                       "The tab bar must stay reachable in landscape")
         attach("pulse-landscape-routes")
 
         XCUIDevice.shared.orientation = .portrait
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Route planner"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Routes.title).waitForExistence(timeout: 8))
     }
 
-    func testLiveRideStartsAndSaves() {
-        XCTAssertTrue(app.buttons["Ride"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Ride"].firstMatch.tap()
+    func testLiveRideStartsAndSaves() throws {
+        XCTAssertTrue(app.buttons[UITestID.TabBar.ride].firstMatch.waitForExistence(timeout: 10))
+        app.buttons[UITestID.TabBar.ride].firstMatch.tap()
         sleep(2)
 
-        XCTAssertTrue(app.buttons["Start ride"].waitForExistence(timeout: 8),
+        XCTAssertTrue(app.control(UITestID.Cockpit.start).waitForExistence(timeout: 8),
                       "Ride tab must open the cockpit")
-        app.buttons["Start ride"].tap()
+        app.control(UITestID.Cockpit.start).tap()
         sleep(7)
 
-        app.buttons["Stop"].tap()
+        app.control(UITestID.Cockpit.stop).tap()
         sleep(1)
         app.buttons["Save Ride"].tap()
 
-        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 12),
-                      "Saving a ride should show the summary")
-        app.buttons["Done"].tap()
+        let summary = app.control(UITestID.Summary.done)
+        guard summary.waitForExistence(timeout: 8) else {
+            // A static simulator can have no usable GPS track. The app handles
+            // that correctly with a "Ride not saved" alert; make the missing
+            // location explicit rather than failing on a UI timeout.
+            let notSaved = app.alerts["Ride not saved"]
+            if notSaved.waitForExistence(timeout: 2) {
+                notSaved.buttons["OK"].tap()
+                throw XCTSkip("Simulator produced no GPS points; set a moving simulator location to exercise the live-save path.")
+            }
+            XCTFail("Saving a ride should show the summary")
+            return
+        }
+        summary.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Your next ride"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.screenTitle(UITestID.Home.title).waitForExistence(timeout: 10),
                       "Closing the summary should return to the dashboard")
     }
 
     func testGarageAndHistoryTabs() {
-        XCTAssertTrue(app.buttons["Garage"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Garage"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[UITestID.TabBar.garage].firstMatch.waitForExistence(timeout: 10))
+        app.buttons[UITestID.TabBar.garage].firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Your machines"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.Garage.title).waitForExistence(timeout: 8))
 
-        app.buttons["History"].firstMatch.tap()
+        app.buttons[UITestID.TabBar.history].firstMatch.tap()
         sleep(2)
-        XCTAssertTrue(app.staticTexts["Ride history"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.screenTitle(UITestID.History.title).waitForExistence(timeout: 8))
+    }
+
+    func testHistoryStatsAreMerged() {
+        XCTAssertTrue(app.buttons[UITestID.TabBar.history].firstMatch.waitForExistence(timeout: 10))
+        app.buttons[UITestID.TabBar.history].firstMatch.tap()
+        sleep(2)
+
+        XCTAssertTrue(app.staticTexts["Ride stats"].waitForExistence(timeout: 8),
+                      "History should show the merged stats overview")
+        XCTAssertFalse(app.staticTexts["All-time snapshot"].exists,
+                       "The duplicate all-time card should be gone")
+        XCTAssertFalse(app.staticTexts["Personal bests"].exists,
+                       "The duplicate personal-bests card should be gone")
     }
 }

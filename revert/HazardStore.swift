@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 /// Stop signs, lights, cameras, rail crossings, schools and roundabouts from OpenStreetMap.
 enum HazardStore {
@@ -41,7 +42,53 @@ enum HazardStore {
         throw lastError
     }
 
-    nonisolated private static func fetch(query: String, endpoint: String) async throws -> [Hazard] {
+    /// One request for a whole area. Used by the offline download and the
+    /// area cache; the per-tile fetch above remains the riding fallback.
+    nonisolated static func fetchArea(south: Double, west: Double,
+                                      north: Double, east: Double,
+                                      timeout: TimeInterval = 45) async throws -> [Hazard] {
+        let bbox = "(\(south),\(west),\(north),\(east))"
+        let query = """
+        [out:json][timeout:\(Int(timeout))];
+        (
+          node["highway"="stop"]\(bbox);
+          node["highway"="traffic_signals"]\(bbox);
+          node["highway"="speed_camera"]\(bbox);
+          node["enforcement"]\(bbox);
+          node["railway"="level_crossing"]\(bbox);
+          nwr["amenity"="school"]\(bbox);
+          nwr["junction"="roundabout"]\(bbox);
+          node["highway"="mini_roundabout"]\(bbox);
+        );
+        out center;
+        """
+        var lastError: Error = URLError(.cannotConnectToHost)
+        for endpoint in endpoints {
+            do {
+                return try await fetch(query: query, endpoint: endpoint, timeout: timeout)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    /// Area cache first, tiles second. Both are corridor-projected before
+    /// anything is announced, so duplicates are harmless and are removed here.
+    nonisolated static func items(near coordinate: CLLocationCoordinate2D) -> [Hazard] {
+        var seen = Set<Int64>()
+        var hazards: [Hazard] = []
+        for hazard in HazardAreas.items(near: coordinate) where seen.insert(hazard.id).inserted {
+            hazards.append(hazard)
+        }
+        for hazard in shared.items(near: coordinate) where seen.insert(hazard.id).inserted {
+            hazards.append(hazard)
+        }
+        return hazards
+    }
+
+    nonisolated private static func fetch(query: String, endpoint: String,
+                                          timeout: TimeInterval = 30) async throws -> [Hazard] {
         guard let url = URL(string: endpoint) else { throw URLError(.badURL) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -49,7 +96,7 @@ enum HazardStore {
         req.setValue("RevertApp/0.1 (personal open-source project)", forHTTPHeaderField: "User-Agent")
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
         req.httpBody = "data=\(encoded)".data(using: .utf8)
-        req.timeoutInterval = 30
+        req.timeoutInterval = timeout
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }

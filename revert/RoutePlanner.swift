@@ -16,10 +16,37 @@ final class RoutePlanner {
         case done
     }
 
-    var phase: Phase = .idle
+    var phase: Phase = .idle {
+        didSet {
+            // Leaving the busy states means the work is over, one way or the
+            // other, so the background assertion is no longer needed.
+            if !isBusy { endBackgroundAssertion() }
+        }
+    }
     var progress = 0.0
+
+    /// The request behind the current plan, kept so planning can be resumed
+    /// when the rider comes back to the app.
+    struct PlanningRequest {
+        let start: CLLocationCoordinate2D
+        let miles: Double
+        let style: RouteStyle
+        let mode: LoopMode
+        let surface: LoopSurface
+        let shapingPins: [CLLocationCoordinate2D]
+        let prefersPasses: Bool
+        let preferredRoads: [String]
+    }
+
+    @ObservationIgnored private var lastRequest: PlanningRequest?
+    @ObservationIgnored private var interruptedForBackground = false
+    @ObservationIgnored private var backgroundAssertion: UIBackgroundTaskIdentifier = .invalid
+    @ObservationIgnored private var activeObserver: NSObjectProtocol?
+    @ObservationIgnored private var progressTask: Task<Void, Never>?
     var elevationLoading = false
-    var results: [PlannedRoute] = []
+    var results: [PlannedRoute] = [] {
+        didSet { prepareRoadsForDirectionsIfNeeded() }
+    }
     var localResults: [PlannedRoute] = []
     var localRoutesLoading = false
     var localRoutesError: String?
@@ -27,7 +54,9 @@ final class RoutePlanner {
     /// A non-fatal fact about the current results, e.g. the start was snapped
     /// to the nearest mapped road.
     var notice: String?
-    private(set) var roads: [Road] = []
+    private(set) var roads: [Road] = [] {
+        didSet { if !roads.isEmpty { RoadStore.setRouteRoads(roads) } }
+    }
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var localSearchTask: Task<Void, Never>?
     @ObservationIgnored private var prefetchTask: Task<Void, Never>?
@@ -56,6 +85,92 @@ final class RoutePlanner {
         }
     }
 
+    // MARK: Background planning
+
+    /// iOS gives roughly thirty seconds after the app leaves the foreground.
+    /// That covers a warm plan outright and most cold ones; if the time runs
+    /// out the plan pauses instead of dying, and resumes when the rider
+    /// returns. The area cache keeps whatever already arrived.
+    private func beginBackgroundAssertion() {
+        endBackgroundAssertion()
+        interruptedForBackground = false
+        backgroundAssertion = UIApplication.shared.beginBackgroundTask(withName: "Revert loop planning") { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in self.interruptForBackground() }
+        }
+    }
+
+    private func endBackgroundAssertion() {
+        guard backgroundAssertion != .invalid else { return }
+        let token = backgroundAssertion
+        backgroundAssertion = .invalid
+        UIApplication.shared.endBackgroundTask(token)
+    }
+
+    private func interruptForBackground() {
+        guard isBusy else {
+            endBackgroundAssertion()
+            return
+        }
+        interruptedForBackground = true
+        task?.cancel()
+        task = nil
+        progressTask?.cancel()
+        endBackgroundAssertion()
+        phase = .failed("Planning paused while Revert was in the background. Reopen the app and it will pick up where it left off.")
+    }
+
+    private func ensureLifecycleObserver() {
+        guard activeObserver == nil else { return }
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.resumeIfInterrupted() }
+        }
+    }
+
+    private func resumeIfInterrupted() {
+        guard interruptedForBackground, let request = lastRequest, results.isEmpty else { return }
+        interruptedForBackground = false
+        generate(start: request.start, miles: request.miles, style: request.style,
+                 mode: request.mode, surface: request.surface,
+                 shapingPins: request.shapingPins,
+                 prefersPasses: request.prefersPasses,
+                 preferredRoads: request.preferredRoads)
+    }
+
+    deinit {
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+    }
+
+    /// Eases the bar toward a stage target instead of leaving it parked at
+    /// 35% until the loop appears. Never decreases, and stops at `.done`.
+    private func glideProgress(to target: Double, over seconds: TimeInterval) {
+        progressTask?.cancel()
+        let start = progress
+        guard target > start else { return }
+        progressTask = Task { @MainActor [weak self] in
+            let steps = max(Int(seconds * 4), 4)
+            for step in 0...steps {
+                guard let self, !Task.isCancelled else { return }
+                if case .done = self.phase { return }
+                let t = Double(step) / Double(steps)
+                // Ease-out: most of the movement early, so the bar always
+                // looks like it is making progress.
+                let eased = 1 - pow(1 - t, 2)
+                self.progress = max(self.progress, start + (target - start) * eased)
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+    }
+
+    private func finishProgress() {
+        progressTask?.cancel()
+        progressTask = nil
+        progress = 1
+    }
+
     func generate(
         start: CLLocationCoordinate2D,
         miles: Double,
@@ -68,6 +183,11 @@ final class RoutePlanner {
     ) {
         let id = UUID()
         generationID = id
+        lastRequest = PlanningRequest(start: start, miles: miles, style: style, mode: mode,
+                                      surface: surface, shapingPins: shapingPins,
+                                      prefersPasses: prefersPasses, preferredRoads: preferredRoads)
+        beginBackgroundAssertion()
+        ensureLifecycleObserver()
 
         if let loopCache,
            loopCache.style == style,
@@ -98,6 +218,13 @@ final class RoutePlanner {
         roads = []
         notice = nil
         progress = 0
+        // A first visit to an area has to download its roads before any loop
+        // can be searched. That download used to share the 64-second ceiling
+        // with the search, so it timed out and the rider had to tap again
+        // after the data had landed. Give the cold case its own budget.
+        let coldRadius = Self.planningRadiusKm(forMiles: miles)
+        let cold = !RoadStore.hasCoverage(center: start, radiusKm: coldRadius, surface: surface)
+        if cold { notice = "Downloading map data for this area…" }
         let planningTask = Task {
             await run(
                 start: start,
@@ -116,19 +243,37 @@ final class RoutePlanner {
         // ceiling has to leave room for a patient download plus a graph build.
         // Whatever has been found by then is what the rider gets; they should
         // never sit in front of a spinner forever.
+        let ceiling: UInt64 = cold ? 170_000_000_000 : 64_000_000_000
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 64_000_000_000)
+            try? await Task.sleep(nanoseconds: ceiling)
             guard let self else { return }
             await MainActor.run {
                 guard self.generationID == id else { return }
                 if self.isBusy {
                     if self.results.isEmpty {
-                        self.phase = .failed("Route generation is taking too long. Try a shorter distance or a different start point.")
+                        let message = "Route generation is taking too long. Try a shorter distance or a different start point."
+                        self.phase = .failed(message)
+                        let body = """
+                        reason: planning exceeded \(ceiling / 1_000_000_000) seconds
+                        start: \(String(format: "%.5f", start.latitude)), \(String(format: "%.5f", start.longitude))
+                        target: \(Units.distanceTextFromMiles(miles, decimals: 1))
+                        style: \(style.rawValue)  mode: \(mode.rawValue)  surface: \(surface.rawValue)
+                        shaping pins: \(shapingPins.count)
+                        preferred roads: \(preferredRoads.isEmpty ? "—" : preferredRoads.joined(separator: ", "))
+                        message: \(message)
+
+                        DIAGNOSTICS TAIL
+                        \(RevertDiagnostics.text().split(separator: "\n").suffix(60).joined(separator: "\n"))
+                        """
+                        DebugReports.write(kind: "Loop failure",
+                                           title: "Planning timed out",
+                                           body: body)
+                        RevertDiagnostics.log("loop failure: planning timed out")
                     } else {
                         self.phase = .done
                     }
                 }
-                self.progress = 1
+                self.finishProgress()
                 planningTask.cancel()
             }
         }
@@ -139,7 +284,8 @@ final class RoutePlanner {
         to destination: CLLocationCoordinate2D,
         via: [CLLocationCoordinate2D] = [],
         surface: LoopSurface = .paved,
-        preference: DirectionPreference
+        preference: DirectionPreference,
+        kind: RouteKind = .directions
     ) {
         task?.cancel()
         results = []
@@ -156,7 +302,8 @@ final class RoutePlanner {
             }
         }
         task = Task {
-            await requestDirections(from: start, to: destination, via: via, surface: surface, preference: preference)
+            await requestDirections(from: start, to: destination, via: via, surface: surface,
+                                    preference: preference, kind: kind)
         }
     }
 
@@ -228,6 +375,7 @@ final class RoutePlanner {
         results = []
         roads = []
         notice = nil
+        RoadStore.clearRouteRoads()
     }
 
     @MainActor
@@ -235,12 +383,66 @@ final class RoutePlanner {
         RevertDiagnostics.log("route failure: \(message)")
     }
 
+    /// Last-resort point-to-point on the offline graph. The corridor is
+    /// narrow on purpose: this is an answer when the network is not, not a
+    /// replacement for the normal planning area.
+    /// A directions route never downloads a planning area, so speed limits and
+    /// curve warnings had nothing to match against. Fetch the tube around the
+    /// line in the background and hand it to the alert engine.
+    private func prepareRoadsForDirectionsIfNeeded() {
+        guard roads.isEmpty,
+              let route = results.first,
+              route.kind != .loop,
+              let first = route.points.first?.coordinate,
+              let last = route.points.last?.coordinate else { return }
+        let surface = route.surface
+        Task.detached(priority: .utility) {
+            var fetched = RoadStore.cachedCorridor(from: first, to: last, surface: surface)
+            if fetched == nil {
+                // `??` cannot take an async right-hand side.
+                fetched = try? await RoadStore.downloadCorridor(from: first, to: last,
+                                                                surface: surface, timeout: 25)
+            }
+            if let fetched, !fetched.isEmpty {
+                await MainActor.run { RoadStore.setRouteRoads(fetched) }
+            }
+        }
+    }
+
+    private func localDirections(from start: CLLocationCoordinate2D,
+                                 to end: CLLocationCoordinate2D,
+                                 surface: LoopSurface,
+                                 preference: DirectionPreference) async -> PlannedRoute? {
+        var roads = await Task.detached(priority: .userInitiated) {
+            RoadStore.cachedCorridor(from: start, to: end, surface: surface)
+        }.value
+        if roads == nil {
+            RevertDiagnostics.log("directions: local fallback fetching corridor")
+            roads = try? await RoadStore.downloadCorridor(from: start, to: end,
+                                                          surface: surface, timeout: 20)
+        }
+        guard let roads, !roads.isEmpty else {
+            RevertDiagnostics.log("directions: local fallback has no roads")
+            return nil
+        }
+        let style: RouteStyle = preference == .fastest ? .relaxed : (preference == .sporty ? .extreme : .twisty)
+        let started = Date()
+        let route = await Task.detached(priority: .userInitiated) {
+            RouteBuilder.direct(roads: roads, from: start, to: end, style: style, surface: surface)
+        }.value
+        RevertDiagnostics.log("directions: local fallback \(route == nil ? "failed" : "ok")"
+                              + " \(Int(Date().timeIntervalSince(started) * 1_000))ms"
+                              + " roads=\(roads.count)")
+        return route
+    }
+
     private func requestDirections(
         from start: CLLocationCoordinate2D,
         to destination: CLLocationCoordinate2D,
         via: [CLLocationCoordinate2D],
         surface: LoopSurface,
-        preference: DirectionPreference
+        preference: DirectionPreference,
+        kind: RouteKind
     ) async {
         phase = .routing
 
@@ -250,9 +452,10 @@ final class RoutePlanner {
         if via.isEmpty {
             do {
                 let request = MKDirections.Request()
-                request.source = MKMapItem(location: CLLocation(latitude: start.latitude, longitude: start.longitude), address: nil)
-                request.destination = MKMapItem(location: CLLocation(latitude: destination.latitude, longitude: destination.longitude), address: nil)
+                request.source = MKMapItem.revert(location: CLLocation(latitude: start.latitude, longitude: start.longitude))
+                request.destination = MKMapItem.revert(location: CLLocation(latitude: destination.latitude, longitude: destination.longitude))
                 request.transportType = .automobile
+                VehiclePreferences.apply(to: request)
                 request.departureDate = Date()
                 request.requestsAlternateRoutes = true
                 let response = try await MKDirections(request: request).calculate()
@@ -263,7 +466,13 @@ final class RoutePlanner {
                 phase = .failed("No driving route is available for that destination.")
                     return
                 }
-                let planned = ordered.prefix(3).map { PlannedRoute(mapRoute: $0) }
+                var planned = ordered.prefix(3).map { PlannedRoute(mapRoute: $0) }
+                if kind != .directions {
+                    for index in planned.indices {
+                        planned[index].kind = kind
+                        planned[index].laps = 1
+                    }
+                }
                 results = planned
                 phase = .done
                 if let first = planned.first {
@@ -273,6 +482,16 @@ final class RoutePlanner {
             } catch {
                 guard !Task.isCancelled else { phase = .idle; return }
                 logFailure("directions request failed")
+                // Apple has nothing to give: no signal, or a destination it
+                // will not route. The graph can still answer, and a cached
+                // corridor makes it instant.
+                if let local = await localDirections(from: start, to: destination,
+                                                     surface: surface, preference: preference) {
+                    results = [local]
+                    phase = .done
+                    await attachElevation(to: local.id, prefersPasses: false)
+                    return
+                }
                 phase = .failed("Couldn't get directions to that destination. Check your connection and try again.")
                 return
             }
@@ -287,9 +506,10 @@ final class RoutePlanner {
                     let to = stops[index + 1]
                     group.addTask {
                         let request = MKDirections.Request()
-                        request.source = MKMapItem(location: CLLocation(latitude: from.latitude, longitude: from.longitude), address: nil)
-                        request.destination = MKMapItem(location: CLLocation(latitude: to.latitude, longitude: to.longitude), address: nil)
+                        request.source = MKMapItem.revert(location: CLLocation(latitude: from.latitude, longitude: from.longitude))
+                        request.destination = MKMapItem.revert(location: CLLocation(latitude: to.latitude, longitude: to.longitude))
                         request.transportType = .automobile
+                        VehiclePreferences.apply(to: request)
                         request.departureDate = Date()
                         request.requestsAlternateRoutes = true
                         let response = try await MKDirections(request: request).calculate()
@@ -312,7 +532,11 @@ final class RoutePlanner {
                 phase = .failed("No driving route is available for that destination.")
                 return
             }
-            let combined = PlannedRoute(mapRoutes: legs.compactMap { $0 }, waypoints: via, surface: surface)
+            var combined = PlannedRoute(mapRoutes: legs.compactMap { $0 }, waypoints: via, surface: surface)
+            if kind != .directions {
+                combined.kind = kind
+                combined.laps = 1
+            }
             results = [combined]
             phase = .done
             await attachElevation(to: combined.id, prefersPasses: false)
@@ -387,15 +611,10 @@ final class RoutePlanner {
                 for index in 0..<4 {
                     group.addTask {
                         let request = MKDirections.Request()
-                        request.source = MKMapItem(
-                            location: CLLocation(latitude: points[index].latitude, longitude: points[index].longitude),
-                            address: nil
-                        )
-                        request.destination = MKMapItem(
-                            location: CLLocation(latitude: points[index + 1].latitude, longitude: points[index + 1].longitude),
-                            address: nil
-                        )
+                        request.source = MKMapItem.revert(location: CLLocation(latitude: points[index].latitude, longitude: points[index].longitude))
+                        request.destination = MKMapItem.revert(location: CLLocation(latitude: points[index + 1].latitude, longitude: points[index + 1].longitude))
                         request.transportType = .automobile
+                        VehiclePreferences.apply(to: request)
                         request.requestsAlternateRoutes = false
                         let response = try await MKDirections(request: request).calculate()
                         guard let route = response.routes.first else {
@@ -522,15 +741,10 @@ final class RoutePlanner {
                 distanceMeters: halfDistance
             )
             let request = MKDirections.Request()
-            request.source = MKMapItem(
-                location: CLLocation(latitude: start.latitude, longitude: start.longitude),
-                address: nil
-            )
-            request.destination = MKMapItem(
-                location: CLLocation(latitude: destination.latitude, longitude: destination.longitude),
-                address: nil
-            )
+            request.source = MKMapItem.revert(location: CLLocation(latitude: start.latitude, longitude: start.longitude))
+            request.destination = MKMapItem.revert(location: CLLocation(latitude: destination.latitude, longitude: destination.longitude))
             request.transportType = .automobile
+            VehiclePreferences.apply(to: request)
             request.requestsAlternateRoutes = true
             guard let response = try? await MKDirections(request: request).calculate(),
                   response.routes.count >= 2 else { continue }
@@ -764,7 +978,7 @@ final class RoutePlanner {
         var seen = Set<String>()
         let destinations = places
             .filter { item in
-                let coordinate = item.location.coordinate
+                let coordinate = item.revertLocation.coordinate
                 let distance = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
                     .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
                 guard distance > 8_000 && distance <= 80_000 else { return false }
@@ -772,10 +986,10 @@ final class RoutePlanner {
                 return seen.insert(key).inserted
             }
             .sorted {
-                let a = $0.location.distance(
+                let a = $0.revertLocation.distance(
                     from: CLLocation(latitude: center.latitude, longitude: center.longitude)
                 )
-                let b = $1.location.distance(
+                let b = $1.revertLocation.distance(
                     from: CLLocation(latitude: center.latitude, longitude: center.longitude)
                 )
                 return a < b
@@ -787,8 +1001,8 @@ final class RoutePlanner {
         for index in 0..<min(3, destinations.count - 1) {
             let first = destinations[index]
             let second = destinations[(index + 2) % destinations.count]
-            let firstCoordinate = first.location.coordinate
-            let secondCoordinate = second.location.coordinate
+            let firstCoordinate = first.revertLocation.coordinate
+            let secondCoordinate = second.revertLocation.coordinate
             async let firstLegRequest = mapRoute(from: center, to: firstCoordinate)
             async let secondLegRequest = mapRoute(from: firstCoordinate, to: secondCoordinate)
             async let finalLegRequest = mapRoute(from: secondCoordinate, to: center)
@@ -826,15 +1040,10 @@ final class RoutePlanner {
 
     private static func mapRoute(from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async -> MKRoute? {
         let request = MKDirections.Request()
-        request.source = MKMapItem(
-            location: CLLocation(latitude: source.latitude, longitude: source.longitude),
-            address: nil
-        )
-        request.destination = MKMapItem(
-            location: CLLocation(latitude: destination.latitude, longitude: destination.longitude),
-            address: nil
-        )
+        request.source = MKMapItem.revert(location: CLLocation(latitude: source.latitude, longitude: source.longitude))
+        request.destination = MKMapItem.revert(location: CLLocation(latitude: destination.latitude, longitude: destination.longitude))
         request.transportType = .automobile
+        VehiclePreferences.apply(to: request)
         request.requestsAlternateRoutes = false
         return try? await MKDirections(request: request).calculate().routes.first
     }
@@ -866,6 +1075,56 @@ final class RoutePlanner {
         // satisfy the request.
         let radiusKm = Self.planningRadiusKm(forMiles: length / 1_609.344)
 
+        /// A rider should never get "couldn't build a loop" with no way to
+        /// find out why. This report carries the exact request, the roads the
+        /// planner actually had, the last graph failure and the diagnostics
+        /// tail into the debug folder.
+        func reportLoopFailure(
+            _ reason: String,
+            roads: [Road] = [],
+            graphFailure: String? = nil,
+            mapKitCandidates: Int? = nil,
+            extra: [String: String] = [:]
+        ) {
+            let nearest = roads.isEmpty
+                ? nil
+                : RouteBuilder.distanceToNearestRoad(in: roads, from: start,
+                                                     includeUnpaved: surface.includesUnpaved)
+            var lines = [
+                "REQUEST",
+                "start: \(String(format: "%.5f", start.latitude)), \(String(format: "%.5f", start.longitude))",
+                "target: \(Units.distanceTextFromMiles(length / 1_609.344, decimals: 1)) (\(Int(length)) m)",
+                "style: \(style.rawValue)  mode: \(mode.rawValue)  surface: \(surface.rawValue)",
+                "radius: \(String(format: "%.1f", radiusKm)) km",
+                "shaping pins: \(shapingPins.count)",
+                "preferred roads: \(preferredRoads.isEmpty ? "—" : preferredRoads.joined(separator: ", "))",
+                "prefers passes: \(prefersPasses)",
+                "",
+                "OUTCOME",
+                "reason: \(reason)",
+                "road count: \(roads.count)",
+                "nearest road: \(nearest.map { String(format: "%.0f m", $0) } ?? "—")"
+            ]
+            if let graphFailure {
+                lines.append("graph failure: \(graphFailure)")
+            }
+            if let mapKitCandidates {
+                lines.append("mapkit candidates: \(mapKitCandidates)")
+            }
+            for (key, value) in extra.sorted(by: { $0.key < $1.key }) {
+                lines.append("\(key): \(value)")
+            }
+            lines.append("")
+            lines.append("DIAGNOSTICS TAIL")
+            lines.append(RevertDiagnostics.text()
+                .split(separator: "\n")
+                .suffix(60)
+                .joined(separator: "\n"))
+            DebugReports.write(kind: "Loop failure", title: reason,
+                               body: lines.joined(separator: "\n"))
+            RevertDiagnostics.log("loop failure: \(reason) | roads=\(roads.count) | graph=\(graphFailure ?? "—")")
+        }
+
         await MainActor.run {
             IdleTimer.acquire("plan")
             progress = 0.05
@@ -880,7 +1139,7 @@ final class RoutePlanner {
         if !shapingPins.isEmpty {
             if let route = await mapKitLoopThrough(start: start, pins: shapingPins, surface: surface) {
                 await MainActor.run {
-                    progress = 1
+                    finishProgress()
                     self.roads = []
                     results = [route]
                     loopCache = LoopCache(
@@ -900,7 +1159,12 @@ final class RoutePlanner {
                 await attachElevation(to: route.id, prefersPasses: prefersPasses)
             } else {
                 await MainActor.run {
-                    phase = .failed("Couldn't build a loop through those shaping pins. Try moving one closer to a road.")
+                    let message = "Couldn't build a loop through those shaping pins. Try moving one closer to a road."
+                    phase = .failed(message)
+                    reportLoopFailure("Shaping-pin loop failed",
+                                      mapKitCandidates: 0,
+                                      extra: ["message": message,
+                                              "pins": "\(shapingPins.count)"])
                 }
             }
             return
@@ -914,7 +1178,7 @@ final class RoutePlanner {
         if length > 80_000 {
             if let route = await mapKitLoopWithTimeout(start: start, length: length, timeoutSeconds: 20) {
                 await MainActor.run {
-                    progress = 1
+                    finishProgress()
                     results = [route]
                     self.roads = []
                     phase = .done
@@ -922,16 +1186,45 @@ final class RoutePlanner {
                 await attachElevation(to: route.id, prefersPasses: prefersPasses)
             } else {
                 await MainActor.run {
-                    phase = .failed("A loop that long needs live map routing. Check your connection and try again, or reduce the distance.")
+                    let message = "A loop that long needs live map routing. Check your connection and try again, or reduce the distance."
+                    phase = .failed(message)
+                    reportLoopFailure("Long loop failed: MapKit fallback unavailable",
+                                      mapKitCandidates: 0,
+                                      extra: ["message": message,
+                                              "length_m": "\(Int(length))"])
                 }
             }
             return
         }
 
         // Decoding the bulk cache is real work. Do it once, off the main thread.
+        // Cold area: fetch the roads on a patient budget, showing what is
+        // happening, and only then decode and search. This is what makes the
+        // first "build loop" in a new area work instead of timing out.
+        if !Task.isCancelled,
+           !RoadStore.hasCoverage(center: start, radiusKm: radiusKm, surface: surface) {
+            await MainActor.run {
+                phase = .downloading(done: 0, total: 1)
+                progress = 0.02
+                notice = "Downloading map data for this area…"
+                glideProgress(to: 0.38, over: 60)
+            }
+            _ = try? await RoadStore.downloadArea(center: start, radiusKm: radiusKm,
+                                                  surface: surface, timeout: 90)
+            await MainActor.run {
+                notice = nil
+                phase = .planning
+                progressTask?.cancel()
+                progress = max(progress, 0.42)
+            }
+        }
+
         let cachedRoads = await Task.detached(priority: .userInitiated) {
             RoadStore.cachedArea(center: start, radiusKm: radiusKm, surface: surface)
         }.value
+        await MainActor.run {
+            glideProgress(to: 0.92, over: 30)
+        }
 
         let waypointCount = length < 8_000 ? 1 : (length < 60_000 ? 2 : 3)
         let mapKitSettings = TwistyLoopSettings(
@@ -979,6 +1272,8 @@ final class RoutePlanner {
         let graphTask = Task.detached(priority: .userInitiated) {
             () -> (routes: [PlannedRoute], roads: [Road], failure: String?, notice: String?) in
             let downloaded = await roadsTask.value
+            RevertDiagnostics.log("plan.roads \(Int(Date().timeIntervalSince(planningStart) * 1_000))ms"
+                                  + " count=\(downloaded.count) cached=\(cachedRoads != nil)")
             guard !Task.isCancelled else { return ([], [], nil, nil) }
             let hazards = await hazardsTask.value
             let taste = RouteTaste.shared.snapshot()
@@ -1026,10 +1321,15 @@ final class RoutePlanner {
                 // it; that extra time is what pushed the whole plan past the
                 // planning ceiling.
                 let firstBudget = uncovered ? 4.0 : 10.0
+                let searchStart = Date()
                 routes = plan(
                     downloaded,
                     deadline: Date().addingTimeInterval(min(firstBudget, remaining))
                 )
+                RevertDiagnostics.log("plan.search pass=1"
+                                      + " \(Int(Date().timeIntervalSince(searchStart) * 1_000))ms"
+                                      + " routes=\(routes.count) roads=\(downloaded.count)"
+                                      + " failure=\(RouteBuilder.lastFailure ?? "—")")
             }
             var failure = RouteBuilder.lastFailure
             var notice = RouteBuilder.lastNotice
@@ -1042,7 +1342,10 @@ final class RoutePlanner {
                needsDenseGrid,
                !Task.isCancelled,
                Date().timeIntervalSince(planningStart) < 46 {
-                let denseRadius = min(max(radiusKm * 1.5, 6.0), 10.0)
+                // A denser retry must never be a *smaller* area. For a
+                // 40-mile loop the old cap took the search from 17 km down to
+                // 10 km, so the waypoints it needed were outside the graph.
+                let denseRadius = min(max(radiusKm * 1.25, 8.0), 20.0)
                 if let dense = try? await RoadStore.downloadArea(
                     center: start,
                     radiusKm: denseRadius,
@@ -1054,7 +1357,12 @@ final class RoutePlanner {
                     // Never let the second pass itself run past the UI ceiling.
                     let denseElapsed = Date().timeIntervalSince(planningStart)
                     let denseBudget = max(2.0, min(12.0, 58.0 - denseElapsed))
+                    let denseStart = Date()
                     routes = plan(dense, deadline: Date().addingTimeInterval(denseBudget))
+                    RevertDiagnostics.log("plan.search pass=dense"
+                                          + " \(Int(Date().timeIntervalSince(denseStart) * 1_000))ms"
+                                          + " routes=\(routes.count) roads=\(dense.count)"
+                                          + " failure=\(failure ?? "—")")
                     failure = RouteBuilder.lastFailure
                     notice = RouteBuilder.lastNotice
                 }
@@ -1101,7 +1409,7 @@ final class RoutePlanner {
                     deadline: planningDeadline,
                     progress: { value in
                         Task { @MainActor in
-                            self.progress = 0.05 + value * 0.55
+                            self.progress = max(self.progress, 0.45 + value * 0.45)
                         }
                     }
                 )
@@ -1217,7 +1525,7 @@ final class RoutePlanner {
         if !found.isEmpty {
             let roads = graphResult.roads
             await MainActor.run {
-                progress = 1
+                finishProgress()
                 self.roads = roads
                 notice = graphResult.notice
                 results = found
@@ -1260,11 +1568,14 @@ final class RoutePlanner {
 
         if quickPublished {
             await MainActor.run {
-                progress = 1
+                finishProgress()
                 phase = .done
             }
             return
         }
+
+        RevertDiagnostics.log("plan.mapkit candidates=\(mapKitLoops?.count ?? 0)"
+                              + " routes=\(mapKitRoutes.count) quick=\(quickPublished ? 1 : 0)")
 
         // Nothing produced a route from cached or downloaded roads. As a last
         // resort, build a loop from two alternate Apple routes; this needs no
@@ -1276,7 +1587,7 @@ final class RoutePlanner {
                timeoutSeconds: 8
            ) {
             await MainActor.run {
-                progress = 1
+                finishProgress()
                 results = [alternate]
                 roads = []
                 phase = .done
@@ -1289,16 +1600,22 @@ final class RoutePlanner {
         // actionable instead of a generic "couldn't build a loop".
         let roads = graphResult.roads
         await MainActor.run {
-            progress = 1
+            finishProgress()
             if roads.isEmpty {
                 // Never show NSURLErrorDomain strings to a rider. The useful
                 // action is the same for a timeout, dropped signal or blocked
                 // Overpass mirror.
-                phase = .failed(
-                    prefetchingRoads
-                        ? "Map data for this area is still downloading. Give it a moment, then tap Find scenic loops again."
-                        : "Couldn't load road data for this area. The map server may be busy — check your connection and tap Try again."
-                )
+                let message = prefetchingRoads
+                    ? "Map data for this area is still downloading. Give it a moment, then tap Find scenic loops again."
+                    : "Couldn't load road data for this area. The map server may be busy — check your connection and tap Try again."
+                phase = .failed(message)
+                reportLoopFailure("No road data for this area",
+                                  roads: roads,
+                                  graphFailure: graphResult.failure,
+                                  mapKitCandidates: mapKitLoops?.count,
+                                  extra: ["message": message,
+                                          "prefetching": prefetchingRoads ? "yes" : "no",
+                                          "mapkit_routes": "\(mapKitRoutes.count)"])
             } else {
                 // `graphResult.failure` belongs to the attempt whose roads are
                 // in `graphResult.roads`. The old code read the global
@@ -1310,9 +1627,15 @@ final class RoutePlanner {
                     return " \(sentence)."
                 } ?? ""
                 let distance = Units.distanceTextFromMiles(length / 1609.344, decimals: 0)
-                phase = .failed(
-                    "Couldn't build a \(distance) loop from this start.\(detail) Try a different start or a shorter distance."
-                )
+                let message = "Couldn't build a \(distance) loop from this start.\(detail) Try a different start or a shorter distance."
+                phase = .failed(message)
+                reportLoopFailure("No loop could be built",
+                                  roads: roads,
+                                  graphFailure: graphResult.failure,
+                                  mapKitCandidates: mapKitLoops?.count,
+                                  extra: ["message": message,
+                                          "mapkit_routes": "\(mapKitRoutes.count)",
+                                          "quick_published": quickPublished ? "yes" : "no"])
             }
         }
     }
@@ -1382,7 +1705,7 @@ final class RoutePlanner {
         prefersPasses: Bool,
         roadsTask: Task<[Road], Never>
     ) async {
-        progress = 1
+        finishProgress()
         roads = []
         notice = nil
         results = routes
@@ -1460,9 +1783,10 @@ final class RoutePlanner {
                     let to = stops[index + 1]
                     group.addTask {
                         let request = MKDirections.Request()
-                        request.source = MKMapItem(location: CLLocation(latitude: from.latitude, longitude: from.longitude), address: nil)
-                        request.destination = MKMapItem(location: CLLocation(latitude: to.latitude, longitude: to.longitude), address: nil)
+                        request.source = MKMapItem.revert(location: CLLocation(latitude: from.latitude, longitude: from.longitude))
+                        request.destination = MKMapItem.revert(location: CLLocation(latitude: to.latitude, longitude: to.longitude))
                         request.transportType = .automobile
+                        VehiclePreferences.apply(to: request)
                         request.requestsAlternateRoutes = false
                         let response = try await MKDirections(request: request).calculate()
                         guard let route = response.routes.first else { throw URLError(.resourceUnavailable) }

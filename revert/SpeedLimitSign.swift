@@ -16,14 +16,14 @@ struct SpeedLimitSign: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("SPEED\nLIMIT")
-                .font(.system(size: 10, weight: .heavy))
+                .font(.scaledSystem(size: 10, weight: .heavy))
                 .multilineTextAlignment(.center)
             Text("\(displayedLimit)")
-                .font(.system(size: 44, weight: .heavy, design: .rounded))
+                .font(.scaledSystem(size: 44, weight: .heavy, design: .rounded))
                 .monospacedDigit()
                 .minimumScaleFactor(0.7)
             Text(unitLabel)
-                .font(.system(size: 8, weight: .bold))
+                .font(.scaledSystem(size: 8, weight: .bold))
                 .tracking(0.6)
                 .opacity(0.7)
         }
@@ -43,13 +43,13 @@ struct SurfaceBanner: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 32, weight: .bold))
+                .font(.scaledSystem(size: 32, weight: .bold))
                 .frame(width: 48)
             VStack(alignment: .leading, spacing: 2) {
                 Text("UNPAVED ROAD")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .font(.scaledSystem(size: 26, weight: .heavy, design: .rounded))
                 Text(alert.text)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.scaledSystem(size: 18, weight: .semibold, design: .rounded))
             }
             Spacer()
         }

@@ -28,15 +28,22 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.venv-art/
 
 # Local agent/editor scratch
 .aider*
 .vscode/
 .idea/
+.tools/
+
+# Stray SQLite dumps dropped in the repo root by local tooling
+????????-????-????-????-????????????
 
 # Local-only audit artifacts
 .screens/
 .tmpcheck/
+.ui-review/
+.ui-baseline/
 Audit.xcresult/
 
 # ---------------------------------------------------------------------------

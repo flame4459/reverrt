@@ -51,7 +51,7 @@ struct AboutView: View {
                             Label("OpenStreetMap contributors", systemImage: "map")
                             Spacer()
                             Image(systemName: "arrow.up.right")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.scaledSystem(size: 10, weight: .bold))
                         }
                     }
                     Link(destination: URL(string: "https://www.apple.com/legal/internet-services/maps/")!) {
@@ -59,7 +59,7 @@ struct AboutView: View {
                             Label("Apple Maps", systemImage: "apple.logo")
                             Spacer()
                             Image(systemName: "arrow.up.right")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.scaledSystem(size: 10, weight: .bold))
                         }
                     }
                 }

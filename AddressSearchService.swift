@@ -60,7 +60,7 @@ final class AddressSearchService: NSObject, MKLocalSearchCompleterDelegate {
                     return
                 }
 
-                guard let coordinate = response?.mapItems.first?.location.coordinate,
+                guard let coordinate = response?.mapItems.first?.revertLocation.coordinate,
                       CLLocationCoordinate2DIsValid(coordinate) else {
                     continuation.resume(throwing: AddressSearchError.noResult)
                     return
@@ -82,7 +82,7 @@ final class AddressSearchService: NSObject, MKLocalSearchCompleterDelegate {
                     return
                 }
 
-                guard let coordinate = response?.mapItems.first?.location.coordinate,
+                guard let coordinate = response?.mapItems.first?.revertLocation.coordinate,
                       CLLocationCoordinate2DIsValid(coordinate) else {
                     continuation.resume(throwing: AddressSearchError.noResult)
                     return

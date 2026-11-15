@@ -245,8 +245,11 @@ nonisolated enum RouteBuilder {
         if sv.dist > 250 {
             note("The start moved \(Units.distanceText(sv.dist, decimals: 1)) to the nearest mapped road.")
         }
-        let graph = RoadGraph(roads: roads, forced: [sv.key], includeUnpaved: surface.includesUnpaved)
-        guard let s = graph.node(forKey: sv.key) else { return [] }
+        guard let planning = planningGraph(roads: roads,
+                                           anchors: [(sv.key, sv.lat, sv.lon)],
+                                           includeUnpaved: surface.includesUnpaved),
+              let s = planning.nodes.first else { return [] }
+        let graph = planning.graph
 
         let deadlineDate = deadline ?? Date().addingTimeInterval(12)
         let budget = SearchBudget(deadline: deadlineDate)
@@ -1074,6 +1077,103 @@ nonisolated enum RouteBuilder {
         if metrics.flow >= 35 { return "Flowing sweepers" }
         if metrics.lap >= 55 { return "Balanced lap" }
         return "Best overall"
+    }
+
+    /// The graph for a planning run, from cache when possible. Forced nodes
+    /// are only needed when the cache is cold or the anchor is nowhere near a
+    /// cached node, because every chunk boundary is already a node.
+    nonisolated static func planningGraph(
+        roads: [Road],
+        anchors: [(key: Int64, lat: Double, lon: Double)],
+        includeUnpaved: Bool
+    ) -> (graph: RoadGraph, nodes: [Int])? {
+        if let cached = GraphCache.load(roads: roads, includeUnpaved: includeUnpaved) {
+            var nodes: [Int] = []
+            var resolved = true
+            for anchor in anchors {
+                if let node = cached.node(forKey: anchor.key)
+                    ?? cached.nearestNode(latitude: anchor.lat, longitude: anchor.lon, withinMeters: 400) {
+                    nodes.append(node)
+                } else {
+                    resolved = false
+                    break
+                }
+            }
+            if resolved {
+                RevertDiagnostics.log("graph.cache hit nodes=\(cached.nodeLat.count) edges=\(cached.edges.count)")
+                return (cached, nodes)
+            }
+        }
+        let graph = RoadGraph(roads: roads,
+                              forced: Set(anchors.map(\.key)),
+                              includeUnpaved: includeUnpaved)
+        var nodes: [Int] = []
+        for anchor in anchors {
+            guard let node = graph.node(forKey: anchor.key) else { return nil }
+            nodes.append(node)
+        }
+        GraphCache.save(graph, includeUnpaved: includeUnpaved)
+        RevertDiagnostics.log("graph.cache miss nodes=\(graph.nodeLat.count) edges=\(graph.edges.count)")
+        return (graph, nodes)
+    }
+
+    // MARK: - Point to point
+
+    /// A→B on the offline graph, scored with the same cost model as the loops.
+    /// This is what answers when MapKit has no route to give: no signal, or a
+    /// destination Apple will not route. It needs road data to be cached
+    /// already; `RoadStore.corridor` fetches only the tube around the line.
+    nonisolated static func direct(
+        roads: [Road],
+        from start: CLLocationCoordinate2D,
+        to end: CLLocationCoordinate2D,
+        style: RouteStyle = .twisty,
+        surface: LoopSurface = .paved,
+        preferences: RoadPreferences = .empty,
+        date: Date = Date()
+    ) -> PlannedRoute? {
+        guard let a = nearestVertex(roads, to: start, includeUnpaved: surface.includesUnpaved), a.dist <= 600,
+              let b = nearestVertex(roads, to: end, includeUnpaved: surface.includesUnpaved), b.dist <= 600,
+              a.key != b.key else { return nil }
+
+        guard let planning = planningGraph(roads: roads,
+                                           anchors: [(a.key, a.lat, a.lon), (b.key, b.lat, b.lon)],
+                                           includeUnpaved: surface.includesUnpaved),
+              planning.nodes.count == 2 else { return nil }
+        let graph = planning.graph
+        let s = planning.nodes[0]
+        let t = planning.nodes[1]
+
+        let costs = costs(graph, style: style, date: date,
+                          preferences: preferences, surface: surface, hazards: nil)
+        guard let path = graph.shortestPath(from: s, to: t, costs: costs) else { return nil }
+        let points = graph.points(for: path)
+        guard points.count > 2 else { return nil }
+
+        let byID = Dictionary(roads.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seconds = 0.0
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let current = points[index]
+            let distance = RoadGraph.flat(previous.lat, previous.lon, current.lat, current.lon).dist
+            let road = byID[current.road]
+            let limit = road?.speedLimitMph(forward: true).map { Double($0) * 0.44704 }
+            let speed = max(limit ?? defaultSpeedMps(road?.highway ?? ""), 5.5)
+            seconds += distance / speed
+        }
+        let bearing = RoadGraph.flat(points[0].lat, points[0].lon,
+                                     points[1].lat, points[1].lon).heading
+        var route = PlannedRoute(
+            points: points,
+            roads: byID,
+            twistPerKm: 0,
+            retraced: 0,
+            bearing: bearing,
+            expectedTravelTime: seconds,
+            kind: .directions
+        )
+        route.surface = surface
+        return route
     }
 
     // MARK: - Reroute

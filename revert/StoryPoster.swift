@@ -7,6 +7,14 @@ enum StoryPosterTheme: String, CaseIterable, Identifiable {
     case sunset
     case topo
     case paper
+    case neon
+    case desert
+    case alpine
+    case coast
+    case mono
+    case carbon
+    case vapor
+    case forest
 
     var id: String { rawValue }
 
@@ -16,6 +24,21 @@ enum StoryPosterTheme: String, CaseIterable, Identifiable {
         case .sunset: "Sunset pass"
         case .topo: "Topo map"
         case .paper: "Ride journal"
+        case .neon: "Neon grid"
+        case .desert: "Desert run"
+        case .alpine: "Alpine pass"
+        case .coast: "Coast road"
+        case .mono: "Monochrome"
+        case .carbon: "Carbon"
+        case .vapor: "Vaporwave"
+        case .forest: "Forest pass"
+        }
+    }
+
+    var isLight: Bool {
+        switch self {
+        case .paper, .desert, .alpine: true
+        default: false
         }
     }
 
@@ -25,6 +48,14 @@ enum StoryPosterTheme: String, CaseIterable, Identifiable {
         case .sunset: [Color(red: 0.12, green: 0.04, blue: 0.12), Color(red: 0.48, green: 0.12, blue: 0.09)]
         case .topo: [Color(red: 0.03, green: 0.12, blue: 0.10), Color(red: 0.02, green: 0.05, blue: 0.06)]
         case .paper: [Color(red: 0.93, green: 0.90, blue: 0.82), Color(red: 0.80, green: 0.76, blue: 0.66)]
+        case .neon: [Color(red: 0.04, green: 0.00, blue: 0.08), Color(red: 0.15, green: 0.00, blue: 0.30)]
+        case .desert: [Color(red: 0.96, green: 0.86, blue: 0.72), Color(red: 0.85, green: 0.60, blue: 0.39)]
+        case .alpine: [Color(red: 0.93, green: 0.96, blue: 0.99), Color(red: 0.72, green: 0.83, blue: 0.91)]
+        case .coast: [Color(red: 0.02, green: 0.11, blue: 0.14), Color(red: 0.04, green: 0.23, blue: 0.27)]
+        case .mono: [Color(red: 0.04, green: 0.04, blue: 0.04), Color(red: 0.15, green: 0.15, blue: 0.15)]
+        case .carbon: [Color(red: 0.06, green: 0.08, blue: 0.06), Color(red: 0.13, green: 0.18, blue: 0.10)]
+        case .vapor: [Color(red: 0.10, green: 0.04, blue: 0.18), Color(red: 0.23, green: 0.08, blue: 0.33)]
+        case .forest: [Color(red: 0.03, green: 0.10, blue: 0.07), Color(red: 0.07, green: 0.20, blue: 0.15)]
         }
     }
 
@@ -34,6 +65,14 @@ enum StoryPosterTheme: String, CaseIterable, Identifiable {
         case .sunset: Color(red: 1.0, green: 0.55, blue: 0.22)
         case .topo: MapUI.emerald
         case .paper: Color(red: 0.12, green: 0.30, blue: 0.24)
+        case .neon: Color(red: 1.0, green: 0.24, blue: 0.65)
+        case .desert: Color(red: 0.55, green: 0.23, blue: 0.12)
+        case .alpine: Color(red: 0.12, green: 0.37, blue: 0.55)
+        case .coast: Color(red: 1.0, green: 0.54, blue: 0.36)
+        case .mono: Color(red: 0.95, green: 0.95, blue: 0.95)
+        case .carbon: Color(red: 0.78, green: 1.0, blue: 0.24)
+        case .vapor: Color(red: 1.0, green: 0.42, blue: 0.84)
+        case .forest: Color(red: 0.72, green: 0.91, blue: 0.53)
         }
     }
 
@@ -43,15 +82,60 @@ enum StoryPosterTheme: String, CaseIterable, Identifiable {
         case .sunset: Color(red: 1.0, green: 0.84, blue: 0.45)
         case .topo: Color(red: 0.55, green: 0.95, blue: 0.70)
         case .paper: Color(red: 0.55, green: 0.22, blue: 0.10)
+        case .neon: Color(red: 0.29, green: 0.91, blue: 1.0)
+        case .desert: Color(red: 0.18, green: 0.44, blue: 0.41)
+        case .alpine: Color(red: 0.42, green: 0.62, blue: 0.37)
+        case .coast: Color(red: 0.44, green: 0.89, blue: 0.82)
+        case .mono: Color(red: 0.62, green: 0.62, blue: 0.62)
+        case .carbon: Color(red: 0.43, green: 0.55, blue: 0.35)
+        case .vapor: Color(red: 0.50, green: 1.0, blue: 0.83)
+        case .forest: Color(red: 0.31, green: 0.66, blue: 0.48)
         }
     }
 
     var ink: Color {
-        self == .paper ? Color(red: 0.10, green: 0.10, blue: 0.09) : .white
+        switch self {
+        case .paper: Color(red: 0.10, green: 0.10, blue: 0.09)
+        case .desert: Color(red: 0.17, green: 0.10, blue: 0.07)
+        case .alpine: Color(red: 0.06, green: 0.16, blue: 0.23)
+        default: .white
+        }
     }
 
     var secondaryInk: Color {
-        self == .paper ? Color.black.opacity(0.58) : Color.white.opacity(0.62)
+        isLight ? ink.opacity(0.60) : Color.white.opacity(0.62)
+    }
+
+    var cardFill: Color {
+        isLight ? Color.white.opacity(0.42) : Color.white.opacity(0.06)
+    }
+
+    var cardStroke: Color {
+        ink.opacity(0.14)
+    }
+}
+
+enum StoryPosterStyle: String, CaseIterable, Identifiable {
+    case classic
+    case minimal
+    case dashboard
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .classic: "Classic"
+        case .minimal: "Minimal"
+        case .dashboard: "Dashboard"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .classic: "The original hero layout, with the full route in the middle."
+        case .minimal: "A full-bleed route with big type and no clutter."
+        case .dashboard: "A framed route card and a dense grid of ride numbers."
+        }
     }
 }
 
@@ -60,6 +144,7 @@ struct StoryPosterView: View {
     let points: [RidePoint]
     let turns: [RideTurn]
     let theme: StoryPosterTheme
+    var style: StoryPosterStyle = .classic
 
     private var averageSpeed: Double {
         ride.durationSeconds > 0 ? ride.distanceMeters / ride.durationSeconds : 0
@@ -70,13 +155,33 @@ struct StoryPosterView: View {
         max(ride.maxLeanAngleDegrees, points.map { abs($0.lean ?? 0) }.max() ?? 0)
     }
 
+    private var baseline: Color { theme.background.first ?? .black }
+
     var body: some View {
         ZStack {
+            background
+            layout
+        }
+        .frame(width: 1080, height: 1350)
+    }
+
+    @ViewBuilder
+    private var layout: some View {
+        switch style {
+        case .classic: classicLayout
+        case .minimal: minimalLayout
+        case .dashboard: dashboardLayout
+        }
+    }
+
+    // MARK: Background
+
+    private var background: some View {
+        ZStack {
             LinearGradient(colors: theme.background, startPoint: .topLeading, endPoint: .bottomTrailing)
-            // Subtle grid / contour texture.
             Canvas { context, size in
                 var path = Path()
-                let step: CGFloat = 54
+                let step: CGFloat = style == .minimal ? 84 : 54
                 var x: CGFloat = 0
                 while x < size.width {
                     path.move(to: CGPoint(x: x, y: 0))
@@ -89,96 +194,215 @@ struct StoryPosterView: View {
                     path.addLine(to: CGPoint(x: size.width, y: y))
                     y += step
                 }
-                context.stroke(path, with: .color(theme.ink.opacity(0.035)), lineWidth: 1)
+                context.stroke(path, with: .color(theme.ink.opacity(theme.isLight ? 0.06 : 0.035)),
+                               lineWidth: 1)
             }
+        }
+    }
+
+    // MARK: Layouts
+
+    private var classicLayout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            brandRow
+            Spacer(minLength: 34)
+            titleText
+            bikeLine.padding(.top, 10)
+            routeCanvas
+                .frame(height: 420)
+                .padding(.vertical, 26)
+            Spacer(minLength: 12)
+            metricsGrid
+            Spacer(minLength: 18)
+            footerRow
+            credit.padding(.top, 14)
+        }
+        .padding(54)
+    }
+
+    private var minimalLayout: some View {
+        ZStack {
+            routeCanvas
+            LinearGradient(
+                stops: [
+                    .init(color: baseline.opacity(0.90), location: 0),
+                    .init(color: baseline.opacity(0.0), location: 0.26),
+                    .init(color: baseline.opacity(0.0), location: 0.48),
+                    .init(color: baseline.opacity(0.94), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
 
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("REVERT")
-                            .font(.system(size: 28, weight: .black, design: .rounded))
-                            .tracking(7)
-                            .foregroundStyle(theme.accent)
-                        Text("RIDE STORY")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .tracking(5)
-                            .foregroundStyle(theme.secondaryInk)
-                    }
-                    Spacer()
-                    Text(ride.startDate.formatted(date: .abbreviated, time: .omitted).uppercased())
-                        .font(.system(size: 24, weight: .heavy, design: .rounded))
-                        .foregroundStyle(theme.ink)
-                }
-
-                Spacer(minLength: 34)
-
+                brandRow
+                Spacer(minLength: 0)
                 Text(ride.routeName ?? "A ride worth remembering")
-                    .font(.system(size: 52, weight: .black, design: .rounded))
+                    .font(.scaledSystem(size: 76, weight: .black, design: .rounded))
                     .foregroundStyle(theme.ink)
                     .lineLimit(3)
-                    .minimumScaleFactor(0.6)
-
-                Text(ride.bikeDisplayName.uppercased())
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .tracking(3)
-                    .foregroundStyle(theme.accent)
-                    .padding(.top, 10)
-
-                RoutePosterCanvas(points: points, turns: turns, accent: theme.accent,
-                                  secondary: theme.secondaryAccent, ink: theme.ink)
-                    .frame(height: 420)
-                    .padding(.vertical, 26)
-
-                Spacer(minLength: 12)
-
+                    .minimumScaleFactor(0.55)
+                bikeLine.padding(.top, 12)
+                Rectangle()
+                    .fill(theme.ink.opacity(0.22))
+                    .frame(height: 1)
+                    .padding(.vertical, 22)
                 HStack(alignment: .top, spacing: 0) {
                     posterMetric(Units.distanceText(ride.distanceMeters, decimals: 1), "DISTANCE")
                     posterMetric(Units.clock(ride.movingTimeSeconds), "MOVING TIME")
-                    posterMetric("\(turns.count)", turns.count == 1 ? "CORNER" : "CORNERS")
-                }
-
-                HStack(alignment: .top, spacing: 0) {
-                    posterMetric(Units.speedText(averageSpeed), "AVERAGE")
-                    posterMetric(Units.speedText(topSpeed), "TOP SPEED")
+                    if ride.isCar {
+                        posterMetric("\(max(ride.laps, 1))", ride.laps == 1 ? "LAP" : "LAPS")
+                    } else {
+                        if ride.isCar {
+                    posterMetric("\(max(ride.laps, 1))", ride.laps == 1 ? "LAP" : "LAPS")
+                } else {
                     posterMetric("\(Int(maxLean.rounded()))°", "MAX LEAN")
                 }
-                .padding(.top, 22)
-
-                Spacer(minLength: 18)
-
-                HStack {
-                    Text("\(Int(turns.filter { $0.direction > 0 }.count)) right · \(Int(turns.filter { $0.direction < 0 }.count)) left · \(Units.elevationText(ride.elevationGainMeters)) climbed")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(theme.secondaryInk)
-                    Spacer()
-                    Text("NO SIGNAL NEEDED")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(theme.accent.opacity(0.8))
+                    }
                 }
-
-                // Credit stays on the exported PNG as well as the preview.
-                Text("WHOOPTEH")
-                    .font(.system(size: 10, weight: .black, design: .rounded))
-                    .tracking(5)
-                    .foregroundStyle(theme.secondaryInk.opacity(0.5))
-                    .padding(.top, 14)
+                footerRow.padding(.top, 24)
+                credit.padding(.top, 12)
             }
-            .padding(54)
+            .padding(64)
         }
-        .frame(width: 1080, height: 1350)
+    }
+
+    private var dashboardLayout: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            brandRow
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .fill(theme.cardFill)
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .stroke(theme.cardStroke, lineWidth: 1.5)
+
+                routeCanvas.padding(26)
+
+                VStack {
+                    HStack(alignment: .top) {
+                        Text(ride.isSprint ? "SPRINT" : "\(max(ride.laps, 1)) LAP\(ride.laps == 1 ? "" : "S")")
+                            .font(.scaledSystem(size: 11, weight: .heavy, design: .rounded))
+                            .tracking(2)
+                            .foregroundStyle(theme.accent)
+                        Spacer()
+                        Text("NO SIGNAL")
+                            .font(.scaledSystem(size: 10, weight: .bold, design: .rounded))
+                            .tracking(1.6)
+                            .foregroundStyle(theme.secondaryInk)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(26)
+            }
+            .frame(height: 560)
+
+            VStack(alignment: .leading, spacing: 2) {
+                titleText
+                bikeLine.padding(.top, 8)
+            }
+
+            metricsGrid
+
+            Spacer(minLength: 0)
+            footerRow
+            credit.padding(.top, 10)
+        }
+        .padding(54)
+    }
+
+    // MARK: Shared pieces
+
+    private var brandRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("REVERT")
+                    .font(.scaledSystem(size: 28, weight: .black, design: .rounded))
+                    .tracking(7)
+                    .foregroundStyle(theme.accent)
+                Text(ride.isCar ? "DRIVE STORY" : "RIDE STORY")
+                    .font(.scaledSystem(size: 13, weight: .bold, design: .rounded))
+                    .tracking(5)
+                    .foregroundStyle(theme.secondaryInk)
+            }
+            Spacer()
+            Text(ride.startDate.formatted(date: .abbreviated, time: .omitted).uppercased())
+                .font(.scaledSystem(size: 24, weight: .heavy, design: .rounded))
+                .foregroundStyle(theme.ink)
+        }
+    }
+
+    private var titleText: some View {
+        Text(ride.routeName ?? "A ride worth remembering")
+            .font(.scaledSystem(size: 52, weight: .black, design: .rounded))
+            .foregroundStyle(theme.ink)
+            .lineLimit(3)
+            .minimumScaleFactor(0.6)
+    }
+
+    private var bikeLine: some View {
+        Text(ride.bikeDisplayName.uppercased())
+            .font(.scaledSystem(size: 17, weight: .bold, design: .rounded))
+            .tracking(3)
+            .foregroundStyle(theme.accent)
+    }
+
+    private var routeCanvas: some View {
+        RoutePosterCanvas(points: points, turns: turns, accent: theme.accent,
+                          secondary: theme.secondaryAccent, ink: theme.ink)
+    }
+
+    private var metricsGrid: some View {
+        VStack(spacing: 22) {
+            HStack(alignment: .top, spacing: 0) {
+                posterMetric(Units.distanceText(ride.distanceMeters, decimals: 1), "DISTANCE")
+                posterMetric(Units.clock(ride.movingTimeSeconds), "MOVING TIME")
+                if ride.isCar {
+                    posterMetric(Units.elevationText(ride.elevationGainMeters), "CLIMBED")
+                } else {
+                    posterMetric("\(turns.count)", turns.count == 1 ? "CORNER" : "CORNERS")
+                }
+            }
+            HStack(alignment: .top, spacing: 0) {
+                posterMetric(Units.speedText(averageSpeed), "AVERAGE")
+                posterMetric(Units.speedText(topSpeed), "TOP SPEED")
+                posterMetric("\(Int(maxLean.rounded()))°", "MAX LEAN")
+            }
+        }
+    }
+
+    private var footerRow: some View {
+        HStack {
+            Text(ride.isCar
+                 ? "\(max(ride.laps, 1)) lap\(ride.laps == 1 ? "" : "s") · \(Units.elevationText(ride.elevationGainMeters)) climbed"
+                 : "\(Int(turns.filter { $0.direction > 0 }.count)) right · \(Int(turns.filter { $0.direction < 0 }.count)) left · \(Units.elevationText(ride.elevationGainMeters)) climbed")
+                .font(.scaledSystem(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(theme.secondaryInk)
+            Spacer()
+            Text("NO SIGNAL NEEDED")
+                .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
+                .tracking(2)
+                .foregroundStyle(theme.accent.opacity(0.8))
+        }
+    }
+
+    private var credit: some View {
+        Text("WHOOPTEH")
+            .font(.scaledSystem(size: 10, weight: .black, design: .rounded))
+            .tracking(5)
+            .foregroundStyle(theme.secondaryInk.opacity(0.5))
     }
 
     private func posterMetric(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.system(size: 34, weight: .heavy, design: .rounded))
+                .font(.scaledSystem(size: 34, weight: .heavy, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(theme.ink)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
             Text(label)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
                 .tracking(2)
                 .foregroundStyle(theme.secondaryInk)
         }
@@ -273,12 +497,25 @@ struct StoryPosterStudio: View {
     let points: [RidePoint]
     let turns: [RideTurn]
 
-    @State private var theme: StoryPosterTheme = .oled
+    @State private var theme: StoryPosterTheme
+    @State private var style: StoryPosterStyle
     @State private var posterURL: URL?
     @State private var rendering = false
     @State private var renderError: String?
 
     private let posterSize = CGSize(width: 1080, height: 1350)
+
+    init(ride: Ride,
+         points: [RidePoint],
+         turns: [RideTurn],
+         initialTheme: StoryPosterTheme = .oled,
+         initialStyle: StoryPosterStyle = .classic) {
+        self.ride = ride
+        self.points = points
+        self.turns = turns
+        _theme = State(initialValue: initialTheme)
+        _style = State(initialValue: initialStyle)
+    }
 
     var body: some View {
         NavigationStack {
@@ -292,7 +529,8 @@ struct StoryPosterStudio: View {
                     )
 
                     VStack(spacing: 10) {
-                        StoryPosterView(ride: ride, points: points, turns: turns, theme: theme)
+                        StoryPosterView(ride: ride, points: points, turns: turns,
+                                        theme: theme, style: style)
                             .scaleEffect(0.30, anchor: .center)
                             .frame(width: posterSize.width * 0.30, height: posterSize.height * 0.30)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -303,7 +541,7 @@ struct StoryPosterStudio: View {
                             .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
 
                         Text("1080 × 1350  •  optimized for stories")
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .font(.scaledSystem(size: 9, weight: .semibold, design: .rounded))
                             .tracking(0.6)
                             .foregroundStyle(MapUI.textTertiary)
                     }
@@ -313,11 +551,27 @@ struct StoryPosterStudio: View {
 
                     VStack(alignment: .leading, spacing: 9) {
                         RevertSectionLabel(title: "Theme", detail: theme.title)
+
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8),
+                                            GridItem(.flexible(), spacing: 8)],
+                                  spacing: 8) {
+                            ForEach(StoryPosterTheme.allCases) { option in
+                                themeButton(option)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        RevertSectionLabel(title: "Layout", detail: style.title)
                         RevertOptionPicker(
-                            options: StoryPosterTheme.allCases,
-                            selection: $theme,
+                            options: StoryPosterStyle.allCases,
+                            selection: $style,
                             title: { $0.title }
                         )
+                        Text(style.blurb)
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(MapUI.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     RevertInfoNote(
@@ -349,6 +603,9 @@ struct StoryPosterStudio: View {
         .onChange(of: theme) { _, _ in
             posterURL = nil
         }
+        .onChange(of: style) { _, _ in
+            posterURL = nil
+        }
         .alert("Couldn't render the poster", isPresented: Binding(
             get: { renderError != nil },
             set: { if !$0 { renderError = nil } }
@@ -357,6 +614,47 @@ struct StoryPosterStudio: View {
         } message: {
             Text(renderError ?? "")
         }
+    }
+
+    private func themeButton(_ option: StoryPosterTheme) -> some View {
+        let selected = option == theme
+        return Button {
+            RevertHaptics.select()
+            withAnimation(RevertMotion.snappy) { theme = option }
+        } label: {
+            HStack(spacing: 8) {
+                LinearGradient(colors: option.background,
+                               startPoint: .topLeading,
+                               endPoint: .bottomTrailing)
+                    .frame(width: 26, height: 26)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(option.ink.opacity(0.25), lineWidth: 0.8))
+
+                Text(option.title)
+                    .font(.scaledSystem(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(selected ? option.accent : MapUI.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Spacer(minLength: 2)
+
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.scaledSystem(size: 9, weight: .heavy))
+                        .foregroundStyle(option.accent)
+                }
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 42)
+            .background(selected ? option.accent.opacity(0.12) : MapUI.surfaceHigh.opacity(0.72),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(selected ? option.accent.opacity(0.55) : MapUI.line, lineWidth: 0.8)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// Pinned above the home indicator. The action used to live at the end of
@@ -403,7 +701,8 @@ struct StoryPosterStudio: View {
 
     private func render() {
         rendering = true
-        let content = StoryPosterView(ride: ride, points: points, turns: turns, theme: theme)
+        let content = StoryPosterView(ride: ride, points: points, turns: turns,
+                                      theme: theme, style: style)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
         guard let image = renderer.uiImage,

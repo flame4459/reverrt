@@ -13,7 +13,7 @@ struct AddressSuggestionList: View {
                 } label: {
                     HStack(spacing: 11) {
                         Image(systemName: "mappin.circle.fill")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.scaledSystem(size: 15, weight: .semibold))
                             .foregroundStyle(MapUI.cyan)
                             .frame(width: 30, height: 30)
                             .background(MapUI.cyan.opacity(0.10), in: Circle())
@@ -34,7 +34,7 @@ struct AddressSuggestionList: View {
                         Spacer(minLength: 6)
 
                         Image(systemName: "arrow.up.left")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.scaledSystem(size: 10, weight: .bold))
                             .foregroundStyle(MapUI.textTertiary)
                     }
                     .padding(.vertical, 9)

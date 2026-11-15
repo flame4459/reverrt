@@ -13,7 +13,7 @@ struct NavigationArrow: View {
                 .shadow(color: MapUI.accent.opacity(0.35), radius: 10, y: 4)
 
             Image(systemName: "location.north.fill")
-                .font(.system(size: 22, weight: .bold))
+                .font(.scaledSystem(size: 22, weight: .bold))
                 .foregroundStyle(.white)
         }
         .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 2))
@@ -28,8 +28,8 @@ enum MapUI {
     static var pitchBlack: Color { Pulse.canvas }
     static var titanium: Color { Pulse.panelDeep }
     static var deepNavy: Color { Pulse.canvas }
-    static var cyan: Color { Pulse.accent }
-    static var emerald: Color { Pulse.emerald }
+    static var cyan: Color { Pulse.action }
+    static var emerald: Color { Pulse.positive }
     static var magenta: Color { Pulse.magenta }
     /// Destructive controls (Stop ride) sit outside the accent language.
     static var danger: Color { Pulse.danger }
@@ -38,13 +38,8 @@ enum MapUI {
     static var accent: Color { cyan }
     static var accentDark: Color { deepNavy }
     // Compatibility aliases for existing map and route components.
-    static var blue: Color { cyan }
-    static var blueDark: Color { deepNavy }
     static var teal: Color { cyan }
-    static var green: Color { emerald }
     static var orange: Color { Pulse.orange }
-    static var groupedBackground: Color { pitchBlack }
-    static var cardBackground: Color { titanium }
     static var panel: Color { Pulse.panel }
     static var panelElevated: Color { Pulse.panelHigh }
     static var glassTint: Color { Pulse.panelHigh }
@@ -70,43 +65,6 @@ enum MapUI {
     }
 
     static var accentGradient: LinearGradient { Pulse.accentGradient }
-    static var heroGradient: LinearGradient { Pulse.heroGradient }
-}
-
-struct FiberOpticCardModifier: ViewModifier {
-    var cornerRadius: CGFloat = 20
-
-    func body(content: Content) -> some View {
-        content
-            .background(Pulse.panel, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Pulse.lineSoft, lineWidth: 0.8)
-            }
-            .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
-    }
-}
-
-extension View {
-    func fiberOpticCard(cornerRadius: CGFloat = 20) -> some View {
-        modifier(FiberOpticCardModifier(cornerRadius: cornerRadius))
-    }
-}
-
-struct AppScreen<Content: View>: View {
-    let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        ZStack {
-            MapUI.groupedBackground
-                .ignoresSafeArea()
-            content
-        }
-    }
 }
 
 struct MapCard<Content: View>: View {
@@ -123,25 +81,6 @@ struct MapCard<Content: View>: View {
     }
 }
 
-struct MapFloatingButton: View {
-    let systemImage: String
-    let accessibilityLabel: LocalizedStringKey
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(MapUI.ink)
-                .frame(width: 46, height: 46)
-                .background(MapUI.panel.opacity(0.96), in: Circle())
-                .overlay(Circle().stroke(MapUI.hairline, lineWidth: 0.8))
-                .shadow(color: MapUI.shadow, radius: 10, y: 4)
-        }
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
 /// Compact recovery affordance for a denied location permission. Without it
 /// the planner just says "Waiting for GPS" forever and the rider has no path
 /// back to the app's core features.
@@ -152,7 +91,7 @@ struct LocationOffBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: denied ? "location.slash.fill" : "location.fill")
-                .font(.system(size: 13, weight: .bold))
+                .font(.scaledSystem(size: 13, weight: .bold))
                 .foregroundStyle(MapUI.amber)
                 .frame(width: 30, height: 30)
                 .background(MapUI.amber.opacity(0.12), in: Circle())
@@ -164,7 +103,7 @@ struct LocationOffBanner: View {
                 Text(denied
                      ? "Allow access to plan and record rides."
                      : "Enable it to plan and record rides.")
-                    .font(.system(size: 10.5, design: .rounded))
+                    .font(.scaledSystem(size: 10.5, design: .rounded))
                     .foregroundStyle(MapUI.textTertiary)
             }
 
@@ -178,7 +117,7 @@ struct LocationOffBanner: View {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 UIApplication.shared.open(url)
             }
-            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
             .foregroundStyle(MapUI.cyan)
             .padding(.horizontal, 10)
             .frame(height: 30)
@@ -193,69 +132,5 @@ struct LocationOffBanner: View {
                 .stroke(MapUI.lineStrong, lineWidth: 0.8)
         }
         .accessibilityElement(children: .contain)
-    }
-}
-
-struct MapSectionTitle: View {
-    let title: LocalizedStringKey
-    let systemImage: String
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(.headline.weight(.bold))
-            .foregroundStyle(MapUI.ink)
-    }
-}
-
-struct ModernSectionHeader: View {
-    let eyebrow: String
-    let title: String
-    let subtitle: String?
-    let systemImage: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 42, height: 42)
-                .background(MapUI.accentGradient, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(eyebrow.uppercased())
-                    .font(.caption.weight(.bold))
-                    .tracking(1.2)
-                    .foregroundStyle(MapUI.accent)
-                Text(title)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(MapUI.ink)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(MapUI.secondaryInk)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-}
-
-struct GradientActionButtonStyle: ButtonStyle {
-    var tint: AnyShapeStyle = AnyShapeStyle(MapUI.accentGradient)
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline.weight(.bold))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(tint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.white.opacity(0.24), lineWidth: 0.8)
-            }
-            .shadow(color: MapUI.accent.opacity(0.24), radius: 12, y: 5)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.9 : 1)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }

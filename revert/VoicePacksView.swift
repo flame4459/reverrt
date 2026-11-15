@@ -57,14 +57,14 @@ struct VoicePacksView: View {
                 HStack(spacing: 8) {
                     Toggle("Show archived packs", isOn: $showArchived)
                         .toggleStyle(.switch)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.scaledSystem(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(MapUI.textSecondary)
                         .tint(MapUI.cyan)
                 }
                 .padding(.horizontal, 2)
 
                 Text(catalogueSummary)
-                    .font(.system(size: 11, design: .rounded))
+                    .font(.scaledSystem(size: 11, design: .rounded))
                     .foregroundStyle(MapUI.textTertiary)
 
                 if !library.installed.isEmpty {
@@ -137,7 +137,7 @@ struct VoicePacksView: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.scaledSystem(size: 13, weight: .semibold))
                 .foregroundStyle(MapUI.textTertiary)
             TextField("Search by name, language or author", text: $query)
                 .font(.system(.subheadline, design: .rounded))
@@ -178,7 +178,7 @@ struct VoicePacksView: View {
                                 .foregroundStyle(MapUI.ink)
                             if pack.isBuiltIn {
                                 Text("BUILT-IN")
-                                    .font(.system(size: 8, weight: .heavy, design: .rounded))
+                                    .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
                                     .tracking(0.8)
                                     .foregroundStyle(MapUI.emerald)
                                     .padding(.horizontal, 5)
@@ -189,14 +189,14 @@ struct VoicePacksView: View {
                         Text(pack.isComplete
                              ? "\(pack.subtitle) · \(pack.clipCount) clips"
                              : "\(pack.subtitle) · \(pack.clipCount) of \(VoiceClip.standardClipCount) clips")
-                            .font(.system(size: 11, design: .rounded))
+                            .font(.scaledSystem(size: 11, design: .rounded))
                             .foregroundStyle(pack.isComplete ? MapUI.textTertiary : MapUI.amber.opacity(0.85))
                     }
                     Spacer(minLength: 8)
 
                     if library.selectedID == pack.id {
                         Text("Speaking")
-                            .font(.system(size: 10, weight: .heavy, design: .rounded))
+                            .font(.scaledSystem(size: 10, weight: .heavy, design: .rounded))
                             .tracking(0.8)
                             .foregroundStyle(MapUI.emerald)
                     } else {
@@ -204,7 +204,7 @@ struct VoicePacksView: View {
                             RevertHaptics.select()
                             library.select(pack)
                         }
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(MapUI.cyan)
                     }
 
@@ -212,7 +212,7 @@ struct VoicePacksView: View {
                         Speaker.shared.say(Narrator.previewInstruction, kind: .navigation, pack: pack)
                     } label: {
                         Image(systemName: "play.circle.fill")
-                            .font(.system(size: 20))
+                            .font(.scaledSystem(size: 20))
                             .foregroundStyle(MapUI.cyan)
                     }
                     .buttonStyle(.plain)
@@ -226,7 +226,7 @@ struct VoicePacksView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 18))
+                            .font(.scaledSystem(size: 18))
                             .foregroundStyle(MapUI.textTertiary)
                     }
                 }
@@ -250,7 +250,7 @@ struct VoicePacksView: View {
                             .multilineTextAlignment(.leading)
                         if pack.source == .official {
                             Text("OFFICIAL")
-                                .font(.system(size: 8, weight: .heavy, design: .rounded))
+                                .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
                                 .tracking(0.8)
                                 .foregroundStyle(MapUI.cyan)
                                 .padding(.horizontal, 5)
@@ -259,7 +259,7 @@ struct VoicePacksView: View {
                         }
                     }
                     Text(pack.subtitle)
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.scaledSystem(size: 11, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
 
@@ -296,21 +296,21 @@ struct VoicePacksView: View {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text("Getting")
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.scaledSystem(size: 11, design: .rounded))
                         .foregroundStyle(MapUI.textSecondary)
                 }
             case .installing:
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text("Installing")
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.scaledSystem(size: 11, design: .rounded))
                         .foregroundStyle(MapUI.textSecondary)
                 }
             case .failed:
                 Button("Retry") {
                     library.retry(pack)
                 }
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(MapUI.cyan)
             }
         } else if installed {
@@ -324,7 +324,7 @@ struct VoicePacksView: View {
                     Image(systemName: selected ? "checkmark.circle.fill" : "checkmark.circle")
                         .foregroundStyle(selected ? MapUI.emerald : MapUI.textTertiary)
                     Text(selected ? "Speaking" : "Use")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(selected ? MapUI.emerald : MapUI.textSecondary)
                 }
             }
@@ -334,7 +334,7 @@ struct VoicePacksView: View {
                 library.install(pack)
             } label: {
                 Text(pack.downloadable ? "Get" : "Try")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(MapUI.cyan)
             }
             .buttonStyle(.plain)

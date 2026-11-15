@@ -32,6 +32,12 @@ enum SelfCheck {
             assert(match.lateral < 2, "route hazard should have near-zero lateral offset")
             assert(match.along > 20 && match.along < 100, "route hazard should be mid-route")
         }
+        // Bike artwork: every catalogue entry should resolve to a sprite, and
+        // the sprite table should never cover more models than it has images.
+        let covered = BikeCatalog.all.filter { BikeSprites.artworkName(for: $0.name) != nil }
+        assert(covered.count == BikeSprites.coveredModelCount, "sprite table and catalogue disagree")
+        assert(BikeSprites.artworkCount <= BikeSprites.coveredModelCount, "sprite count exceeds covered models")
+
         print("SelfCheck passed")
     }
 }

@@ -39,8 +39,14 @@ struct PulseSafetyView: View {
     }
 
     private var header: some View {
-        PulseScreenHeader(eyebrow: "RIDE AWARE", title: "Safety center") {
-            PulseCircleButton(systemImage: "xmark", tint: Pulse.mutedStrong, label: "Close safety center") {
+        ScreenHeader(eyebrow: "",
+                     title: "Safety center",
+                     variant: .compact,
+                     identifier: AccessibilityID.Safety.title) {
+            PulseCircleButton(systemImage: "xmark",
+                              tint: Pulse.mutedStrong,
+                              label: "Close safety center",
+                              identifier: AccessibilityID.Safety.close) {
                 dismiss()
             }
         }
@@ -64,7 +70,7 @@ struct PulseSafetyView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("Choose the warnings you want while riding. Alerts only use signs on the active route and stay silent below walking speed.")
-                .font(.system(size: 12))
+                .font(.scaledSystem(size: 12))
                 .foregroundStyle(Pulse.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -146,12 +152,12 @@ struct PulseSafetyView: View {
 
             HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.scaledSystem(size: 9, weight: .bold))
                     .padding(.top, 2)
                 Text("Camera alerts may be restricted where you ride. Always follow road signs and conditions.")
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.system(size: 10))
+            .font(.scaledSystem(size: 10))
             .foregroundStyle(Pulse.muted)
         }
     }
@@ -166,24 +172,24 @@ struct PulseSafetyView: View {
             } label: {
                 HStack(spacing: 11) {
                     Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.scaledSystem(size: 17, weight: .semibold))
                         .foregroundStyle(Pulse.warning)
                         .frame(width: 40, height: 40)
                         .background(Pulse.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Sharp curve ahead")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.scaledSystem(size: 13, weight: .semibold))
                             .foregroundStyle(Pulse.ink)
                         Text("Hear and feel a real alert from the engine")
-                            .font(.system(size: 10))
+                            .font(.scaledSystem(size: 10))
                             .foregroundStyle(Pulse.muted)
                     }
 
                     Spacer(minLength: 6)
 
                     Image(systemName: "play.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.scaledSystem(size: 11, weight: .bold))
                         .foregroundStyle(Pulse.accent)
                 }
                 .padding(13)
@@ -201,7 +207,7 @@ struct PulseSafetyView: View {
 
     private var footer: some View {
         Text("The warning distance uses your speed, reaction time and estimated braking distance. Fine-tune thresholds, cameras and surface alerts in Settings.")
-            .font(.system(size: 10))
+            .font(.scaledSystem(size: 10))
             .foregroundStyle(Pulse.muted)
             .fixedSize(horizontal: false, vertical: true)
     }

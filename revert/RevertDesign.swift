@@ -8,31 +8,20 @@ import UIKit
 enum RevertMetrics {
     static let screenPadding: CGFloat = 18
     static let cardPadding: CGFloat = 16
-    static let compactPadding: CGFloat = 12
     static let sectionSpacing: CGFloat = 18
-    static let rowSpacing: CGFloat = 12
-    static let tightSpacing: CGFloat = 8
 
     static let controlSize: CGFloat = 48
     static let dockButtonSize: CGFloat = 44
-    static let touchTarget: CGFloat = 44
     static let primaryButtonHeight: CGFloat = 54
 
     static let cardRadius: CGFloat = 18
-    static let controlRadius: CGFloat = 14
-    static let sheetRadius: CGFloat = 30
     static let dockRadius: CGFloat = 22
 }
 
 enum RevertMotion {
     static let snappy = Animation.spring(response: 0.30, dampingFraction: 0.84)
     static let smooth = Animation.spring(response: 0.42, dampingFraction: 0.88)
-    static let soft = Animation.easeInOut(duration: 0.24)
     static let press = Animation.easeOut(duration: 0.14)
-
-    static func optional(_ animation: Animation, reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : animation
-    }
 }
 
 enum RevertHaptics {
@@ -66,7 +55,6 @@ extension MapUI {
     static var canvas: Color { Pulse.canvas }
     static var surface: Color { Pulse.panel }
     static var surfaceHigh: Color { Pulse.panelHigh }
-    static var surfaceLift: Color { Pulse.panelLift }
 
     static var line: Color { Pulse.line }
     static var lineStrong: Color { Pulse.lineBright }
@@ -76,7 +64,6 @@ extension MapUI {
     static var amber: Color { Pulse.warning }
     static var violet: Color { Pulse.violet }
     static var coral: Color { Pulse.coral }
-    static var ice: Color { Pulse.ice }
 
     static var aurora: LinearGradient {
         LinearGradient(
@@ -93,14 +80,6 @@ extension MapUI {
             endPoint: .trailing
         )
     }
-
-    static var panelSheen: LinearGradient {
-        LinearGradient(
-            colors: [Color.white.opacity(0.05), .clear, Pulse.accent.opacity(0.04)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
 }
 
 // MARK: - Surfaces
@@ -109,7 +88,6 @@ extension MapUI {
 /// cyan catch-light. Used instead of scattering ad-hoc materials.
 struct RevertPanelSurface: View {
     var radius: CGFloat = RevertMetrics.cardRadius
-    var tint: Color = MapUI.surface
     var elevated: Bool = true
 
     var body: some View {
@@ -142,39 +120,15 @@ struct RevertPanelSurface: View {
 }
 
 extension View {
-    func revertPanel(radius: CGFloat = RevertMetrics.cardRadius, tint: Color = MapUI.surface) -> some View {
-        background(RevertPanelSurface(radius: radius, tint: tint))
+    func revertPanel(radius: CGFloat = RevertMetrics.cardRadius) -> some View {
+        background(RevertPanelSurface(radius: radius))
     }
 
     func revertCard(padding: CGFloat = RevertMetrics.cardPadding,
-                   radius: CGFloat = RevertMetrics.cardRadius,
-                   tint: Color = MapUI.surface) -> some View {
+                   radius: CGFloat = RevertMetrics.cardRadius) -> some View {
         self
             .padding(padding)
-            .revertPanel(radius: radius, tint: tint)
-    }
-
-    func revertGlow(_ tint: Color, radius: CGFloat = 16, opacity: Double = 0.28, y: CGFloat = 6) -> some View {
-        shadow(color: tint.opacity(opacity), radius: radius, y: y)
-    }
-}
-
-struct RevertGlassBackground: View {
-    var radius: CGFloat = RevertMetrics.cardRadius
-    var material: Material = .ultraThinMaterial
-    var tint: Color = MapUI.panel
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(material)
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(tint.opacity(0.78))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(MapUI.lineStrong, lineWidth: 0.8)
-            }
+            .revertPanel(radius: radius)
     }
 }
 
@@ -208,28 +162,16 @@ struct RevertMapScrim: View {
 
 enum RevertType {
     static func display(_ size: CGFloat, weight: Font.Weight = .heavy) -> Font {
-        .system(size: size, weight: weight)
+        PulseType.display(size, weight: weight)
     }
 
     static func number(_ size: CGFloat, weight: Font.Weight = .heavy) -> Font {
-        .system(size: size, weight: weight).monospacedDigit()
+        PulseType.number(size, weight: weight)
     }
 
-    static var eyebrow: Font {
-        .system(size: 10, weight: .black)
-    }
+    static var eyebrow: Font { PulseType.eyebrow }
 
-    static var title: Font {
-        .system(size: 25, weight: .heavy)
-    }
-
-    static var headline: Font {
-        .system(size: 16, weight: .bold)
-    }
-
-    static var body: Font {
-        .system(.subheadline)
-    }
+    static var headline: Font { PulseType.headline }
 }
 
 // MARK: - Headers
@@ -240,6 +182,7 @@ struct RevertScreenHeader<Trailing: View>: View {
     let subtitle: String?
     let systemImage: String
     var tint: Color
+    var identifier: String? = nil
     let trailing: Trailing
 
     init(
@@ -248,6 +191,7 @@ struct RevertScreenHeader<Trailing: View>: View {
         subtitle: String? = nil,
         systemImage: String,
         tint: Color = MapUI.cyan,
+        identifier: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.eyebrow = eyebrow
@@ -255,36 +199,22 @@ struct RevertScreenHeader<Trailing: View>: View {
         self.subtitle = subtitle
         self.systemImage = systemImage
         self.tint = tint
+        self.identifier = identifier
         self.trailing = trailing()
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            RevertIconBadge(systemImage: systemImage, tint: tint, size: 42)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(eyebrow.uppercased())
-                    .font(PulseType.eyebrow)
-                    .tracking(2)
-                    .foregroundStyle(tint)
-                Text(title)
-                    .font(PulseType.display(25))
-                    .tracking(-0.6)
-                    .foregroundStyle(MapUI.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(MapUI.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Spacer(minLength: 8)
+        ScreenHeader(
+            eyebrow: eyebrow,
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            tint: tint,
+            variant: .detail,
+            identifier: identifier
+        ) {
             trailing
         }
-        .accessibilityElement(children: .contain)
     }
 }
 
@@ -294,7 +224,8 @@ extension RevertScreenHeader where Trailing == EmptyView {
         title: String,
         subtitle: String? = nil,
         systemImage: String,
-        tint: Color = MapUI.cyan
+        tint: Color = MapUI.cyan,
+        identifier: String? = nil
     ) {
         self.init(
             eyebrow: eyebrow,
@@ -302,6 +233,7 @@ extension RevertScreenHeader where Trailing == EmptyView {
             subtitle: subtitle,
             systemImage: systemImage,
             tint: tint,
+            identifier: identifier,
             trailing: { EmptyView() }
         )
     }
@@ -365,7 +297,7 @@ struct RevertIconBadge: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: size * 0.40, weight: .bold))
+            .font(.scaledSystem(size: size * 0.40, weight: .bold))
             .foregroundStyle(tint)
             .frame(width: size, height: size)
             .background(
@@ -397,7 +329,7 @@ struct RevertPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: compact ? 13 : 15, weight: .heavy))
+            .font(.scaledSystem(size: compact ? 13 : 15, weight: .heavy))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .frame(maxWidth: stretch ? .infinity : nil, minHeight: minHeight)
@@ -421,7 +353,7 @@ struct RevertSecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .bold))
+            .font(.scaledSystem(size: 13, weight: .bold))
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .frame(maxWidth: .infinity, minHeight: minHeight)
@@ -447,7 +379,7 @@ struct RevertIconButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: diameter * 0.38, weight: .semibold))
+            .font(.scaledSystem(size: diameter * 0.38, weight: .semibold))
             .foregroundStyle(filled ? Pulse.accentInk : (active ? MapUI.cyan : tint))
             .frame(width: diameter, height: diameter)
             .background {
@@ -503,7 +435,7 @@ struct RevertChip: View {
         HStack(spacing: 6) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.scaledSystem(size: 11, weight: .bold))
             }
             Text(title)
                 .font(.system(.caption, design: .rounded).weight(.bold))
@@ -537,7 +469,7 @@ struct RevertStatusPill: View {
                 .shadow(color: tint.opacity(0.8), radius: pulsing && pulse ? 5 : 0)
                 .opacity(pulsing ? (pulse ? 1 : 0.5) : 1)
             Text(text.uppercased())
-                .font(.system(size: 9, weight: .heavy, design: .rounded))
+                .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                 .tracking(1.2)
                 .foregroundStyle(tint)
         }
@@ -565,7 +497,7 @@ struct RevertMetricPill: View {
         } icon: {
             Image(systemName: systemImage)
         }
-        .font(.system(size: 11, weight: .bold, design: .rounded))
+        .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
         .labelStyle(.titleAndIcon)
         .foregroundStyle(tint)
         .lineLimit(1)
@@ -585,10 +517,10 @@ struct RevertStatTile: View {
             HStack(spacing: 5) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.scaledSystem(size: 9, weight: .bold))
                 }
                 Text(label.uppercased())
-                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                     .tracking(1.1)
             }
             .foregroundStyle(MapUI.textTertiary)
@@ -601,7 +533,7 @@ struct RevertStatTile: View {
                     .minimumScaleFactor(0.65)
                 if let unit {
                     Text(unit)
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 9, weight: .bold, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
             }
@@ -619,7 +551,7 @@ struct RevertInfoNote: View {
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .bold))
+                .font(.scaledSystem(size: 10, weight: .bold))
                 .padding(.top, 1)
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
@@ -652,10 +584,10 @@ struct RevertOptionPicker<Option: Hashable>: View {
                     HStack(spacing: 5) {
                         if let systemImage {
                             Image(systemName: systemImage(option))
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.scaledSystem(size: 11, weight: .bold))
                         }
                         Text(title(option))
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                     }
@@ -694,7 +626,7 @@ struct RevertMenuPicker<Value: Hashable>: View {
         HStack(spacing: 9) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.scaledSystem(size: 12, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 26, height: 26)
                     .background(tint.opacity(0.10), in: Circle())
@@ -722,10 +654,10 @@ struct RevertMenuPicker<Value: Hashable>: View {
             } label: {
                 HStack(spacing: 5) {
                     Text(currentLabel)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                         .lineLimit(1)
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.scaledSystem(size: 8, weight: .bold))
                 }
                 .foregroundStyle(tint)
                 .padding(.horizontal, 10)
@@ -800,7 +732,7 @@ struct RevertMapDockButton: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.scaledSystem(size: 17, weight: .semibold))
                 .foregroundStyle(active ? MapUI.cyan : tint)
                 .frame(width: RevertMetrics.dockButtonSize, height: RevertMetrics.dockButtonSize)
                 .background(
@@ -825,60 +757,6 @@ struct RevertMapDockDivider: View {
 
 // MARK: - Sheet chrome
 
-struct RevertGrabber: View {
-    var body: some View {
-        Capsule()
-            .fill(MapUI.textTertiary)
-            .frame(width: 38, height: 4)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
-            .contentShape(Rectangle())
-            .accessibilityHidden(true)
-    }
-}
-
-struct RevertSheetHeader: View {
-    let eyebrow: String
-    let title: String
-    var subtitle: String? = nil
-    var onClose: (() -> Void)? = nil
-    var closeLabel: String = "Close"
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(eyebrow.uppercased())
-                    .font(RevertType.eyebrow)
-                    .tracking(1.6)
-                    .foregroundStyle(MapUI.cyan)
-                Text(title)
-                    .font(RevertType.display(28, weight: .heavy))
-                    .foregroundStyle(MapUI.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(.subheadline, design: .rounded))
-                        .foregroundStyle(MapUI.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 8)
-            if let onClose {
-                Button {
-                    RevertHaptics.tap()
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(RevertIconButtonStyle(tint: MapUI.textSecondary, diameter: 38))
-                .accessibilityLabel(closeLabel)
-            }
-        }
-    }
-}
-
 // MARK: - Empty state
 
 struct RevertEmptyState: View {
@@ -901,7 +779,7 @@ struct RevertEmptyState: View {
                     .strokeBorder(MapUI.cyan.opacity(0.22), lineWidth: 0.8)
                     .frame(width: 92, height: 92)
                 Image(systemName: systemImage)
-                    .font(.system(size: 34, weight: .light))
+                    .font(.scaledSystem(size: 34, weight: .light))
                     .foregroundStyle(MapUI.cyan)
             }
             .padding(.bottom, 2)
@@ -940,18 +818,6 @@ struct RevertEmptyState: View {
 }
 
 // MARK: - Small helpers
-
-struct RevertDot: View {
-    var tint: Color = MapUI.cyan
-    var size: CGFloat = 8
-
-    var body: some View {
-        Circle()
-            .fill(tint)
-            .frame(width: size, height: size)
-            .shadow(color: tint.opacity(0.7), radius: 4)
-    }
-}
 
 struct RevertKeyValueRow: View {
     let label: String

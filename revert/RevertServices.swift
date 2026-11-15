@@ -17,8 +17,25 @@ final class RevertServices {
     /// other's writes reliably.
     let modelContainer: ModelContainer
 
+    /// Keeps the routing/profile defaults aligned with the garage primary even
+    /// when the rider has not opened the Garage this launch. The car/bike
+    /// prompt can still override the active vehicle for one route.
+    func syncVehiclePreferences() {
+        let context = ModelContext(modelContainer)
+        let bikes = (try? context.fetch(FetchDescriptor<Bike>())) ?? []
+        guard let primary = bikes.first(where: \.isPrimary) ?? bikes.first else {
+            VehiclePreferences.sync(primaryKind: .motorcycle,
+                                    avoidTolls: false, avoidHighways: false)
+            return
+        }
+        VehiclePreferences.sync(primaryKind: primary.kind,
+                                avoidTolls: primary.avoidTolls,
+                                avoidHighways: primary.avoidHighways)
+    }
+
     private init() {
-        let schema = Schema([Ride.self, Bike.self, MaintenanceEntry.self, SavedRoute.self])
+        let schema = Schema([Ride.self, Bike.self, MaintenanceEntry.self, SavedRoute.self,
+                             Trip.self, TripDay.self, SetupNote.self])
         do {
             modelContainer = try ModelContainer(for: schema)
         } catch {

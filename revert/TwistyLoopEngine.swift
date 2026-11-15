@@ -546,15 +546,10 @@ actor TwistyLoopEngine {
         routeRequests += 1
 
         let request = MKDirections.Request()
-        request.source = MKMapItem(
-            location: CLLocation(latitude: start.latitude, longitude: start.longitude),
-            address: nil
-        )
-        request.destination = MKMapItem(
-            location: CLLocation(latitude: end.latitude, longitude: end.longitude),
-            address: nil
-        )
+        request.source = MKMapItem.revert(location: CLLocation(latitude: start.latitude, longitude: start.longitude))
+        request.destination = MKMapItem.revert(location: CLLocation(latitude: end.latitude, longitude: end.longitude))
         request.transportType = .automobile
+        VehiclePreferences.apply(to: request)
         // One route per leg. Asking for alternates triples the directions
         // traffic, and MapKit throttles the whole search when a plan fires
         // dozens of requests at once — which is indistinguishable from "there

@@ -291,7 +291,7 @@ final class CarPlayRideCoordinator: NSObject {
 
     private func mapItem(name: String, coordinate: CLLocationCoordinate2D) -> MKMapItem {
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        let item = MKMapItem(location: location, address: nil)
+        let item = MKMapItem.revert(location: location)
         item.name = name
         return item
     }
@@ -644,10 +644,7 @@ final class CarPlayRideCoordinator: NSObject {
             return response.mapItems.prefix(8).map { mapItem in
                 let row = CPListItem(
                     text: mapItem.name ?? "Destination",
-                    detailText: mapItem.addressRepresentations?
-                        .fullAddress(includingRegion: false, singleLine: true)
-                        ?? mapItem.address?.fullAddress
-                        ?? "",
+                    detailText: mapItem.revertAddressLine,
                     image: UIImage(systemName: "mappin")
                 )
                 row.handler = { [weak self] _, completion in
@@ -662,7 +659,7 @@ final class CarPlayRideCoordinator: NSObject {
     }
 
     private func select(searchResult mapItem: MKMapItem) {
-        let coordinate = mapItem.location.coordinate
+        let coordinate = mapItem.revertLocation.coordinate
         guard let origin = navigation.currentLocation?.coordinate ?? navigation.userCoordinate else {
             showLocationUnavailable()
             return
@@ -687,15 +684,10 @@ final class CarPlayRideCoordinator: NSObject {
     private func directions(from origin: CLLocationCoordinate2D,
                             to destination: CLLocationCoordinate2D) async throws -> PlannedRoute {
         let request = MKDirections.Request()
-        request.source = MKMapItem(
-            location: CLLocation(latitude: origin.latitude, longitude: origin.longitude),
-            address: nil
-        )
-        request.destination = MKMapItem(
-            location: CLLocation(latitude: destination.latitude, longitude: destination.longitude),
-            address: nil
-        )
+        request.source = MKMapItem.revert(location: CLLocation(latitude: origin.latitude, longitude: origin.longitude))
+        request.destination = MKMapItem.revert(location: CLLocation(latitude: destination.latitude, longitude: destination.longitude))
         request.transportType = .automobile
+        VehiclePreferences.apply(to: request)
         request.requestsAlternateRoutes = false
 
         let response = try await MKDirections(request: request).calculate()

@@ -43,20 +43,22 @@ nonisolated enum RouteStyle: String, CaseIterable, Identifiable {
         case .extreme: "Hunts for the tightest roads it can find."
         }
     }
-
-    /// Turning (degrees per km) at which a road gets full credit.
-    var target: Double {
-        switch self {
-        case .relaxed: 40
-        case .twisty: 110
-        case .extreme: 220
-        }
-    }
 }
 
 nonisolated enum RouteKind {
     case loop
     case directions
+    /// A one-way timed run from one chosen road or place to another. It
+    /// navigates like directions but starts its clock at the start line.
+    case sprint
+
+    var isLoop: Bool { self == .loop }
+    var isSprint: Bool { self == .sprint }
+    /// Point-to-point routes end at a destination instead of the start.
+    var isPointToPoint: Bool { self != .loop }
+    /// Loops and sprints are timed from the start line; plain directions are
+    /// not.
+    var isTimed: Bool { self != .directions }
 }
 
 enum DirectionPreference: String, CaseIterable, Identifiable {
@@ -68,9 +70,9 @@ enum DirectionPreference: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .fastest: "Fastest"
-        case .fun: "Fun"
-        case .sporty: "Sporty"
+        case .fastest: "Quickest"
+        case .fun: "Scenic"
+        case .sporty: "Twisty"
         }
     }
 
@@ -79,14 +81,6 @@ enum DirectionPreference: String, CaseIterable, Identifiable {
         case .fastest: "Prioritizes the shortest estimated travel time."
         case .fun: "Looks for a more scenic, varied route with extra turns."
         case .sporty: "Favors twistier alternatives and avoids highways when possible."
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .fastest: "bolt.fill"
-        case .fun: "sparkles"
-        case .sporty: "figure.outdoor.cycle"
         }
     }
 }
@@ -110,14 +104,19 @@ nonisolated struct NavStep: Identifiable, Codable {
     let at: Int             // index in the route's points
     let distance: Double    // meters from the start of the route
     let text: String?
+    /// Lane advice for this manoeuvre, when OSM tags the approach road with
+    /// `turn:lanes`. MapKit routes have no way ids, so they never carry it.
+    var laneGuidance: LaneGuidance? = nil
 
-    init(id: Int, turn: Turn, road: String?, at: Int, distance: Double, text: String? = nil) {
+    init(id: Int, turn: Turn, road: String?, at: Int, distance: Double, text: String? = nil,
+         laneGuidance: LaneGuidance? = nil) {
         self.id = id
         self.turn = turn
         self.road = road
         self.at = at
         self.distance = distance
         self.text = text
+        self.laneGuidance = laneGuidance
     }
 
     var symbol: String {
@@ -150,12 +149,12 @@ nonisolated struct NavStep: Identifiable, Codable {
     }
 
     var instruction: String {
-        if let text, !text.isEmpty { return text }
+        if let text, !text.isEmpty { return StreetNames.instruction(text) }
         switch turn {
         case .arrive: return "You have arrived"
-        case .start: return road.map { "Head out on \($0)" } ?? "Start riding"
+        case .start: return road.map { "Head out on \(StreetNames.road($0))" } ?? "Start riding"
         case .uTurn: return "Make a U-turn"
-        default: return road.map { "\(verb) onto \($0)" } ?? verb
+        default: return road.map { "\(verb) onto \(StreetNames.road($0))" } ?? verb
         }
     }
 }
@@ -196,7 +195,7 @@ nonisolated enum LoopSurface: String, CaseIterable, Identifiable, Codable, Senda
 
 nonisolated struct PlannedRoute: Identifiable {
     let id = UUID()
-    let kind: RouteKind
+    var kind: RouteKind
     let points: [RoutePoint]
     let cumulative: [Double]                 // meters from the start, one per point
     let coordinates: [CLLocationCoordinate2D]
@@ -207,7 +206,7 @@ nonisolated struct PlannedRoute: Identifiable {
     let expectedTravelTime: TimeInterval?
     let destination: CLLocationCoordinate2D?
     let isOfflinePreview: Bool
-    let displayName: String?
+    var displayName: String?
     /// Loop metrics are geometry-derived for MapKit routes and graph-derived for offline routes.
     let overallScore: Double?
     let flowScore: Double?
@@ -224,10 +223,16 @@ nonisolated struct PlannedRoute: Identifiable {
     var maxElevation: Double = 0
     var isMountainPassRoute: Bool = false
     var surface: LoopSurface = .paved
+    /// How many times the circuit is ridden. Ignored by point-to-point routes,
+    /// which are always a single run.
+    var laps: Int = 3
     /// Distinct OSM road names ridden by this route, most-used first. Used by
     /// the on-device taste store when the rider actually starts the loop, and
     /// empty for MapKit routes that carry no way ids.
     var usedRoadNames: [String] = []
+    /// Set when the route came from a saved loop, so the finished ride can be
+    /// linked back to it for the leaderboard.
+    var savedRouteID: UUID? = nil
 
     var length: Double { cumulative.last ?? 0 }
 
@@ -282,6 +287,7 @@ nonisolated struct PlannedRoute: Identifiable {
         self.interruptions = interruptions
         self.scoreLabel = scoreLabel
         self.usedRoadNames = Self.roadNames(points: points, roads: roads)
+        self.laps = kind.isLoop ? 3 : 1
     }
 
     private static func roadNames(points: [RoutePoint], roads: [Int64: Road]) -> [String] {
@@ -322,6 +328,7 @@ nonisolated struct PlannedRoute: Identifiable {
         self.lapScore = nil
         self.interruptions = nil
         self.scoreLabel = nil
+        self.laps = 1
     }
 
     /// Combines MapKit legs (including intermediate waypoints) into a single
@@ -465,6 +472,61 @@ nonisolated struct PlannedRoute: Identifiable {
             return RoadGraph.flat(points[index].lat, points[index].lon, points[next].lat, points[next].lon).heading
         }
 
+        /// Turn angle at one vertex, using the two segments that actually meet
+        /// there. The 20 m windows below are right for gentle bend detection,
+        /// but they straddle a sharp corner and halve its angle — a 90° turn
+        /// came out as "slight right".
+        func vertexAngle(_ index: Int) -> Double {
+            let incoming = RoadGraph.flat(points[index - 1].lat, points[index - 1].lon,
+                                          points[index].lat, points[index].lon).heading
+            let outgoing = RoadGraph.flat(points[index].lat, points[index].lon,
+                                          points[index + 1].lat, points[index + 1].lon).heading
+            var delta = outgoing - incoming
+            while delta > 180 { delta -= 360 }
+            while delta <= -180 { delta += 360 }
+            return delta
+        }
+
+        func nearestVertexIndex(in road: Road, to point: RoutePoint) -> Int? {
+            guard road.count > 0 else { return nil }
+            var best = 0
+            var bestDistance = Double.greatestFiniteMagnitude
+            for index in 0..<road.count {
+                let dLat = road.lat(index) - point.lat
+                let dLon = road.lon(index) - point.lon
+                let distance = dLat * dLat + dLon * dLon
+                if distance < bestDistance {
+                    bestDistance = distance
+                    best = index
+                }
+            }
+            return best
+        }
+
+        /// `turn:lanes` is tagged on the road the rider is leaving, so the
+        /// approach way — the point before the corner — is the one to read.
+        /// Directional variants only apply when the route travels that way.
+        func laneGuidance(approach roadID: Int64, corner: Int, turn: NavStep.Turn) -> LaneGuidance? {
+            guard let road = roads[roadID] else { return nil }
+            let raw: String?
+            if road.turnLanesForward != nil || road.turnLanesBackward != nil {
+                let before = points[corner - 1]
+                let after = points[corner]
+                let forward: Bool
+                if let from = nearestVertexIndex(in: road, to: before),
+                   let to = nearestVertexIndex(in: road, to: after) {
+                    forward = to >= from
+                } else {
+                    forward = true
+                }
+                raw = forward ? road.turnLanesForward : road.turnLanesBackward
+            } else {
+                raw = road.turnLanes
+            }
+            guard let raw else { return nil }
+            return LaneGuidance.parse(turnLanes: raw, turn: turn)
+        }
+
         func classify(_ angle: Double) -> NavStep.Turn {
             let magnitude = abs(angle)
             if magnitude < 20 { return .straight }
@@ -488,9 +550,18 @@ nonisolated struct PlannedRoute: Identifiable {
                 abs(points[corner - 1].lon - points[corner + 1].lon) < 1e-7 {
                 turn = .uTurn
             } else if geometryOnly {
+                // The windowed angle reaches past a nearby corner, so it can
+                // claim a turn one vertex early — and that phantom turn used to
+                // eat the 30 m suppression budget, dropping the real one. Only
+                // a vertex that actually bends may start a turn; the windowed
+                // reading is then used for the magnitude, because it captures
+                // the full angle when the corner spans a couple of vertices.
+                let vertex = vertexAngle(corner)
+                guard abs(vertex) >= 15 else { continue }
                 var angle = headingAfter(corner) - headingBefore(corner)
                 while angle > 180 { angle -= 360 }
                 while angle <= -180 { angle += 360 }
+                if abs(angle) < abs(vertex) { angle = vertex }
                 let kind = classify(angle)
                 if kind == .straight { continue }
                 turn = kind
@@ -511,8 +582,9 @@ nonisolated struct PlannedRoute: Identifiable {
             // Avoid a wall of instructions from a long sweeping bend sampled
             // every few metres.
             if cum[corner] - lastAt < 30 { continue }
+            let lanes = laneGuidance(approach: points[corner - 1].road, corner: corner, turn: turn)
             steps.append(NavStep(id: steps.count, turn: turn, road: name(points[corner].road),
-                                 at: corner, distance: cum[corner]))
+                                 at: corner, distance: cum[corner], laneGuidance: lanes))
             lastAt = cum[corner]
         }
 

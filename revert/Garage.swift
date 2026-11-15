@@ -19,6 +19,11 @@ final class Bike {
     var notes: String = ""
     var isPrimary: Bool = false
     var createdAt: Date = Date()
+    /// Added after the first release. Existing rows migrate as motorcycles.
+    var kindRaw: String = VehicleKind.motorcycle.rawValue
+    var isElectric: Bool = false
+    var avoidTolls: Bool = false
+    var avoidHighways: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \MaintenanceEntry.bike)
     var maintenance: [MaintenanceEntry]? = []
@@ -26,7 +31,9 @@ final class Bike {
     init(name: String, make: String = "", model: String = "", year: Int = 0,
          odometerKm: Double = 0, fuelRangeKm: Double = 260, tankLiters: Double = 15,
          serviceIntervalKm: Double = 6_000, lastServiceKm: Double = 0,
-         notes: String = "", isPrimary: Bool = false) {
+         notes: String = "", isPrimary: Bool = false,
+         kind: VehicleKind = .motorcycle,
+         isElectric: Bool = false, avoidTolls: Bool = false, avoidHighways: Bool = false) {
         self.id = UUID()
         self.name = name
         self.make = make
@@ -40,7 +47,18 @@ final class Bike {
         self.notes = notes
         self.isPrimary = isPrimary
         self.createdAt = Date()
+        self.kindRaw = kind.rawValue
+        self.isElectric = isElectric
+        self.avoidTolls = avoidTolls
+        self.avoidHighways = avoidHighways
     }
+
+    var kind: VehicleKind {
+        get { VehicleKind(rawValue: kindRaw) ?? .motorcycle }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    var isCar: Bool { kind.isCar }
 
     /// "Yamaha MT-07" for a bike with make/model filled in.
     var makeModelName: String {
@@ -55,7 +73,7 @@ final class Bike {
     var displayName: String {
         let nickname = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !nickname.isEmpty { return nickname }
-        return makeModelName.isEmpty ? "Unnamed bike" : makeModelName
+        return makeModelName.isEmpty ? "Unnamed vehicle" : makeModelName
     }
 
     var distanceToServiceKm: Double {
@@ -96,10 +114,20 @@ struct GarageView: View {
 
     @Environment(\.modelContext) private var context
     @Query(sort: \Bike.createdAt, order: .reverse) private var bikes: [Bike]
+    @Query(sort: \MaintenanceEntry.date, order: .reverse) private var allEntries: [MaintenanceEntry]
     @State private var addingBike = false
     @State private var editingBike: Bike?
     @State private var bikePendingDelete: Bike?
     @State private var query = ""
+
+    private var primaryBike: Bike? {
+        bikes.first(where: \.isPrimary) ?? bikes.first
+    }
+
+    private var primaryEntries: [MaintenanceEntry] {
+        guard let id = primaryBike?.id else { return [] }
+        return allEntries.filter { $0.bike?.id == id }
+    }
 
     private var filteredBikes: [Bike] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -115,20 +143,21 @@ struct GarageView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                    RevertScreenHeader(
-                        eyebrow: "YOUR GARAGE",
-                        title: "Your machines",
-                        subtitle: "Bikes, service intervals and the log that keeps them honest.",
-                        systemImage: "wrench.and.screwdriver.fill"
+                    ScreenHeader(
+                        eyebrow: "",
+                        title: "Garage",
+                        variant: .compact,
+                        identifier: AccessibilityID.Garage.title
                     )
 
-                    if !bikes.isEmpty {
+                    if bikes.count >= 3 {
                         HStack(spacing: 9) {
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.scaledSystem(size: 13, weight: .bold))
                                 .foregroundStyle(MapUI.textTertiary)
                             TextField("Search the garage", text: $query)
                                 .font(.system(.subheadline, design: .rounded))
+                                .accessibilityIdentifier(AccessibilityID.Garage.search)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                             if !query.isEmpty {
@@ -152,10 +181,10 @@ struct GarageView: View {
 
                     if bikes.isEmpty {
                         RevertEmptyState(
-                            systemImage: "motorcycle",
-                            title: "No bikes yet",
-                            message: "Add your bike to track fuel range, service intervals and maintenance.",
-                            primaryTitle: "Add a bike",
+                            systemImage: "car.2.fill",
+                            title: "No vehicles yet",
+                            message: "Add a bike or a car to track range, service intervals and maintenance.",
+                            primaryTitle: "Add a vehicle",
                             primarySystemImage: "plus",
                             primaryAction: { addingBike = true }
                         )
@@ -184,6 +213,10 @@ struct GarageView: View {
                                     for other in bikes { other.isPrimary = false }
                                     bike.isPrimary = true
                                     try? context.save()
+                                    WidgetBridge.updateBike(name: bike.displayName, odometerKm: bike.odometerKm, kind: bike.kind)
+                                    VehiclePreferences.sync(primaryKind: bike.kind,
+                                                            avoidTolls: bike.avoidTolls,
+                                                            avoidHighways: bike.avoidHighways)
                                     RevertHaptics.select()
                                 } label: {
                                     Label(bike.isPrimary ? "Primary bike" : "Set as primary",
@@ -202,9 +235,12 @@ struct GarageView: View {
                             RevertHaptics.tap()
                             addingBike = true
                         } label: {
-                            Label("Add another bike", systemImage: "plus.circle.fill")
+                            Label("Add another vehicle", systemImage: "plus.circle.fill")
                         }
                         .buttonStyle(RevertSecondaryButtonStyle())
+                        .accessibilityIdentifier(AccessibilityID.Garage.add)
+
+                        maintenanceSection
                     }
                 }
                 .padding(.horizontal, 16)
@@ -221,19 +257,20 @@ struct GarageView: View {
         .sheet(item: $editingBike) { bike in
             BikeEditorView(bike: bike)
         }
-        .alert("Delete this bike?", isPresented: Binding(
+        .alert("Delete this vehicle?", isPresented: Binding(
             get: { bikePendingDelete != nil },
             set: { if !$0 { bikePendingDelete = nil } }
         )) {
-            Button("Delete bike", role: .destructive) {
+            Button("Delete vehicle", role: .destructive) {
                 if let bike = bikePendingDelete { deleteBike(bike) }
                 bikePendingDelete = nil
             }
             Button("Cancel", role: .cancel) { bikePendingDelete = nil }
         } message: {
-            Text("The bike and its maintenance log will be removed from this iPhone.")
+            Text("The vehicle and its maintenance log will be removed from this iPhone.")
         }
         .onAppear {
+            syncPrimaryPreferences()
             #if DEBUG
             if CommandLine.arguments.contains("-debugGarageSeed"), bikes.isEmpty {
                 let sample = Bike(
@@ -249,6 +286,14 @@ struct GarageView: View {
                     isPrimary: true
                 )
                 context.insert(sample)
+                try? context.save()
+            }
+            if CommandLine.arguments.contains("-debugGarageCar"), bikes.isEmpty {
+                let car = Bike(name: "Friends' car", make: "Volkswagen",
+                               model: "Golf GTI", year: 2024, odometerKm: 18_400,
+                               fuelRangeKm: 520, serviceIntervalKm: 15_000,
+                               isPrimary: true, kind: .car)
+                context.insert(car)
                 try? context.save()
             }
             #endif
@@ -267,6 +312,94 @@ struct GarageView: View {
             next.isPrimary = true
         }
         try? context.save()
+        syncPrimaryPreferences()
+    }
+
+    private func syncPrimaryPreferences() {
+        guard let primary = bikes.first(where: \.isPrimary) ?? bikes.first else { return }
+        VehiclePreferences.sync(primaryKind: primary.kind,
+                                avoidTolls: primary.avoidTolls,
+                                avoidHighways: primary.avoidHighways)
+    }
+
+    @ViewBuilder
+    private var maintenanceSection: some View {
+        if let bike = primaryBike {
+            VStack(alignment: .leading, spacing: 9) {
+                NavigationLink {
+                    BikeDetailView(bike: bike)
+                } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("MAINTENANCE")
+                                .font(PulseType.section)
+                                .tracking(1.6)
+                                .foregroundStyle(Pulse.ink)
+                            Text(bike.displayName)
+                                .font(.scaledSystem(size: 10))
+                                .foregroundStyle(Pulse.muted)
+                        }
+                        Spacer()
+                        Text("VIEW LOG")
+                            .font(.scaledSystem(size: 10, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundStyle(Pulse.accent)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                VStack(spacing: 0) {
+                    if primaryEntries.isEmpty {
+                        Text("Nothing logged yet. Open the vehicle to add the first service.")
+                            .font(.scaledSystem(size: 11))
+                            .foregroundStyle(Pulse.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(13)
+                    } else {
+                        ForEach(Array(primaryEntries.prefix(3).enumerated()), id: \.element.id) { index, entry in
+                            HStack(spacing: 10) {
+                                Image(systemName: "wrench.and.screwdriver.fill")
+                                    .font(.scaledSystem(size: 12, weight: .semibold))
+                                    .foregroundStyle(Pulse.accent)
+                                    .frame(width: 28, height: 28)
+                                    .background(Pulse.accentWell, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.title)
+                                        .font(.scaledSystem(size: 12, weight: .semibold))
+                                        .foregroundStyle(Pulse.ink)
+                                    Text(RevertFormat.mediumDate(entry.date))
+                                        .font(.scaledSystem(size: 9.5))
+                                        .foregroundStyle(Pulse.muted)
+                                }
+
+                                Spacer(minLength: 4)
+
+                                Text(distanceText(km: entry.odometerKm))
+                                    .font(.scaledSystem(size: 10, weight: .semibold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(Pulse.mutedStrong)
+                            }
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 9)
+
+                            if index < min(primaryEntries.count, 3) - 1 {
+                                Rectangle()
+                                    .fill(Pulse.lineSoft)
+                                    .frame(height: 0.8)
+                                    .padding(.leading, 51)
+                            }
+                        }
+                    }
+                }
+                .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Pulse.line, lineWidth: 0.8)
+                }
+            }
+        }
     }
 
     private func bikeCard(_ bike: Bike) -> some View {
@@ -274,24 +407,31 @@ struct GarageView: View {
         let progress = bike.serviceIntervalKm > 0
             ? min(max(used / bike.serviceIntervalKm, 0), 1)
             : 0
-        let nextService = bike.lastServiceKm + bike.serviceIntervalKm
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 11) {
                 RevertIconBadge(
-                    systemImage: "motorcycle",
+                    systemImage: bike.kind.icon,
                     tint: bike.isPrimary ? MapUI.cyan : MapUI.textSecondary,
                     size: 42,
                     radius: 13
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(bike.displayName.isEmpty ? "Unnamed bike" : bike.displayName)
-                        .font(.system(.headline, design: .rounded).weight(.bold))
-                        .foregroundStyle(MapUI.ink)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text(bike.displayName.isEmpty ? "Unnamed vehicle" : bike.displayName)
+                            .font(.system(.headline, design: .rounded).weight(.bold))
+                            .foregroundStyle(MapUI.ink)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if bike.isPrimary {
+                            Image(systemName: "star.fill")
+                                .font(.scaledSystem(size: 10, weight: .bold))
+                                .foregroundStyle(Pulse.accent)
+                                .accessibilityLabel("Primary vehicle")
+                        }
+                    }
                     Text([bike.makeModelName == bike.displayName ? nil : bike.makeModelName,
                           bike.year > 0 ? String(bike.year) : nil,
                           distanceText(km: bike.odometerKm)]
@@ -304,15 +444,6 @@ struct GarageView: View {
                 }
 
                 Spacer(minLength: 6)
-
-                VStack(alignment: .trailing, spacing: 5) {
-                    if bike.isPrimary {
-                        RevertChip(title: "Primary", systemImage: "star.fill", isSelected: true, tint: MapUI.cyan)
-                    }
-                    if bike.isServiceDue {
-                        RevertChip(title: "Service due", systemImage: "wrench.and.screwdriver.fill", isSelected: true, tint: MapUI.coral)
-                    }
-                }
             }
 
             HStack(spacing: 0) {
@@ -322,35 +453,31 @@ struct GarageView: View {
                 )
                 Rectangle().fill(MapUI.line).frame(width: 1, height: 24).padding(.horizontal, 8)
                 RevertStatTile(
-                    label: "Fuel range",
+                    label: bike.isCar ? "Range" : "Fuel range",
                     value: distanceText(km: bike.fuelRangeKm)
-                )
-                Rectangle().fill(MapUI.line).frame(width: 1, height: 24).padding(.horizontal, 8)
-                RevertStatTile(
-                    label: bike.isServiceDue ? "Service" : "Next service",
-                    value: bike.isServiceDue
-                        ? "Due now"
-                        : distanceText(km: bike.distanceToServiceKm),
-                    tint: bike.isServiceDue ? MapUI.coral : MapUI.emerald
                 )
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                RevertProgressBar(
-                    value: progress,
-                    tint: bike.isServiceDue ? MapUI.ember : MapUI.aurora,
-                    height: 4
-                )
-                HStack {
-                    Text(bike.isServiceDue
-                         ? "Service interval reached"
-                         : "Next service at \(distanceText(km: nextService))")
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                }
-                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(MapUI.textTertiary)
+            HStack(spacing: 6) {
+                Image(systemName: bike.isServiceDue
+                      ? "exclamationmark.triangle.fill"
+                      : "checkmark.seal.fill")
+                Text(bike.isServiceDue
+                     ? "Service due now"
+                     : "Next service in \(distanceText(km: bike.distanceToServiceKm))")
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.scaledSystem(size: 9, weight: .bold))
+                    .foregroundStyle(MapUI.textTertiary)
             }
+            .font(.scaledSystem(size: 10.5, weight: .semibold))
+            .foregroundStyle(bike.isServiceDue ? Pulse.caution : Pulse.positive)
+
+            RevertProgressBar(
+                value: progress,
+                tint: bike.isServiceDue ? MapUI.ember : MapUI.aurora,
+                height: 4
+            )
         }
         .revertCard()
         .accessibilityElement(children: .combine)
@@ -374,8 +501,12 @@ struct BikeEditorView: View {
     @State private var serviceIntervalKm = 6_000.0
     @State private var lastServiceKm = 0.0
     @State private var notes = ""
+    @State private var kind: VehicleKind = .motorcycle
+    @State private var isElectric = false
+    @State private var avoidTolls = false
+    @State private var avoidHighways = false
 
-    /// Bike values are stored in kilometres. Show and accept them in the
+    /// Vehicle values are stored in kilometres. Show and accept them in the
     /// rider's chosen unit so the Garage agrees with the rest of the app.
     private func displayDistance(_ binding: Binding<Double>) -> Binding<Double> {
         Binding(
@@ -387,8 +518,15 @@ struct BikeEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Bike") {
-                    TextField("Nickname", text: $name)
+                Section("Vehicle") {
+                    Picker("Type", selection: $kind) {
+                        ForEach(VehicleKind.allCases) { option in
+                            Label(option.title, systemImage: option.icon).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    TextField(kind.isCar ? "Nickname (e.g. daily)" : "Nickname", text: $name)
                     TextField("Make", text: $make)
                     TextField("Model", text: $model)
                     // A stepper starting at year 0 needed two thousand taps to
@@ -401,22 +539,35 @@ struct BikeEditorView: View {
                     }
                     .pickerStyle(.menu)
                 }
-                Section("Fuel & service") {
+                if kind.isCar {
+                    Section("Car routing") {
+                        Toggle("Electric vehicle", isOn: $isElectric)
+                        Toggle("Avoid tolls", isOn: $avoidTolls)
+                        Toggle("Avoid highways", isOn: $avoidHighways)
+                        Text("Toll and highway preferences are applied to live MapKit directions while this car is the primary vehicle.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section(kind.isCar ? "Range & service" : "Fuel & service") {
                     HStack {
-                        Text("Fuel range")
+                        Text(kind.isCar ? "Range" : "Fuel range")
                         Spacer()
                         TextField(Units.distanceUnit, value: displayDistance($fuelRangeKm), format: .number.precision(.fractionLength(0...1)))
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                         Text(Units.distanceUnit).foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Text("Tank")
-                        Spacer()
-                        TextField("L", value: $tankLiters, format: .number.precision(.fractionLength(0...1)))
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                        Text("L").foregroundStyle(.secondary)
+                    if !kind.isCar {
+                        HStack {
+                            Text("Tank")
+                            Spacer()
+                            TextField("L", value: $tankLiters, format: .number.precision(.fractionLength(0...1)))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                            Text("L").foregroundStyle(.secondary)
+                        }
                     }
                     HStack {
                         Text("Service every")
@@ -452,7 +603,7 @@ struct BikeEditorView: View {
             }
             .scrollContentBackground(.hidden)
             .pulseBackground()
-            .navigationTitle(bike == nil ? "Add bike" : "Edit bike")
+            .navigationTitle(bike == nil ? "Add vehicle" : "Edit vehicle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -480,10 +631,14 @@ struct BikeEditorView: View {
         serviceIntervalKm = bike.serviceIntervalKm
         lastServiceKm = bike.lastServiceKm
         notes = bike.notes
+        kind = bike.kind
+        isElectric = bike.isElectric
+        avoidTolls = bike.avoidTolls
+        avoidHighways = bike.avoidHighways
     }
 
     private func save() {
-        let target = bike ?? Bike(name: name)
+        let target = bike ?? Bike(name: name, kind: kind)
         target.name = name.trimmingCharacters(in: .whitespaces)
         target.make = make.trimmingCharacters(in: .whitespaces)
         target.model = model.trimmingCharacters(in: .whitespaces)
@@ -494,6 +649,10 @@ struct BikeEditorView: View {
         target.serviceIntervalKm = max(serviceIntervalKm, 500)
         target.lastServiceKm = lastServiceKm
         target.notes = notes
+        target.kind = kind
+        target.isElectric = kind.isCar ? isElectric : false
+        target.avoidTolls = kind.isCar ? avoidTolls : false
+        target.avoidHighways = kind.isCar ? avoidHighways : false
         if bike == nil {
             // The first machine becomes the primary automatically; otherwise
             // fuel range and ride attribution fall back to defaults even
@@ -502,7 +661,12 @@ struct BikeEditorView: View {
             context.insert(target)
         }
         try? context.save()
-        WidgetBridge.updateBike(name: target.displayName, odometerKm: target.odometerKm)
+        WidgetBridge.updateBike(name: target.displayName, odometerKm: target.odometerKm, kind: target.kind)
+        if target.isPrimary || garageBikes.isEmpty {
+            VehiclePreferences.sync(primaryKind: target.kind,
+                                    avoidTolls: target.avoidTolls,
+                                    avoidHighways: target.avoidHighways)
+        }
         dismiss()
     }
 }
@@ -525,7 +689,12 @@ struct BikeDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 MapCard {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(bike.displayName.isEmpty ? "Unnamed bike" : bike.displayName)
+                        HStack(spacing: 6) {
+                            Image(systemName: bike.kind.icon)
+                                .font(.scaledSystem(size: 13, weight: .bold))
+                                .foregroundStyle(MapUI.cyan)
+                            Text(bike.displayName.isEmpty ? "Unnamed vehicle" : bike.displayName)
+                        }
                             .font(.title2.weight(.bold))
                             .foregroundStyle(MapUI.ink)
                         if bike.makeModelName != bike.displayName, !bike.makeModelName.isEmpty {
@@ -536,10 +705,18 @@ struct BikeDetailView: View {
                                 .foregroundStyle(MapUI.secondaryInk)
                         }
                         Label(Units.distanceText(bike.odometerKm * 1_000, decimals: 0), systemImage: "gauge.with.dots.needle.67percent")
-                        Label("\(Units.distanceText(bike.fuelRangeKm * 1_000, decimals: 0)) range  •  \(String(format: "%.1f", bike.tankLiters)) L tank", systemImage: "fuelpump.fill")
+                        Label(bike.isCar
+                              ? "\(Units.distanceText(bike.fuelRangeKm * 1_000, decimals: 0)) range"
+                              : "\(Units.distanceText(bike.fuelRangeKm * 1_000, decimals: 0)) range  •  \(RevertFormat.number(bike.tankLiters, decimals: 1)) L tank",
+                              systemImage: bike.isCar ? "bolt.car.fill" : "fuelpump.fill")
                         Label(bike.isServiceDue ? "Service due" : "Next service in \(Units.distanceText(bike.distanceToServiceKm * 1_000, decimals: 0))",
                               systemImage: bike.isServiceDue ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
                             .foregroundStyle(bike.isServiceDue ? MapUI.orange : MapUI.emerald)
+                        if bike.isCar {
+                            Label(bike.isElectric ? "Electric" : "Combustion",
+                                  systemImage: bike.isElectric ? "bolt.car.fill" : "fuelpump.fill")
+                                .foregroundStyle(bike.isElectric ? MapUI.emerald : MapUI.textSecondary)
+                        }
                         if !bike.notes.isEmpty {
                             Text(bike.notes)
                                 .font(.footnote)
@@ -550,6 +727,33 @@ struct BikeDetailView: View {
                     // below it; without this it shrinks to its longest label.
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                NavigationLink {
+                    SetupNotesDetailView(bike: bike)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.scaledSystem(size: 14, weight: .bold))
+                            .foregroundStyle(MapUI.cyan)
+                            .frame(width: 30, height: 30)
+                            .background(MapUI.cyan.opacity(0.10), in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Setup notes & tyre log")
+                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                .foregroundStyle(MapUI.ink)
+                            Text("Pressures, suspension and changes worth remembering")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(MapUI.secondaryInk)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.scaledSystem(size: 10, weight: .bold))
+                            .foregroundStyle(MapUI.textTertiary)
+                    }
+                    .padding(12)
+                    .background(MapUI.surfaceHigh.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
 
                 HStack {
                     Text("Maintenance log")
@@ -595,7 +799,7 @@ struct BikeDetailView: View {
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.scaledSystem(size: 12, weight: .bold))
                                         .foregroundStyle(MapUI.textTertiary)
                                         .frame(width: 26, height: 32)
                                         .contentShape(Rectangle())
@@ -616,7 +820,7 @@ struct BikeDetailView: View {
             .padding(.bottom, 28)
         }
         .pulseBackground()
-        .navigationTitle("Bike")
+        .navigationTitle(bike.kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -627,7 +831,7 @@ struct BikeDetailView: View {
                     Button(role: .destructive) {
                         confirmingDelete = true
                     } label: {
-                        Label("Delete bike", systemImage: "trash")
+                        Label("Delete vehicle", systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -641,15 +845,15 @@ struct BikeDetailView: View {
         .sheet(isPresented: $editingBike) {
             BikeEditorView(bike: bike)
         }
-        .alert("Delete this bike?", isPresented: $confirmingDelete) {
-            Button("Delete bike", role: .destructive) {
+        .alert("Delete this vehicle?", isPresented: $confirmingDelete) {
+            Button("Delete vehicle", role: .destructive) {
                 context.delete(bike)
                 try? context.save()
                 dismiss()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The bike and its maintenance log will be removed from this iPhone.")
+            Text("The vehicle and its maintenance log will be removed from this iPhone.")
         }
     }
 }
@@ -708,7 +912,7 @@ struct MaintenanceEditorView: View {
                         bike.lastServiceKm = max(bike.lastServiceKm, odometerKm)
                         bike.odometerKm = max(bike.odometerKm, odometerKm)
                         try? context.save()
-                        WidgetBridge.updateBike(name: bike.displayName, odometerKm: bike.odometerKm)
+                        WidgetBridge.updateBike(name: bike.displayName, odometerKm: bike.odometerKm, kind: bike.kind)
                         dismiss()
                     }
                 }

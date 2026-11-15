@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 
 /// Picks who speaks: an installed Waze voice pack or one of the system voices.
 struct VoicePickerView: View {
-    @Environment(\.dismiss) private var dismiss
     @AppStorage("alert.voiceName") private var voiceName = "System default"
     @AppStorage("navigation.voice") private var navigationVoice = true
 
@@ -76,7 +75,7 @@ struct VoicePickerView: View {
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .foregroundStyle(MapUI.ink)
                     Text("Browse the Waze archive or import a pack you already have.")
-                        .font(.system(size: 12, design: .rounded))
+                        .font(.scaledSystem(size: 12, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,7 +105,7 @@ struct VoicePickerView: View {
                     Label("Browse voice packs", systemImage: "arrow.down.circle")
                     Spacer(minLength: 6)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.scaledSystem(size: 10, weight: .bold))
                         .foregroundStyle(MapUI.textTertiary)
                 }
             }
@@ -122,7 +121,7 @@ struct VoicePickerView: View {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Importing pack…")
-                        .font(.system(size: 12, design: .rounded))
+                        .font(.scaledSystem(size: 12, design: .rounded))
                         .foregroundStyle(MapUI.textSecondary)
                 }
             }
@@ -143,7 +142,7 @@ struct VoicePickerView: View {
                             .multilineTextAlignment(.leading)
                         if pack.isBuiltIn {
                             Text("BUILT-IN")
-                                .font(.system(size: 8, weight: .heavy, design: .rounded))
+                                .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
                                 .tracking(0.8)
                                 .foregroundStyle(MapUI.emerald)
                                 .padding(.horizontal, 5)
@@ -152,7 +151,7 @@ struct VoicePickerView: View {
                         }
                     }
                     Text(detail(for: pack))
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.scaledSystem(size: 11, design: .rounded))
                         .foregroundStyle(pack.isComplete ? MapUI.textTertiary : MapUI.amber.opacity(0.85))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,14 +162,14 @@ struct VoicePickerView: View {
                 Speaker.shared.say(Narrator.previewInstruction, kind: .navigation, pack: pack)
             } label: {
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.scaledSystem(size: 20))
                     .foregroundStyle(MapUI.cyan)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Preview \(pack.name)")
 
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 20))
+                .font(.scaledSystem(size: 20))
                 .foregroundStyle(selected ? MapUI.emerald : MapUI.textTertiary.opacity(0.5))
                 .accessibilityHidden(true)
         }
@@ -226,12 +225,12 @@ struct VoicePickerView: View {
                         .foregroundStyle(MapUI.ink)
                         .multilineTextAlignment(.leading)
                     Text(detail)
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.scaledSystem(size: 11, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
+                    .font(.scaledSystem(size: 20))
                     .foregroundStyle(selected ? MapUI.emerald : MapUI.textTertiary.opacity(0.5))
             }
             .contentShape(Rectangle())

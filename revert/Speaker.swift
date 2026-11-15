@@ -88,12 +88,23 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
 
     /// Speaks a composed prompt. `pack` overrides the rider's selection, which
     /// lets Settings preview a pack that has not been chosen yet.
+    /// The last sentence handed to the synthesiser. Tests and the debug
+    /// export read this; nothing in the UI depends on it.
+    @ObservationIgnored private(set) var lastSpokenFallback: String?
+
     func say(_ prompt: VoicePrompt, kind: Kind = .alert, pack: InstalledVoicePack? = nil) {
+        // A single mute for the cockpit overrides both voice channels; the
+        // separate toggles still decide which ones would have spoken.
+        guard !UserDefaults.standard.bool(forKey: "voice.muted") else { return }
         // Navigation prompts and safety alerts are separate controls. Turning
         // off spoken hazard alerts must not silence turn-by-turn.
         let key = kind == .navigation ? "navigation.voice" : "alert.voice"
         guard AlertSettings.enabled(key) else { return }
+        if kind == .navigation {
+            RideDebug.shared.event("NAV-VOICE", [("text", prompt.fallback)])
+        }
 
+        lastSpokenFallback = prompt.fallback
         let selected = pack ?? VoicePackLibrary.shared.selectedPack
         let items = resolve(prompt, pack: selected)
         guard !items.isEmpty else { return }

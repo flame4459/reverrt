@@ -3,7 +3,6 @@ import CoreLocation
 public import Combine
 
 struct OfflineView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(NavigationManager.self) private var nav
     @State private var radiusKm = 16.0
     @State private var total = 0
@@ -12,6 +11,9 @@ struct OfflineView: View {
     @State private var message: String?
     @State private var heldAwake = false
     @State private var roadDownloading = false
+    @State private var hazardDownloading = false
+    @State private var regionTotal = 0
+    @State private var regionDone = 0
     @State private var roadFailed = false
     @State private var isCalculatingBytes = false
     @State private var showingDeleteConfirmation = false
@@ -117,7 +119,7 @@ struct OfflineView: View {
             RevertSectionLabel(title: "Area radius", detail: "\(radiusLabel(radiusKm)) around you")
 
             RevertOptionPicker(
-                options: [8.0, 16.0, 20.0],
+                options: [8.0, 16.0, 20.0, 32.0],
                 selection: $radiusKm,
                 title: radiusLabel
             )
@@ -249,12 +251,12 @@ struct OfflineView: View {
     private func savedItem(_ title: String, _ systemImage: String, _ tint: Color) -> some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.scaledSystem(size: 12, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
                 .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.scaledSystem(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(MapUI.textSecondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -270,53 +272,149 @@ struct OfflineView: View {
             return
         }
         RevertHaptics.rigid()
-        // Hazards remain tiled, but road geometry is fetched as one bulk
-        // request. That avoids turning an offline download into dozens of
-        // separate road-network requests.
-        let hazardTiles = HazardStore.shared.prefetch(center: c, radiusKm: radiusKm)
         let radius = radiusKm
-        total = hazardTiles + 1
-        roadDownloading = true
+        downloadTask?.cancel()
+        roadDownloading = false
+        hazardDownloading = false
         roadFailed = false
         message = nil
-        refresh()
 
         downloadTask = Task { @MainActor in
-            // Decoding the bulk cache is real work; never do it on the main thread.
+            let started = Date()
+            // Only the parts that are actually missing get fetched.
             let needsRoads = await Task.detached(priority: .userInitiated) {
                 RoadStore.cachedArea(center: c, radiusKm: radius) == nil
             }.value
             guard !Task.isCancelled else { return }
-            guard needsRoads else {
-                roadDownloading = false
-                total = hazardTiles
-                if hazardTiles == 0 {
-                    message = "This area is already saved."
-                    roadFailed = false
-                }
+            let needsHazards = HazardAreas.needsDownload(center: c, radiusKm: radius)
+
+            // A region bigger than one request is downloaded cell by cell.
+            if radius > RegionPrep.maxCellRadiusKm {
+                await downloadRegion(center: c, radiusKm: radius, started: started)
+                downloadTask = nil
+                return
+            }
+
+            guard needsRoads || needsHazards else {
+                total = 0
+                remaining = 0
+                message = "This area is already saved."
+                roadFailed = false
                 refresh()
                 downloadTask = nil
                 return
             }
-            do {
-                // An explicit offline download is not an interactive route
-                // request: the rider has asked for a large area and is watching
-                // progress, so give the mirrors a real chance instead of the
-                // planner's 14-second budget.
-                _ = try await RoadStore.downloadArea(center: c, radiusKm: radiusKm, timeout: 90)
-                guard !Task.isCancelled else { return }
-                roadDownloading = false
+
+            total = (needsRoads ? 1 : 0) + (needsHazards ? 1 : 0)
+            roadDownloading = needsRoads
+            hazardDownloading = needsHazards
+            refresh()
+
+            // Roads and hazards are different Overpass features over the same
+            // bounding box, so there is no reason to queue one behind the other.
+            let hazardTask: Task<Bool, Never>? = needsHazards
+                ? Task { @MainActor in await downloadHazards(center: c, radius: radius, started: started) }
+                : nil
+            let roadsOK = needsRoads
+                ? await downloadRoads(center: c, radius: radius, started: started)
+                : true
+            let hazardsOK = await hazardTask?.value ?? true
+            guard !Task.isCancelled else { return }
+
+            roadDownloading = false
+            hazardDownloading = false
+            roadFailed = !roadsOK || !hazardsOK
+            if roadFailed {
+                if !roadsOK && !hazardsOK {
+                    message = "Map data didn't finish downloading. Try again, or choose a smaller area."
+                } else if !roadsOK {
+                    message = "Road data didn't finish downloading. Try again, or choose a smaller area."
+                } else {
+                    message = "Hazard data didn't finish downloading. Try again, or choose a smaller area."
+                }
+            } else {
+                message = "Saved for offline riding."
                 RevertHaptics.success()
-                refresh()
-            } catch {
-                guard !Task.isCancelled else { return }
-                RevertDiagnostics.log("offline download failed: \(error.localizedDescription)")
-                roadDownloading = false
-                roadFailed = true
-                message = "Road data didn't finish downloading. Try again, or choose a smaller area."
-                refresh()
             }
+            RevertDiagnostics.log("offline.done \(Int(Date().timeIntervalSince(started) * 1_000))ms"
+                                  + " roads=\(roadsOK) hazards=\(hazardsOK)")
+            refresh()
             downloadTask = nil
+        }
+    }
+
+    private func downloadRegion(center: CLLocationCoordinate2D, radiusKm: Double, started: Date) async {
+        let cells = RegionPrep.cells(center: center, radiusKm: radiusKm)
+        regionTotal = cells.count
+        regionDone = 0
+        total = cells.count
+        message = nil
+        refresh()
+
+        var failures = 0
+        for (index, cell) in cells.enumerated() {
+            guard !Task.isCancelled else { return }
+            if RoadStore.cachedArea(center: cell.center, radiusKm: cell.radiusKm) == nil {
+                do {
+                    _ = try await RoadStore.downloadArea(center: cell.center, radiusKm: cell.radiusKm, timeout: 60)
+                } catch {
+                    failures += 1
+                    RevertDiagnostics.log("region cell \(index + 1) roads failed: \(error.localizedDescription)")
+                }
+            }
+            if HazardAreas.needsDownload(center: cell.center, radiusKm: cell.radiusKm) {
+                do {
+                    _ = try await HazardAreas.download(center: cell.center, radiusKm: cell.radiusKm, timeout: 60)
+                } catch {
+                    failures += 1
+                    RevertDiagnostics.log("region cell \(index + 1) hazards failed: \(error.localizedDescription)")
+                }
+            }
+            regionDone = index + 1
+            refresh()
+        }
+
+        regionTotal = 0
+        regionDone = 0
+        roadFailed = failures > 0
+        if failures > 0 {
+            message = "Part of the region didn't download (\(failures) of \(cells.count * 2) requests). Try again to fill the gaps."
+        } else {
+            message = "Region saved for offline riding."
+            RevertHaptics.success()
+        }
+        RevertDiagnostics.log("region.done \(Int(Date().timeIntervalSince(started) * 1_000))ms"
+                              + " cells=\(cells.count) failures=\(failures)")
+        refresh()
+    }
+
+    private func downloadRoads(center: CLLocationCoordinate2D, radius: Double, started: Date) async -> Bool {
+        do {
+            _ = try await RoadStore.downloadArea(center: center, radiusKm: radius, timeout: 90)
+            RevertDiagnostics.log("offline.roads \(Int(Date().timeIntervalSince(started) * 1_000))ms ok")
+            roadDownloading = false
+            refresh()
+            return true
+        } catch {
+            RevertDiagnostics.log("offline.roads failed after \(Int(Date().timeIntervalSince(started) * 1_000))ms: \(error.localizedDescription)")
+            roadDownloading = false
+            refresh()
+            return false
+        }
+    }
+
+    private func downloadHazards(center: CLLocationCoordinate2D, radius: Double, started: Date) async -> Bool {
+        do {
+            _ = try await HazardAreas.download(center: center, radiusKm: radius, timeout: 90)
+            RevertDiagnostics.log("offline.hazards \(Int(Date().timeIntervalSince(started) * 1_000))ms ok")
+            hazardDownloading = false
+            refresh()
+            return true
+        } catch {
+            RevertDiagnostics.log("offline.hazards failed after \(Int(Date().timeIntervalSince(started) * 1_000))ms: \(error.localizedDescription)")
+            hazardDownloading = false
+            refresh()
+            return false
         }
     }
 
@@ -325,9 +423,12 @@ struct OfflineView: View {
         downloadTask = nil
         HazardStore.shared.cancelPending()
         roadDownloading = false
+        hazardDownloading = false
         roadFailed = false
         total = 0
         remaining = 0
+        regionTotal = 0
+        regionDone = 0
         if heldAwake {
             IdleTimer.release("offline")
             heldAwake = false
@@ -338,6 +439,8 @@ struct OfflineView: View {
 
     private func clear() {
         HazardStore.shared.clear()
+        HazardAreas.clear()
+        GraphCache.clear()
         RoadStore.shared.clear()
         RoadStore.advShared.clear()
         RoadStore.clearBulkCache()
@@ -354,7 +457,8 @@ struct OfflineView: View {
         guard !isCalculatingBytes else { return }
         isCalculatingBytes = true
         Task.detached(priority: .utility) {
-            let total = HazardStore.shared.diskBytes() + RoadStore.shared.diskBytes()
+            let total = HazardStore.shared.diskBytes() + HazardAreas.diskBytes() + GraphCache.diskBytes()
+                + RoadStore.shared.diskBytes()
                 + RoadStore.advShared.diskBytes() + RoadStore.bulkDiskBytes()
                 + ElevationService.diskBytes() + FuelService.diskBytes()
             await MainActor.run {
@@ -366,7 +470,12 @@ struct OfflineView: View {
 
     private func refresh() {
         let prevRemaining = remaining
-        let newRemaining = HazardStore.shared.pendingCount + (roadDownloading ? 1 : 0)
+        let newRemaining: Int
+        if regionTotal > 0 {
+            newRemaining = max(regionTotal - regionDone, 0)
+        } else {
+            newRemaining = (roadDownloading ? 1 : 0) + (hazardDownloading ? 1 : 0)
+        }
         remaining = newRemaining
 
         // Only calculate bytes when transitioning from downloading to done

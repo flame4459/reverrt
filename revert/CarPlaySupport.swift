@@ -10,7 +10,11 @@ enum CarPlayText {
            !name.isEmpty {
             return name
         }
-        return route.kind == .loop ? "Scenic loop" : "Route"
+        switch route.kind {
+        case .loop: return "Scenic loop"
+        case .sprint: return "Sprint"
+        case .directions: return "Route"
+        }
     }
 
     static func rideDetail(_ route: PlannedRoute) -> String {
@@ -19,6 +23,11 @@ enum CarPlayText {
         case .loop:
             parts.append("\(route.curviness)/5 twist")
         case .directions:
+            if let eta = route.expectedTravelTime {
+                parts.append(etaText(eta))
+            }
+        case .sprint:
+            parts.append("Sprint")
             if let eta = route.expectedTravelTime {
                 parts.append(etaText(eta))
             }

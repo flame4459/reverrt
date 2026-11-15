@@ -2,7 +2,7 @@ import Foundation
 
 /// Privacy-preserving, on-device diagnostics. Only coarse events and error
 /// messages are recorded; coordinates, place names and ride tracks never are.
-enum RevertDiagnostics {
+nonisolated enum RevertDiagnostics {
     private static let lock = NSLock()
     private static let directoryName = "RevertDiagnostics"
     private static let maxBytes = 256 * 1024
@@ -91,7 +91,7 @@ enum RevertDiagnostics {
     }
 }
 
-private enum UIDeviceInfo {
+nonisolated private enum UIDeviceInfo {
     static var systemVersion: String {
         ProcessInfo.processInfo.operatingSystemVersionString
     }

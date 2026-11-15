@@ -9,6 +9,7 @@ final class SavedRoute {
     var name: String = ""
     var createdAt: Date = Date()
     var isLoop: Bool = true
+    var isSprint: Bool = false
     var pointsData: Data = Data()
     var waypointsData: Data = Data()
     var stepsData: Data = Data()
@@ -23,12 +24,15 @@ final class SavedRoute {
     var bearing: Double = 0
     var expectedTravelTime: Double = 0
     var surfaceRaw: String = LoopSurface.paved.rawValue
+    /// Circuit laps saved with the route; point-to-point routes use 1.
+    var laps: Int = 3
 
     init(route: PlannedRoute, name: String, roads: [Road] = []) {
         self.id = UUID()
         self.name = name
         self.createdAt = Date()
-        self.isLoop = route.kind == .loop
+        self.isLoop = route.kind.isLoop
+        self.isSprint = route.kind.isSprint
         self.pointsData = (try? JSONEncoder().encode(route.points)) ?? Data()
         self.roadsData = (try? JSONEncoder().encode(roads)) ?? Data()
         self.waypointsData = (try? JSONEncoder().encode(route.waypoints.map {
@@ -43,7 +47,10 @@ final class SavedRoute {
         self.bearing = route.bearing
         self.expectedTravelTime = route.expectedTravelTime ?? 0
         self.surfaceRaw = route.surface.rawValue
+        self.laps = route.kind == .loop ? max(route.laps, 1) : 1
     }
+
+    var fingerprintKey: String { RouteFingerprint.key(for: self) }
 
     var points: [RoutePoint] {
         (try? JSONDecoder().decode([RoutePoint].self, from: pointsData)) ?? []
@@ -73,7 +80,7 @@ final class SavedRoute {
             bearing: bearing,
             displayName: name,
             expectedTravelTime: expectedTravelTime > 0 ? expectedTravelTime : nil,
-            kind: isLoop ? .loop : .directions
+            kind: isLoop ? .loop : (isSprint ? .sprint : .directions)
         )
         if let steps = try? JSONDecoder().decode([NavStep].self, from: stepsData), !steps.isEmpty {
             route.steps = steps
@@ -82,12 +89,93 @@ final class SavedRoute {
         route.climbMeters = climbMeters
         route.maxElevation = maxElevation
         route.surface = surface
+        route.laps = isLoop ? max(laps, 1) : 1
+        route.savedRouteID = id
         return route
     }
 
     struct StoredCoordinate: Codable {
         let lat: Double
         let lon: Double
+    }
+}
+
+/// Rename a saved loop/route and keep the rides that belong to it in sync.
+/// Rides are matched by `savedRouteID` first, then by the route fingerprint,
+/// so older rides without the id still get the new label.
+extension SavedRoute {
+    /// Renames the saved route and every ride already attached to it. The
+    /// route fingerprint never includes the name, so times and leaderboards
+    /// survive the rename.
+    func rename(to newName: String, rides: [Ride], context: ModelContext) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        name = trimmed
+        for ride in rides
+        where ride.savedRouteID == id || ride.routeKey == fingerprintKey {
+            ride.routeName = trimmed
+        }
+        try? context.save()
+    }
+}
+
+struct SavedRouteRenameSheet: View {
+    let saved: SavedRoute
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @Query(sort: \Ride.startDate, order: .reverse) private var rides: [Ride]
+    @State private var draftName: String
+
+    init(saved: SavedRoute) {
+        self.saved = saved
+        _draftName = State(initialValue: saved.name)
+    }
+
+    private var trimmedName: String {
+        draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Route name") {
+                    TextField("Name", text: $draftName)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.done)
+                        .onSubmit(save)
+                }
+
+                Section {
+                    Text("Renaming updates this saved route and the rides already linked to it. Route times and leaderboards stay attached.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .pulseBackground()
+            .navigationTitle("Rename route")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(trimmedName.isEmpty)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func save() {
+        guard !trimmedName.isEmpty else { return }
+        saved.rename(to: trimmedName, rides: rides, context: context)
+        RevertHaptics.success()
+        dismiss()
     }
 }
 

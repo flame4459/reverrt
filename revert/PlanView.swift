@@ -11,6 +11,7 @@ struct PlanView: View {
     var onStartNavigation: (() -> Void)? = nil
 
     @State private var miles = 40.0
+    @AppStorage("plan.laps") private var laps = 3
     @State private var style: RouteStyle = .twisty
     @State private var mode: LoopMode = .extended
     @State private var surface: LoopSurface = .paved
@@ -33,15 +34,26 @@ struct PlanView: View {
     @State private var previewRoute: PlannedRoute?
     @State private var pendingStart: PlannedRoute?
     @State private var previewRoads: [Road] = []
+    @State private var pendingVehicleRoute: PendingVehicleRoute?
+    @State private var showingVehicleChoice = false
+    @State private var showingLoopDeck = false
     @State private var savedRouteQuery = ""
+    @State private var renamingRoute: SavedRoute?
     @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
     @Query(sort: \Ride.startDate, order: .reverse) private var savedRides: [Ride]
+    @Query(sort: \Bike.createdAt, order: .reverse) private var garageVehicles: [Bike]
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var mapStyle: MapStyle = .standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll)
+    @AppStorage("units.system") private var unitSystem = UnitSystemPreference.automatic.rawValue
     @State private var aim = PlanAimModel()
     @State private var pinStrike: PlanPinStrike?
     @State private var showOptions = false
     @FocusState private var roadTextFocused: Bool
+
+    private var primaryVehicle: Bike? {
+        garageVehicles.first(where: \.isPrimary) ?? garageVehicles.first
+    }
+    private var isCarPlan: Bool { primaryVehicle?.isCar == true }
 
     /// The crosshair takes the color of the pin it will drop.
     private var aimTint: Color { pinMode == .shaping ? MapUI.orange : MapUI.emerald }
@@ -77,6 +89,7 @@ struct PlanView: View {
                         )
                     }
                     mapView
+                    planFeatureStrip
                     if nav.route != nil { activeRouteCard }
                     rideShapeCard
                         .id("planShape")
@@ -112,7 +125,9 @@ struct PlanView: View {
                 let arguments = CommandLine.arguments
                 let target: String? = arguments.contains("-debugPlanResult")
                     ? "planResults"
-                    : (arguments.contains("-debugPlanScroll") ? "planOptions" : nil)
+                    : (arguments.contains("-debugPlanScroll")
+                       ? "planOptions"
+                       : (arguments.contains("-debugPlanLaps") ? "planLaps" : nil))
                 if let target {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
                         withAnimation(RevertMotion.smooth) {
@@ -128,6 +143,26 @@ struct PlanView: View {
         }
         .background(MapUI.canvas.ignoresSafeArea())
         .onAppear {
+            if isCarPlan {
+                if style == .extreme { style = .twisty }
+                if surface == .adventure { surface = .paved }
+            }
+            #if DEBUG
+            if CommandLine.arguments.contains("-debugRenameRoute"),
+               let saved = savedRoutes.first {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    renamingRoute = saved
+                }
+            }
+            if CommandLine.arguments.contains("-debugVehiclePrompt") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    guard pendingVehicleRoute == nil else { return }
+                    let route = planner.results.first ?? DebugScreens.samplePlannedRoute()
+                    pendingVehicleRoute = PendingVehicleRoute(route: route, roads: planner.roads)
+                    showingVehicleChoice = true
+                }
+            }
+            #endif
             #if DEBUG
             if CommandLine.arguments.contains("-debugPlanResult") {
                 var route = DebugScreens.samplePlannedRoute()
@@ -172,11 +207,15 @@ struct PlanView: View {
         }
         .onChange(of: planner.results.first?.id) { _, _ in
             guard !planner.results.isEmpty else { return }
+            applyLapsToResults()
             let pick = autoPickBest
                 ? (LoopRanking.best(in: planner.results, targetMeters: miles * 1609.344) ?? planner.results[0])
                 : planner.results[0]
             selected = pick.id
             camera = .region(Self.region(for: planner.results, fallback: pick))
+        }
+        .onChange(of: laps) { _, _ in
+            applyLapsToResults()
         }
         .onChange(of: planner.phase) { _, newPhase in
             // Keep the extra local-route searches out of the critical path.
@@ -205,7 +244,6 @@ struct PlanView: View {
         }) { route in
             RoutePreviewView(
                 route: route,
-                roads: previewRoads,
                 onStart: {
                     pendingStart = route
                     previewRoute = nil
@@ -214,6 +252,20 @@ struct PlanView: View {
                     previewRoute = nil
                 }
             )
+        }
+        .sheet(isPresented: $showingLoopDeck) { loopDeckSheet }
+        .confirmationDialog("Car or bike today?",
+                            isPresented: $showingVehicleChoice,
+                            titleVisibility: .visible,
+                            presenting: pendingVehicleRoute) { pending in
+            Button("Bike") { beginStartedRoute(pending, kind: .motorcycle) }
+            Button("Car") { beginStartedRoute(pending, kind: .car) }
+            Button("Cancel") { pendingVehicleRoute = nil }
+        } message: { _ in
+            Text("This choice changes the cockpit and the vehicle noted on the leaderboard. Garage default: \(VehiclePreferences.primaryKind.title).")
+        }
+        .sheet(item: $renamingRoute) { saved in
+            SavedRouteRenameSheet(saved: saved)
         }
     }
 
@@ -227,6 +279,7 @@ struct PlanView: View {
                 Text("Plan a loop")
                     .font(RevertType.display(30, weight: .heavy))
                     .foregroundStyle(MapUI.ink)
+                    .accessibilityIdentifier(AccessibilityID.Plan.title)
                 Text("Choose a start, a shape and a distance. Revert finds the bends.")
                     .font(.system(.subheadline, design: .rounded))
                     .foregroundStyle(MapUI.textSecondary)
@@ -241,6 +294,7 @@ struct PlanView: View {
             }
             .buttonStyle(RevertIconButtonStyle(tint: MapUI.textSecondary, diameter: 38))
             .accessibilityLabel("Close plan")
+            .accessibilityIdentifier(AccessibilityID.Plan.close)
         }
     }
 
@@ -249,7 +303,7 @@ struct PlanView: View {
             RevertIconBadge(systemImage: "location.north.line.fill", tint: MapUI.emerald, size: 36, radius: 11)
             VStack(alignment: .leading, spacing: 1) {
                 Text("NAVIGATING")
-                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                     .tracking(1.2)
                     .foregroundStyle(MapUI.emerald)
                 Text(nav.route?.displayName ?? "Active route")
@@ -262,7 +316,7 @@ struct PlanView: View {
                 RevertHaptics.tap()
                 nav.stop()
             }
-            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
             .foregroundStyle(MapUI.coral)
             .padding(.horizontal, 12)
             .frame(height: 32)
@@ -282,6 +336,11 @@ struct PlanView: View {
         MapReader { proxy in
             Map(position: $camera) {
                 UserAnnotation()
+                if let origin = loopOrigin, let vehicle = primaryVehicle, !isCarPlan {
+                    MapCircle(center: origin, radius: max(vehicle.fuelRangeKm, 1) * 900)
+                        .foregroundStyle(MapUI.cyan.opacity(0.035))
+                        .stroke(MapUI.cyan.opacity(0.32), lineWidth: 1)
+                }
                 if let pin {
                     Marker("Start", coordinate: pin)
                         .tint(.green)
@@ -328,8 +387,15 @@ struct PlanView: View {
                     .padding(12)
             }
             .overlay(alignment: .bottomTrailing) {
-                pinModeSwitcher
-                    .padding(12)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("PIN MODE")
+                        .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 6)
+                    pinModeSwitcher
+                }
+                .padding(12)
             }
             .overlay(alignment: .bottomLeading) {
                 dropPinButton(proxy: proxy)
@@ -345,7 +411,7 @@ struct PlanView: View {
                     }
             )
         }
-        .frame(height: 278)
+        .frame(height: 240)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -390,12 +456,25 @@ struct PlanView: View {
                 }
             } label: {
                 Image(systemName: "map")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.scaledSystem(size: 16, weight: .semibold))
                     .foregroundStyle(MapUI.ink)
                     .frame(width: RevertMetrics.dockButtonSize, height: RevertMetrics.dockButtonSize)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Map style")
+
+            RevertMapDockDivider()
+
+            RevertMapDockButton(
+                systemImage: "ruler",
+                label: "Units: \(Units.isMetric ? "Metric" : "Imperial"). Switch units",
+                tint: MapUI.cyan
+            ) {
+                let next: UnitSystemPreference = Units.isMetric ? .imperial : .metric
+                unitSystem = next.rawValue
+                Units.setPreference(next)
+                WidgetBridge.updateUnits()
+            }
         }
     }
 
@@ -412,7 +491,7 @@ struct PlanView: View {
                     }
                 } label: {
                     Text(option == .shaping ? "Shaping" : "Start")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(selected ? .black : MapUI.textSecondary)
                         .padding(.horizontal, 9)
                         .frame(height: 30)
@@ -437,7 +516,7 @@ struct PlanView: View {
                 }
             } label: {
                 Label(dropPinTitle, systemImage: "mappin.and.ellipse")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(aimTint)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 40)
@@ -497,7 +576,7 @@ struct PlanView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.scaledSystem(size: 13, weight: .bold))
                     .foregroundStyle(MapUI.cyan)
 
                 TextField("Search a road or place", text: $searchQuery)
@@ -525,7 +604,7 @@ struct PlanView: View {
                         clearSearch()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
+                            .font(.scaledSystem(size: 14))
                             .foregroundStyle(MapUI.textTertiary)
                     }
                     .buttonStyle(.plain)
@@ -653,7 +732,10 @@ struct PlanView: View {
     private var statusDetail: String {
         switch planner.phase {
         case .downloading(let done, let total):
-            return "\(done) of \(max(total, 1)) map tiles ready"
+            // A cold area download is one patient request, not a tile queue.
+            return total <= 1
+                ? "Downloading the roads this area needs."
+                : "\(done) of \(max(total, 1)) map tiles ready"
         case .planning:
             return "Searching for the most interesting bends near your start."
         case .routing:
@@ -669,8 +751,10 @@ struct PlanView: View {
 
     private var statusProgress: Double? {
         switch planner.phase {
-        case .downloading(let done, let total):
-            return Double(done) / Double(max(total, 1))
+        case .downloading:
+            // The planner glides this while the request is in flight; tile
+            // counts would sit at zero and then jump.
+            return planner.progress
         case .planning:
             return planner.progress
         default:
@@ -698,70 +782,97 @@ struct PlanView: View {
     }
 
     private var stickyFooter: some View {
-        HStack(spacing: 10) {
-            if planner.isBusy {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .tint(MapUI.cyan)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(statusTitle)
-                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                            .foregroundStyle(MapUI.ink)
-                            .lineLimit(1)
-                        Text("\(Int(min(max(planner.progress, 0), 1) * 100))%")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundStyle(MapUI.textTertiary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity, minHeight: RevertMetrics.primaryButtonHeight)
-                .background(MapUI.surfaceHigh, in: Capsule())
-                .overlay(Capsule().stroke(MapUI.lineStrong, lineWidth: 0.8))
+        VStack(spacing: 9) {
+            footerSummary
 
-                Button {
-                    RevertHaptics.tap()
-                    planner.cancel()
-                } label: {
-                    Image(systemName: "xmark")
+            HStack(spacing: 10) {
+                if planner.isBusy {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(MapUI.cyan)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(statusTitle)
+                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                .foregroundStyle(MapUI.ink)
+                                .lineLimit(1)
+                            Text("\(Int(min(max(planner.progress, 0), 1) * 100))%")
+                                .font(.scaledSystem(size: 10, weight: .bold, design: .rounded))
+                                .foregroundStyle(MapUI.textTertiary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: RevertMetrics.primaryButtonHeight)
+                    .background(MapUI.surfaceHigh, in: Capsule())
+                    .overlay(Capsule().stroke(MapUI.lineStrong, lineWidth: 0.8))
+
+                    Button {
+                        RevertHaptics.tap()
+                        planner.cancel()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(RevertIconButtonStyle(tint: MapUI.textSecondary, diameter: 50))
+                    .accessibilityLabel("Cancel route building")
+                } else if !planner.results.isEmpty {
+                    Button {
+                        findLoops()
+                    } label: {
+                        Label(autoPickBest ? "Update best loop" : "Update loops",
+                              systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(RevertSecondaryButtonStyle())
+                    .accessibilityIdentifier(AccessibilityID.Plan.findLoops)
+                    .disabled(!originAvailable)
+                    .opacity(originAvailable ? 1 : 0.55)
+                } else {
+                    Button {
+                        findLoops()
+                    } label: {
+                        Label(originAvailable
+                                  ? (autoPickBest ? "Find my best loop" : "Find scenic loops")
+                                  : "Waiting for location",
+                              systemImage: originAvailable ? "sparkles" : "location.slash")
+                    }
+                    .buttonStyle(RevertPrimaryButtonStyle())
+                    .accessibilityIdentifier(AccessibilityID.Plan.findLoops)
+                    .disabled(!originAvailable)
+                    .opacity(originAvailable ? 1 : 0.55)
                 }
-                .buttonStyle(RevertIconButtonStyle(tint: MapUI.textSecondary, diameter: 50))
-                .accessibilityLabel("Cancel route building")
-            } else if !planner.results.isEmpty {
-                Button {
-                    findLoops()
-                } label: {
-                    Label(autoPickBest ? "Update best loop" : "Update loops",
-                          systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(RevertSecondaryButtonStyle())
-                .disabled(!originAvailable)
-                .opacity(originAvailable ? 1 : 0.55)
-            } else {
-                Button {
-                    findLoops()
-                } label: {
-                    Label(originAvailable
-                              ? (autoPickBest ? "Find my best loop" : "Find scenic loops")
-                              : "Waiting for location",
-                          systemImage: originAvailable ? "sparkles" : "location.slash")
-                }
-                .buttonStyle(RevertPrimaryButtonStyle())
-                .disabled(!originAvailable)
-                .opacity(originAvailable ? 1 : 0.55)
             }
         }
         .padding(.horizontal, RevertMetrics.screenPadding)
         .padding(.top, 10)
         .padding(.bottom, 6)
         .background {
-            LinearGradient(
-                colors: [MapUI.canvas.opacity(0), MapUI.canvas.opacity(0.94), MapUI.canvas],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Rectangle()
+                .fill(MapUI.canvas)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(MapUI.line)
+                        .frame(height: 0.8)
+                }
+                .ignoresSafeArea()
         }
+    }
+
+    private var footerSummary: some View {
+        HStack(spacing: 6) {
+            Text(Units.distanceTextFromMiles(miles, decimals: miles < 10 ? 1 : 0))
+            Text("·")
+            Text(style.title)
+            Text("·")
+            Text(surface.title)
+            if laps > 1 {
+                Text("·")
+                Text("\(laps) laps")
+            }
+        }
+        .font(.scaledSystem(size: 10, weight: .semibold))
+        .foregroundStyle(MapUI.textSecondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .accessibilityElement(children: .combine)
     }
 
     private var rideShapeCard: some View {
@@ -769,7 +880,7 @@ struct PlanView: View {
             RevertCardHeader(
                 icon: "arrow.triangle.2.circlepath",
                 title: "Ride shape",
-                subtitle: "Distance, style and surface",
+                subtitle: "Distance, style, laps and surface",
                 tint: MapUI.cyan
             )
 
@@ -784,7 +895,7 @@ struct PlanView: View {
                 )
                 VStack(alignment: .leading, spacing: 1) {
                     Text("START")
-                        .font(.system(size: 9, weight: .heavy, design: .rounded))
+                        .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                         .tracking(1.2)
                         .foregroundStyle(MapUI.textTertiary)
                     Text(pin == nil ? "My location" : (pinLabel ?? "Dropped pin"))
@@ -801,7 +912,7 @@ struct PlanView: View {
                         searchError = nil
                         roadSearch.clear()
                     }
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.scaledSystem(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(MapUI.cyan)
                     .padding(.horizontal, 9)
                     .frame(height: 28)
@@ -841,7 +952,7 @@ struct PlanView: View {
                     Spacer()
                     Text(Units.distanceTextFromMiles(RideDistanceScale.maximumMiles, decimals: 0))
                 }
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .font(.scaledSystem(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(MapUI.textTertiary)
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -866,7 +977,7 @@ struct PlanView: View {
             VStack(alignment: .leading, spacing: 8) {
                 RevertSectionLabel(title: "Style", detail: style.title)
                 RevertOptionPicker(
-                    options: RouteStyle.allCases,
+                    options: isCarPlan ? [.relaxed, .twisty] : RouteStyle.allCases,
                     selection: $style,
                     title: { $0.title },
                     systemImage: { styleIcon($0) }
@@ -891,6 +1002,38 @@ struct PlanView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                RevertSectionLabel(title: "Laps", detail: "\(laps) lap\(laps == 1 ? "" : "s")")
+
+                HStack(spacing: 7) {
+                    ForEach([1, 3, 5, 10], id: \.self) { preset in
+                        RevertChip(
+                            title: "\(preset)",
+                            isSelected: laps == preset,
+                            tint: MapUI.amber,
+                            action: {
+                                RevertHaptics.select()
+                                withAnimation(RevertMotion.snappy) { laps = preset }
+                            }
+                        )
+                    }
+                    Spacer(minLength: 4)
+
+                    Stepper(value: $laps, in: 1...30) {
+                        Text("Laps")
+                    }
+                    .labelsHidden()
+                    .tint(MapUI.amber)
+                    .accessibilityLabel("Number of laps")
+                }
+
+                Text("The loop clock starts at the start line and stops after \(laps) lap\(laps == 1 ? "" : "s"). Three laps is the default.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(MapUI.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .id("planLaps")
+
             VStack(alignment: .leading, spacing: 5) {
                 Toggle(isOn: $autoPickBest) {
                     Label("Auto-pick the best loop", systemImage: "wand.and.stars")
@@ -909,7 +1052,7 @@ struct PlanView: View {
             VStack(alignment: .leading, spacing: 8) {
                 RevertSectionLabel(title: "Surface", detail: surface.title)
                 RevertOptionPicker(
-                    options: LoopSurface.allCases,
+                    options: isCarPlan ? [.paved, .mixed] : LoopSurface.allCases,
                     selection: $surface,
                     title: { $0.title },
                     systemImage: { $0.icon },
@@ -945,7 +1088,7 @@ struct PlanView: View {
                     }
                     Spacer(minLength: 6)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.scaledSystem(size: 12, weight: .bold))
                         .foregroundStyle(MapUI.textTertiary)
                         .rotationEffect(.degrees(showOptions ? 180 : 0))
                 }
@@ -1006,13 +1149,13 @@ struct PlanView: View {
                                 ForEach(Array(shapingPins.enumerated()), id: \.offset) { index, _ in
                                     HStack(spacing: 5) {
                                         Text("Pin \(index + 1)")
-                                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                                            .font(.scaledSystem(size: 10, weight: .bold, design: .rounded))
                                         Button {
                                             RevertHaptics.tap()
                                             shapingPins.remove(at: index)
                                         } label: {
                                             Image(systemName: "xmark")
-                                                .font(.system(size: 8, weight: .heavy))
+                                                .font(.scaledSystem(size: 8, weight: .heavy))
                                                 .foregroundStyle(MapUI.textSecondary)
                                         }
                                         .buttonStyle(.plain)
@@ -1030,7 +1173,7 @@ struct PlanView: View {
                             RevertHaptics.tap()
                             shapingPins.removeAll()
                         }
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(MapUI.coral)
                         .buttonStyle(.plain)
                     }
@@ -1073,7 +1216,7 @@ struct PlanView: View {
                     planner.cancel()
                 } label: {
                     Text("Cancel")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(MapUI.textSecondary)
                         .padding(.horizontal, 12)
                         .frame(height: 30)
@@ -1103,6 +1246,54 @@ struct PlanView: View {
         .revertCard()
     }
 
+    private var loopDeckSheet: some View {
+        LoopDeckView(routes: planner.results) { route in
+            showingLoopDeck = false
+            previewRoads = planner.roads
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                previewRoute = route
+            }
+        }
+    }
+
+    private var planFeatureRoute: PlannedRoute? {
+        previewRoute ?? planner.results.first(where: { $0.id == selected }) ?? planner.results.first
+    }
+
+    private var planFeatureStrip: some View {
+        let conditions = ConditionsService.snapshot(route: planFeatureRoute, bike: primaryVehicle)
+        let range = RangePolicy.summary(for: primaryVehicle,
+                                         routeLengthMeters: planFeatureRoute?.length ?? 0)
+        return HStack(spacing: 11) {
+            HStack(spacing: 6) {
+                Image(systemName: "sun.horizon.fill")
+                    .font(.scaledSystem(size: 11, weight: .bold))
+                    .foregroundStyle(MapUI.amber)
+                Text(conditions.headline)
+                    .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MapUI.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Spacer(minLength: 4)
+            Text(range.verdict == .unknown
+                 ? "\(Units.distanceText(range.rangeKm * 1_000, decimals: 0).uppercased()) RANGE"
+                 : "RANGE \(range.verdict.rawValue.uppercased())")
+                .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
+                .tracking(0.7)
+                .foregroundStyle(range.verdict == .fits ? MapUI.emerald
+                                 : (range.verdict == .tight ? MapUI.amber
+                                    : (range.verdict == .unknown ? MapUI.textTertiary : MapUI.danger)))
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(MapUI.surfaceHigh.opacity(0.72), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(MapUI.line, lineWidth: 0.8)
+        }
+    }
+
     private var resultsCards: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -1112,10 +1303,22 @@ struct PlanView: View {
                     HStack(spacing: 5) {
                         ProgressView().controlSize(.small).tint(MapUI.cyan)
                         Text("Elevation")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .font(.scaledSystem(size: 9, weight: .bold, design: .rounded))
                             .foregroundStyle(MapUI.textTertiary)
                     }
                 }
+                Button {
+                    RevertHaptics.tap()
+                    showingLoopDeck = true
+                } label: {
+                    Label("Deck", systemImage: "rectangle.stack.fill")
+                        .font(.scaledSystem(size: 9, weight: .bold, design: .rounded))
+                        .foregroundStyle(MapUI.cyan)
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(MapUI.cyan.opacity(0.10), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
 
             if let notice = planner.notice {
@@ -1139,7 +1342,7 @@ struct PlanView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 7) {
                 Text("OPTION \(letter)")
-                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                     .tracking(1.2)
                     .foregroundStyle(isSelected ? .black : MapUI.cyan)
                     .padding(.horizontal, 8)
@@ -1153,11 +1356,11 @@ struct PlanView: View {
                 Spacer(minLength: 4)
 
                 Text("Heads \(route.heading)")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(MapUI.textTertiary)
 
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.scaledSystem(size: 16, weight: .semibold))
                     .foregroundStyle(isSelected ? MapUI.cyan : MapUI.textTertiary)
             }
 
@@ -1180,7 +1383,7 @@ struct PlanView: View {
                             .font(RevertType.number(18))
                             .foregroundStyle(MapUI.emerald)
                         Text(label.uppercased())
-                            .font(.system(size: 8, weight: .heavy, design: .rounded))
+                            .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
                             .tracking(0.8)
                             .foregroundStyle(MapUI.textTertiary)
                     }
@@ -1190,7 +1393,7 @@ struct PlanView: View {
             HStack(spacing: 10) {
                 HStack(spacing: 5) {
                     Text("Curves")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.scaledSystem(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                         .lineLimit(1)
                         .fixedSize()
@@ -1209,7 +1412,7 @@ struct PlanView: View {
 
                 RevertMetricPill(
                     systemImage: "arrow.triangle.turn.up.right.diamond",
-                    text: "\(Int(route.twistPerKm.rounded()))°/km",
+                    text: "\(Int(Units.twistValue(route.twistPerKm).rounded()))\(Units.twistUnit)",
                     tint: MapUI.textTertiary
                 )
 
@@ -1272,11 +1475,11 @@ struct PlanView: View {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack(alignment: .firstTextBaseline) {
                             Label("Elevation", systemImage: "mountain.2")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
                                 .foregroundStyle(MapUI.ink)
                             Spacer()
                             Text("Climb \(Units.elevationText(route.climbMeters))  •  peak \(Units.elevationText(route.maxElevation))")
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
                                 .foregroundStyle(MapUI.cyan)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
@@ -1294,19 +1497,19 @@ struct PlanView: View {
 
                 if let flow = route.flowScore, let lap = route.lapScore {
                     Text("Flow \(Int(flow.rounded())) · Lap \(Int(lap.rounded())) · multi-scale curvature + maneuvers")
-                        .font(.system(size: 10, design: .rounded))
+                        .font(.scaledSystem(size: 10, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
 
                 if let interruptions = route.interruptions, interruptions > 0 {
                     Text("\(interruptions) junction\(interruptions == 1 ? "" : "s") or maneuver\(interruptions == 1 ? "" : "s") on route")
-                        .font(.system(size: 10, design: .rounded))
+                        .font(.scaledSystem(size: 10, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
 
                 if route.retraced > 0.05 {
                     Text("\(Int((route.retraced * 100).rounded()))% repeated road")
-                        .font(.system(size: 10, design: .rounded))
+                        .font(.scaledSystem(size: 10, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
             }
@@ -1365,7 +1568,7 @@ struct PlanView: View {
             if savedRoutes.count > 3 {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.scaledSystem(size: 12, weight: .bold))
                         .foregroundStyle(MapUI.textTertiary)
                     TextField("Search saved routes", text: $savedRouteQuery)
                         .font(.system(.subheadline, design: .rounded))
@@ -1405,15 +1608,15 @@ struct PlanView: View {
                                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
                                 .foregroundStyle(MapUI.ink)
                                 .lineLimit(1)
-                            Text("\(Units.distanceText(saved.distanceMeters, decimals: 1))  •  \(saved.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                                .font(.system(size: 10, design: .rounded))
+                            Text("\(Units.distanceText(saved.distanceMeters, decimals: 1))  •  \(saved.isSprint ? "Sprint" : "\(saved.laps) lap\(saved.laps == 1 ? "" : "s")")  •  \(saved.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.scaledSystem(size: 10, design: .rounded))
                                 .foregroundStyle(MapUI.textTertiary)
                             if let best = savedRides
                                 .filter({ $0.routeName == saved.name })
                                 .map(\.durationSeconds)
                                 .min() {
                                 Text("Best time \(Units.clock(best))")
-                                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                                    .font(.scaledSystem(size: 9, weight: .bold, design: .rounded))
                                     .foregroundStyle(MapUI.emerald)
                             }
                         }
@@ -1421,7 +1624,7 @@ struct PlanView: View {
                         Spacer(minLength: 4)
 
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.scaledSystem(size: 10, weight: .bold))
                             .foregroundStyle(MapUI.textTertiary)
                     }
                     .padding(9)
@@ -1429,6 +1632,12 @@ struct PlanView: View {
                 }
                 .buttonStyle(RevertCardButtonStyle())
                 .contextMenu {
+                    Button {
+                        RevertHaptics.tap()
+                        renamingRoute = saved
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
                     Button("Delete", role: .destructive) {
                         context.delete(saved)
                         try? context.save()
@@ -1436,6 +1645,12 @@ struct PlanView: View {
                 }
 
                 Menu {
+                    Button {
+                        RevertHaptics.tap()
+                        renamingRoute = saved
+                    } label: {
+                        Label("Rename route", systemImage: "pencil")
+                    }
                     Button(role: .destructive) {
                         context.delete(saved)
                         try? context.save()
@@ -1444,7 +1659,7 @@ struct PlanView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.scaledSystem(size: 13, weight: .bold))
                         .foregroundStyle(MapUI.textTertiary)
                         .frame(width: 28, height: 44)
                         .contentShape(Rectangle())
@@ -1479,13 +1694,13 @@ struct PlanView: View {
             }
 
             Text("Names come from local listings; verify the route and signage before riding.")
-                .font(.system(size: 10, design: .rounded))
+                .font(.scaledSystem(size: 10, design: .rounded))
                 .foregroundStyle(MapUI.textTertiary)
 
             if planner.localRoutesLoading && planner.localResults.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small).tint(MapUI.cyan)
-                    Text("Finding scenic rides within 50 miles…")
+                    Text("Finding scenic rides within \(Units.distanceTextFromMiles(50, decimals: 0))…")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
@@ -1506,12 +1721,12 @@ struct PlanView: View {
                                 .foregroundStyle(MapUI.ink)
                                 .lineLimit(2)
                             Text(Units.distanceText(route.length, decimals: 1))
-                                .font(.system(size: 10, design: .rounded))
+                                .font(.scaledSystem(size: 10, design: .rounded))
                                 .foregroundStyle(MapUI.textTertiary)
                         }
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.scaledSystem(size: 10, weight: .bold))
                             .foregroundStyle(MapUI.textTertiary)
                     }
                     .padding(9)
@@ -1574,11 +1789,33 @@ struct PlanView: View {
         )
     }
 
+    /// The planner builds geometry, not a race format. Apply the rider's lap
+    /// count to every candidate so cards, previews, saves and navigation all
+    /// agree on the same number.
+    private func applyLapsToResults() {
+        guard !planner.results.isEmpty else { return }
+        guard planner.results.contains(where: { $0.laps != laps }) else { return }
+        planner.results = planner.results.map { route in
+            var route = route
+            route.laps = max(laps, 1)
+            return route
+        }
+    }
+
     private func start(_ route: PlannedRoute, roads: [Road]? = nil) {
+        pendingVehicleRoute = PendingVehicleRoute(route: route,
+                                                  roads: roads ?? planner.roads)
+        showingVehicleChoice = true
+    }
+
+    private func beginStartedRoute(_ pending: PendingVehicleRoute, kind: VehicleKind) {
         // Implicit signal: only roads the rider actually chose to ride get a
         // small preference on the next plan.
+        var route = pending.route
+        route.laps = max(laps, 1)
         RouteTaste.shared.recordStarted(route.usedRoadNames)
-        nav.start(route, roads: roads ?? planner.roads)
+        nav.start(route, roads: pending.roads, vehicleKind: kind)
+        pendingVehicleRoute = nil
         tab = 0
         dismiss()
         onStartNavigation?()
@@ -1613,7 +1850,6 @@ struct PlanView: View {
 
 private struct RoutePreviewView: View {
     let route: PlannedRoute
-    let roads: [Road]
     let onStart: () -> Void
     let onClose: () -> Void
 
@@ -1658,7 +1894,7 @@ private struct RoutePreviewView: View {
                             }
                         } label: {
                             Image(systemName: "map")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.scaledSystem(size: 16, weight: .semibold))
                                 .foregroundStyle(MapUI.ink)
                                 .frame(width: 42, height: 42)
                                 .background(.ultraThinMaterial, in: Circle())
@@ -1714,11 +1950,11 @@ private struct RoutePreviewView: View {
                                 Rectangle().fill(MapUI.line).frame(height: 0.8)
                                 HStack(alignment: .firstTextBaseline) {
                                     Label("Elevation", systemImage: "mountain.2")
-                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
                                         .foregroundStyle(MapUI.ink)
                                     Spacer()
                                     Text("Climb \(Units.elevationText(route.climbMeters))  •  peak \(Units.elevationText(route.maxElevation))")
-                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                        .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
                                         .foregroundStyle(MapUI.cyan)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.8)
@@ -1737,7 +1973,7 @@ private struct RoutePreviewView: View {
                             ForEach(Array(route.steps.prefix(12).enumerated()), id: \.element.id) { index, step in
                                 HStack(spacing: 11) {
                                     Image(systemName: step.symbol)
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.scaledSystem(size: 12, weight: .bold))
                                         .foregroundStyle(MapUI.cyan)
                                         .frame(width: 28, height: 28)
                                         .background(MapUI.cyan.opacity(0.10), in: Circle())
@@ -1747,7 +1983,7 @@ private struct RoutePreviewView: View {
                                         .lineLimit(2)
                                     Spacer(minLength: 8)
                                     Text(Units.distanceText(step.distance, decimals: 1))
-                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                        .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
                                         .monospacedDigit()
                                         .foregroundStyle(MapUI.textTertiary)
                                 }
@@ -1758,6 +1994,13 @@ private struct RoutePreviewView: View {
                                 }
                             }
                         }
+                    }
+
+                    if let shareURL = RouteLink.url(for: route) {
+                        ShareLink(item: shareURL) {
+                            Label("Share route link", systemImage: "link")
+                        }
+                        .buttonStyle(RevertSecondaryButtonStyle())
                     }
 
                     Button {

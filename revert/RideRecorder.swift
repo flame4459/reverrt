@@ -25,6 +25,11 @@ final class RideRecorder {
     var elevationGain = 0.0
     var authStatus: CLAuthorizationStatus = .notDetermined
     @ObservationIgnored var onLocation: ((CLLocation) -> Void)?
+    /// Fires on every path into `start()`: the Start button, the launch
+    /// countdown and a route that auto-starts. The ride debug transcript hangs
+    /// off this rather than off `isRecording`, because a view's `onChange`
+    /// never sees a value that was already set during its first render.
+    @ObservationIgnored var onStart: (() -> Void)?
 
     /// True while the recorder paused itself because the bike stopped moving.
     var isAutoPaused: Bool { autoPaused }
@@ -34,6 +39,9 @@ final class RideRecorder {
     private var pausedTotal: TimeInterval = 0
     private var frozenDuration: TimeInterval?
     private var lastLocation: CLLocation?
+    /// True when any fix in the current recording came from the route
+    /// simulator. Simulated rides are debug data, not journal rides.
+    private(set) var wasSimulated = false
     private var altitudeRef: Double?
     private var journalBuffer: [RidePoint] = []
     private var lastJournalFlush = Date.distantPast
@@ -77,6 +85,7 @@ final class RideRecorder {
         frozenDuration = nil
         pauseStart = nil
         lastLocation = nil
+        wasSimulated = false
         altitudeRef = nil
         stationarySince = nil
         autoPaused = false
@@ -91,6 +100,7 @@ final class RideRecorder {
         backgroundLease = hub.acquireBackground()
         hub.requestAlwaysIfNeeded()
         startAutoPauseTimer()
+        onStart?()
     }
 
     func pause() {
@@ -230,6 +240,7 @@ final class RideRecorder {
     /// tests can drive scripted sequences without Core Location.
     func ingest(_ loc: CLLocation) {
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 20 else { return }
+        if hub.isSimulating { wasSimulated = true }
         currentSpeedMps = max(loc.speed, 0)
         onLocation?(loc)
 

@@ -17,6 +17,8 @@ enum PulseSheet: String, Identifiable {
 /// with the map kept as an immersive full-screen experience and the cockpit
 /// presented without chrome once a ride starts.
 struct PulseShellView: View {
+    @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
+    @Query(sort: \Ride.startDate, order: .reverse) private var rides: [Ride]
     let planner: RoutePlanner
 
     @Environment(NavigationManager.self) private var nav
@@ -49,6 +51,10 @@ struct PulseShellView: View {
                 RideView(onExit: {
                     showingRide = false
                     tab = cockpitReturnTab
+                    cockpitReturnTab = .home
+                }, onPlanRoute: {
+                    showingRide = false
+                    tab = .routes
                     cockpitReturnTab = .home
                 })
             }
@@ -203,6 +209,9 @@ struct PulseShellView: View {
         #if DEBUG
         applyDebugScreen()
         seedDebugRideIfNeeded()
+        seedDebugLoopsIfNeeded()
+        seedDebugCarRideIfNeeded()
+        seedDebugRivalIfNeeded()
         #endif
     }
 
@@ -216,6 +225,78 @@ struct PulseShellView: View {
             context.insert(DebugScreens.sampleRide())
             try? context.save()
         }
+    }
+
+    /// Seeds a couple of saved loops with a matching ride so the replay and
+    /// rivals surfaces can be exercised without tapping through the planner.
+    private func seedDebugLoopsIfNeeded() {
+        guard CommandLine.arguments.contains("-debugSeedLoops") else { return }
+        let descriptor = FetchDescriptor<SavedRoute>()
+        guard (try? context.fetchCount(descriptor)) == 0 else { return }
+
+        let base = DebugScreens.samplePlannedRoute()
+        let first = SavedRoute(route: base, name: "Mt Tam Ridge Loop", roads: [])
+        context.insert(first)
+
+        let ride = DebugScreens.sampleRide()
+        ride.routeName = "Mt Tam Ridge Loop"
+        ride.routeKey = RouteFingerprint.key(for: base)
+        ride.savedRouteID = first.id
+        context.insert(ride)
+
+        var points: [RoutePoint] = []
+        let corners: [(Double, Double)] = [
+            (37.8000, -122.4500),
+            (37.8120, -122.4380),
+            (37.8050, -122.4200),
+            (37.7920, -122.4320)
+        ]
+        for (index, corner) in corners.enumerated() {
+            let next = corners[(index + 1) % corners.count]
+            for step in 0..<24 {
+                let t = Double(step) / 24
+                points.append(RoutePoint(lat: corner.0 + (next.0 - corner.0) * t,
+                                         lon: corner.1 + (next.1 - corner.1) * t,
+                                         road: Int64(index + 1)))
+            }
+        }
+        points.append(points[0])
+        let secondRoute = PlannedRoute(points: points, roads: [:], twistPerKm: 60,
+                                       retraced: 0, bearing: 300, displayName: "Muir Woods Spur")
+        context.insert(SavedRoute(route: secondRoute, name: "Muir Woods Spur", roads: []))
+        try? context.save()
+    }
+
+    private func seedDebugCarRideIfNeeded() {
+        guard CommandLine.arguments.contains("-debugCarRide") else { return }
+        let descriptor = FetchDescriptor<Ride>()
+        guard let rides = try? context.fetch(descriptor),
+              let base = rides.first(where: { ($0.routeKey ?? "").isEmpty == false }) else { return }
+        if rides.contains(where: { $0.vehicleKind == .car && $0.routeKey == base.routeKey }) { return }
+        let carRide = DebugScreens.sampleRide()
+        carRide.routeName = base.routeName
+        carRide.routeKey = base.routeKey
+        carRide.savedRouteID = base.savedRouteID
+        carRide.vehicleKind = .car
+        carRide.bikeName = "Friends' car"
+        carRide.bikeID = nil
+        carRide.durationSeconds = max(base.durationSeconds + 240, 60)
+        carRide.startDate = base.startDate.addingTimeInterval(-3_600)
+        carRide.endDate = carRide.startDate.addingTimeInterval(carRide.durationSeconds)
+        context.insert(carRide)
+        try? context.save()
+    }
+
+    /// Adds a rival result with a replay track built from the seeded ride, so
+    /// the imported-replay path can be inspected without another device.
+    private func seedDebugRivalIfNeeded() {
+        guard CommandLine.arguments.contains("-debugSeedRival") else { return }
+        let descriptor = FetchDescriptor<Ride>()
+        guard let ride = try? context.fetch(descriptor).first,
+              let result = RivalResult.from(ride: ride, rider: "Sam",
+                                            routeName: "Mt Tam Ridge Loop",
+                                            includeTrack: true) else { return }
+        RivalBoard.shared.add(result)
     }
 
     /// Screenshot / QA entry points. Debug-only; they simply preselect a tab
@@ -251,6 +332,31 @@ struct PulseShellView: View {
     #endif
 
     private func handleIntents() {
+        if UserDefaults.standard.bool(forKey: "intent.usualRide") {
+            UserDefaults.standard.set(false, forKey: "intent.usualRide")
+            let best = savedRoutes.max { a, b in
+                rides.filter { $0.savedRouteID == a.id || $0.routeKey == a.fingerprintKey }.count
+                    < rides.filter { $0.savedRouteID == b.id || $0.routeKey == b.fingerprintKey }.count
+            }
+            if let best, let route = best.plannedRoute() {
+                nav.start(route, roads: best.roads, vehicleKind: VehiclePreferences.activeKind)
+                openCockpit()
+            } else {
+                tab = .routes
+                showingPlan = true
+            }
+            return
+        }
+        if UserDefaults.standard.bool(forKey: "intent.openRide") {
+            UserDefaults.standard.set(false, forKey: "intent.openRide")
+            if nav.route != nil {
+                openCockpit()
+            } else {
+                tab = .routes
+                showingPlan = true
+            }
+            return
+        }
         if UserDefaults.standard.bool(forKey: "intent.openGarage") {
             UserDefaults.standard.set(false, forKey: "intent.openGarage")
             tab = .garage

@@ -73,10 +73,6 @@ enum BikeCatalog {
         return groups.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             .map { ($0, groups[$0] ?? []) }
     }()
-
-    static let countByCategory: [BikeCategory: Int] = {
-        Dictionary(grouping: all, by: \.category).mapValues(\.count)
-    }()
 }
 
 
@@ -111,7 +107,7 @@ struct BikePickerView: View {
 
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.scaledSystem(size: 15, weight: .semibold))
                             .foregroundStyle(MapUI.textTertiary)
 
                         TextField("Search bikes", text: $query)
@@ -247,7 +243,7 @@ struct BikePickerView: View {
 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.scaledSystem(size: 18, weight: .semibold))
                         .foregroundStyle(MapUI.accent)
                         .transition(.scale.combined(with: .opacity))
                 }

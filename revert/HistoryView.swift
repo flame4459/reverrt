@@ -24,21 +24,63 @@ struct HistoryView: View {
         return rides.filter { ride in
             ride.bikeDisplayName.localizedCaseInsensitiveContains(needle)
                 || (ride.routeName?.localizedCaseInsensitiveContains(needle) ?? false)
-                || ride.startDate.formatted(date: .abbreviated, time: .omitted)
+                || RevertFormat.mediumDate(ride.startDate)
                     .localizedCaseInsensitiveContains(needle)
         }
+    }
+
+    private var maxFilteredDistance: Double {
+        filteredRides.map(\.distanceMeters).max() ?? 0
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    RevertScreenHeader(
-                        eyebrow: "YOUR GARAGE LOG",
+                    ScreenHeader(
+                        eyebrow: "",
                         title: "Ride history",
-                        subtitle: "Every route, distance and climb in one place.",
-                        systemImage: "clock.arrow.circlepath"
-                    )
+                        variant: .compact,
+                        identifier: AccessibilityID.History.title
+                    ) {
+                        HStack(spacing: 8) {
+                            PulseCircleButton(
+                                systemImage: "square.and.arrow.down",
+                                label: "Import GPX",
+                                identifier: AccessibilityID.History.importGPX
+                            ) {
+                                importing = true
+                            }
+                            if showsCloseButton {
+                                PulseCircleButton(
+                                    systemImage: "xmark",
+                                    tint: Pulse.mutedStrong,
+                                    label: "Close history",
+                                    identifier: AccessibilityID.History.close
+                                ) {
+                                    dismiss()
+                                }
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        NavigationLink {
+                            MonthlyFeatureView(rides: rides)
+                        } label: {
+                            historyFeatureChip("Monthly recap", icon: "calendar")
+                        }
+                        NavigationLink {
+                            CornerFeatureView(rides: rides)
+                        } label: {
+                            historyFeatureChip("Corners", icon: "point.topleft.down.curvedto.point.bottomright.up")
+                        }
+                        NavigationLink {
+                            SegmentFeatureView(rides: rides)
+                        } label: {
+                            historyFeatureChip("Segments", icon: "scissors")
+                        }
+                    }
 
                     if let importProgress {
                         HStack(spacing: 10) {
@@ -55,10 +97,11 @@ struct HistoryView: View {
                     if !rides.isEmpty {
                         HStack(spacing: 9) {
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.scaledSystem(size: 13, weight: .bold))
                                 .foregroundStyle(MapUI.textTertiary)
                             TextField("Search rides, bikes or dates", text: $query)
                                 .font(.system(.subheadline, design: .rounded))
+                                .accessibilityIdentifier(AccessibilityID.History.search)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                             if !query.isEmpty {
@@ -97,8 +140,7 @@ struct HistoryView: View {
                             tint: MapUI.textTertiary
                         )
                     } else {
-                        RideHistorySummary(rides: filteredRides)
-                        RideInsightsView(rides: filteredRides)
+                        RideStatsOverview(rides: filteredRides)
 
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
@@ -117,7 +159,7 @@ struct HistoryView: View {
                                     NavigationLink {
                                         RideDetailView(ride: ride)
                                     } label: {
-                                        RideHistoryRow(ride: ride)
+                                        RideHistoryRow(ride: ride, maxDistance: maxFilteredDistance)
                                     }
                                     .buttonStyle(.plain)
 
@@ -129,7 +171,7 @@ struct HistoryView: View {
                                         }
                                     } label: {
                                         Image(systemName: "ellipsis")
-                                            .font(.system(size: 13, weight: .bold))
+                                            .font(.scaledSystem(size: 13, weight: .bold))
                                             .foregroundStyle(MapUI.textTertiary)
                                             .frame(width: 32, height: 40)
                                             .contentShape(Rectangle())
@@ -146,26 +188,7 @@ struct HistoryView: View {
             }
             .pulseBackground()
             .scrollIndicators(.hidden)
-            .navigationTitle(showsNavigationTitle ? "History" : "")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { importing = true } label: {
-                        Image(systemName: "square.and.arrow.down")
-                    }
-                    .accessibilityLabel("Import GPX")
-                }
-                if showsCloseButton {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("Close history")
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .fileImporter(
                 isPresented: $importing,
                 allowedContentTypes: GPX.contentTypes,
@@ -240,104 +263,153 @@ struct HistoryView: View {
 
 struct RideHistoryRow: View {
     let ride: Ride
+    let maxDistance: Double
 
     var body: some View {
         MapCard {
-            HStack(spacing: 14) {
-                VStack(spacing: 4) {
-                    Image(systemName: "motorcycle")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(MapUI.accentGradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    Text(ride.startDate.formatted(.dateTime.month(.abbreviated).day()))
+            VStack(spacing: 8) {
+                HStack(spacing: 14) {
+                    VStack(spacing: 4) {
+                        Image(systemName: ride.vehicleKind.icon)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(MapUI.accentGradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        Text(RevertFormat.shortDate(ride.startDate))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(MapUI.secondaryInk)
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(RevertFormat.rowDateTime(ride.startDate))
+                            .font(.headline)
+                            .foregroundStyle(MapUI.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                        Text("\(Units.distanceText(ride.distanceMeters, decimals: 1))  •  \(Units.clock(ride.durationSeconds))")
+                            .font(.subheadline)
+                            .foregroundStyle(MapUI.secondaryInk)
+                        HStack(spacing: 10) {
+                            Label("Top \(Units.speedText(ride.maxSpeedMps))", systemImage: "speedometer")
+                                .foregroundStyle(MapUI.accent)
+                            if ride.isCar {
+                                Label(ride.vehicleKind.title, systemImage: ride.vehicleKind.icon)
+                                    .foregroundStyle(MapUI.emerald)
+                            } else {
+                                Label("\(Int(ride.maxLeanAngleDegrees.rounded()))° lean", systemImage: "gauge.with.dots.needle.67percent")
+                                    .foregroundStyle(Pulse.lean)
+                            }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    }
+
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(MapUI.secondaryInk)
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(ride.startDate.formatted(
-                        .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()
-                    ))
-                        .font(.headline)
-                        .foregroundStyle(MapUI.ink)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Text("\(Units.distanceText(ride.distanceMeters, decimals: 1))  •  \(Units.clock(ride.durationSeconds))")
-                        .font(.subheadline)
-                        .foregroundStyle(MapUI.secondaryInk)
-                    HStack(spacing: 10) {
-                        Label("Top \(Units.speedText(ride.maxSpeedMps))", systemImage: "speedometer")
-                            .foregroundStyle(MapUI.accent)
-                        Label("\(Int(ride.maxLeanAngleDegrees.rounded()))° lean", systemImage: "gauge.with.dots.needle.67percent")
-                            .foregroundStyle(MapUI.magenta)
-                    }
-                    .font(.caption.weight(.semibold))
+                if maxDistance > 0 {
+                    RevertProgressBar(
+                        value: min(max(ride.distanceMeters / maxDistance, 0), 1),
+                        tint: MapUI.accentGradient,
+                        height: 3
+                    )
+                    .accessibilityHidden(true)
                 }
-
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(MapUI.secondaryInk)
             }
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-struct RideInsightsView: View {
+struct RideStatsOverview: View {
     let rides: [Ride]
 
-    private var recent: [Ride] {
-        Array(rides.prefix(12).reversed())
-    }
-
-    private var bestDistance: Double { rides.map(\.distanceMeters).max() ?? 0 }
-    private var bestAverage: Double {
+    private var totalDistance: Double { rides.reduce(0) { $0 + $1.distanceMeters } }
+    private var totalElevation: Double { rides.reduce(0) { $0 + $1.elevationGainMeters } }
+    private var totalTime: Double { rides.reduce(0) { $0 + $1.durationSeconds } }
+    private var averageDistance: Double { totalDistance / Double(max(rides.count, 1)) }
+    private var longest: Double { rides.map(\.distanceMeters).max() ?? 0 }
+    private var topSpeed: Double { rides.map(\.maxSpeedMps).max() ?? 0 }
+    private var maxLean: Double { rides.map(\.maxLeanAngleDegrees).max() ?? 0 }
+    private var hasMotorcycle: Bool { rides.contains { $0.vehicleKind == .motorcycle } }
+    private var bestAverageSpeed: Double {
         rides.map { ride in
             ride.durationSeconds > 0 ? ride.distanceMeters / ride.durationSeconds : 0
         }.max() ?? 0
     }
-    private var bestLean: Double { rides.map(\.maxLeanAngleDegrees).max() ?? 0 }
-    private var totalTime: Double { rides.reduce(0) { $0 + $1.durationSeconds } }
 
     var body: some View {
         MapCard {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Label("Personal bests", systemImage: "trophy.fill")
+                    Label("Ride stats", systemImage: "chart.bar.xaxis")
                         .font(.headline.weight(.bold))
                     Spacer()
-                    Text(rides.count == 1 ? "1 ride" : "All \(rides.count) rides")
+                    Text(rides.count == 1 ? "1 ride" : "\(rides.count) rides")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(MapUI.accent)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(Units.distanceText(totalDistance, decimals: 1))
+                        .font(.scaledSystem(size: 34, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(MapUI.accent)
+                    Text("total distance")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(MapUI.secondaryInk)
                 }
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    bestValue("Longest", Units.distanceText(bestDistance, decimals: 1), tint: MapUI.cyan)
-                    bestValue("Fastest avg", Units.speedText(bestAverage), tint: MapUI.emerald)
-                    bestValue("Max lean", "\(Int(bestLean.rounded()))°", tint: MapUI.magenta)
-                    bestValue("Total time", Units.clock(totalTime), tint: MapUI.orange)
+                HStack(spacing: 0) {
+                    miniStat("Avg ride", Units.distanceText(averageDistance, decimals: 1))
+                    miniDivider
+                    miniStat("Time", RevertFormat.duration(totalTime))
+                    miniDivider
+                    miniStat("Climbed", Units.elevationText(totalElevation))
                 }
 
-                if recent.count > 1 {
-                    Chart(recent) { ride in
-                        BarMark(
-                            x: .value("Date", ride.startDate, unit: .day),
-                            y: .value("Distance", Units.distanceValue(ride.distanceMeters))
-                        )
-                        .foregroundStyle(MapUI.cyan.gradient)
-                        .cornerRadius(4)
+                Rectangle()
+                    .fill(MapUI.line)
+                    .frame(height: 0.8)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    bestValue("Longest", Units.distanceText(longest, decimals: 1), tint: MapUI.accent)
+                    bestValue("Fastest avg", Units.speedText(bestAverageSpeed), tint: MapUI.emerald)
+                    if hasMotorcycle {
+                        bestValue("Max lean", "\(Int(maxLean.rounded()))°", tint: Pulse.lean)
+                    } else {
+                        bestValue("Cars", "\(rides.filter(\.isCar).count)", tint: MapUI.emerald)
                     }
-                    .chartXAxis {
-                        AxisMarks(values: .automatic(desiredCount: 4))
-                    }
-                    .chartYAxisLabel(Units.distanceUnit)
-                    .frame(height: 110)
-                    .accessibilityLabel("Recent ride distances")
+                    bestValue("Top speed", Units.speedText(topSpeed), tint: MapUI.accent)
                 }
             }
         }
+    }
+
+    private func miniStat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.scaledSystem(size: 13, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(MapUI.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(MapUI.secondaryInk)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var miniDivider: some View {
+        Rectangle()
+            .fill(MapUI.line)
+            .frame(width: 1, height: 28)
+            .padding(.horizontal, 8)
     }
 
     private func bestValue(_ title: String, _ value: String, tint: Color) -> some View {
@@ -356,66 +428,17 @@ struct RideInsightsView: View {
     }
 }
 
-struct RideHistorySummary: View {
-    let rides: [Ride]
-
-    private var totalDistance: Double { rides.reduce(0) { $0 + $1.distanceMeters } }
-    private var totalElevation: Double { rides.reduce(0) { $0 + $1.elevationGainMeters } }
-    private var averageDistance: Double { totalDistance / Double(max(rides.count, 1)) }
-    private var maxLean: Double { rides.map(\.maxLeanAngleDegrees).max() ?? 0 }
-
-    var body: some View {
-        MapCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Label("All-time snapshot", systemImage: "chart.bar.xaxis")
-                        .font(.headline.weight(.bold))
-                    Spacer()
-                    Text("\(rides.count) ride\(rides.count == 1 ? "" : "s")")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(MapUI.accent)
-                }
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                    summaryValue("Distance", Units.distanceText(totalDistance, decimals: 1), systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-                    summaryValue("Avg distance", Units.distanceText(averageDistance, decimals: 1), systemImage: "chart.line.uptrend.xyaxis")
-                    summaryValue("Climbed", Units.elevationText(totalElevation), systemImage: "mountain.2")
-                    summaryValue("Top speed", Units.speedText(rides.map(\.maxSpeedMps).max() ?? 0), systemImage: "speedometer")
-                }
-
-                HStack(spacing: 10) {
-                    Image(systemName: "gauge.with.dots.needle.67percent")
-                        .foregroundStyle(MapUI.magenta)
-                    Text("Max lean")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(MapUI.secondaryInk)
-                    Spacer()
-                    Text("\(Int(maxLean.rounded()))°")
-                        .font(.title3.weight(.heavy))
-                        .monospacedDigit()
-                        .foregroundStyle(MapUI.magenta)
-                }
-                .padding(.top, 2)
-            }
-        }
+private func historyFeatureChip(_ title: String, icon: String) -> some View {
+    HStack(spacing: 4) {
+        Image(systemName: icon)
+            .font(.scaledSystem(size: 9, weight: .bold))
+        Text(title)
+            .font(.scaledSystem(size: 9.5, weight: .semibold, design: .rounded))
     }
-
-    private func summaryValue(_ title: String, _ value: String, systemImage: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: systemImage)
-                .foregroundStyle(MapUI.teal)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.headline)
-                    .monospacedDigit()
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(MapUI.secondaryInk)
-            }
-            Spacer(minLength: 0)
-        }
-    }
+    .foregroundStyle(MapUI.cyan)
+    .padding(.horizontal, 9)
+    .frame(height: 28)
+    .background(MapUI.cyan.opacity(0.10), in: Capsule())
 }
 
 struct RideDetailView: View {
@@ -432,6 +455,9 @@ struct RideDetailView: View {
     @State private var replayTask: Task<Void, Never>?
     @State private var gpxURL: URL?
     @State private var showingPoster = false
+    @State private var showingRivals = false
+    @Environment(NavigationManager.self) private var nav
+    @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
 
     private var currentPoint: RidePoint? {
         guard points.indices.contains(replayIndex) else { return nil }
@@ -464,7 +490,7 @@ struct RideDetailView: View {
                                 ZStack {
                                     Circle().fill(MapUI.pitchBlack).frame(width: 30, height: 30)
                                     Image(systemName: "motorcycle.fill")
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.scaledSystem(size: 14, weight: .bold))
                                         .foregroundStyle(MapUI.cyan)
                                     Circle().stroke(MapUI.cyan, lineWidth: 1.5).frame(width: 30, height: 30)
                                 }
@@ -479,7 +505,7 @@ struct RideDetailView: View {
 
                 RevertScreenHeader(
                     eyebrow: "POST-RIDE REVIEW",
-                    title: ride.startDate.formatted(date: .abbreviated, time: .omitted),
+                    title: RevertFormat.mediumDate(ride.startDate),
                     subtitle: "Replay the ride, then study every corner.",
                     systemImage: "flag.checkered"
                 )
@@ -492,7 +518,11 @@ struct RideDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         RevertSectionLabel(title: "Telemetry", detail: "\(points.count) samples")
                         HStack(spacing: 0) {
-                            RevertStatTile(label: "Max lean", value: "\(Int(RideAnalysis.maxLean(points).rounded()))°", tint: MapUI.magenta)
+                            if ride.isCar {
+                                RevertStatTile(label: "Vehicle", value: ride.vehicleKind.title, tint: MapUI.emerald)
+                            } else {
+                                RevertStatTile(label: "Max lean", value: "\(Int(RideAnalysis.maxLean(points).rounded()))°", tint: Pulse.lean)
+                            }
                             Rectangle().fill(MapUI.line).frame(width: 1, height: 24).padding(.horizontal, 8)
                             RevertStatTile(label: "Corners", value: "\(turns.count)", tint: MapUI.cyan)
                             Rectangle().fill(MapUI.line).frame(width: 1, height: 24).padding(.horizontal, 8)
@@ -520,7 +550,11 @@ struct RideDetailView: View {
                         Rectangle().fill(MapUI.line).frame(height: 0.7)
                         RevertKeyValueRow(label: "Elevation gain", value: Units.elevationText(ride.elevationGainMeters))
                         Rectangle().fill(MapUI.line).frame(height: 0.7)
-                        RevertKeyValueRow(label: "Max lean", value: "\(Int(max(ride.maxLeanAngleDegrees, RideAnalysis.maxLean(points)).rounded()))°", tint: MapUI.magenta)
+                        if ride.isCar {
+                            RevertKeyValueRow(label: "Vehicle", value: ride.vehicleKind.title, tint: MapUI.emerald)
+                        } else {
+                            RevertKeyValueRow(label: "Max lean", value: "\(Int(max(ride.maxLeanAngleDegrees, RideAnalysis.maxLean(points)).rounded()))°", tint: Pulse.lean)
+                        }
                     }
                 }
 
@@ -556,6 +590,38 @@ struct RideDetailView: View {
                     ShareLink(item: gpxURL)
                 }
             }
+            if ride.routeKey != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingRivals = true
+                    } label: {
+                        Image(systemName: "trophy")
+                    }
+                    .accessibilityLabel("Rivals for this ride")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        rideAgain()
+                    } label: {
+                        Label("Ride it again", systemImage: "arrow.clockwise")
+                    }
+                    NavigationLink {
+                        CornerReportDetailView(ride: ride)
+                    } label: {
+                        Label("Corner report", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                    }
+                    NavigationLink {
+                        SegmentDetailView(ride: ride)
+                    } label: {
+                        Label("Segment hunt", systemImage: "scissors")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Ride data actions")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingPoster = true
@@ -571,6 +637,24 @@ struct RideDetailView: View {
         .sheet(isPresented: $showingPoster) {
             StoryPosterStudio(ride: ride, points: points, turns: turns)
         }
+        .sheet(isPresented: $showingRivals) {
+            RouteLeaderboardView(
+                title: ride.routeName ?? "This loop",
+                routeKey: ride.routeKey ?? "",
+                savedRouteID: ride.savedRouteID,
+                routeName: ride.routeName,
+                laps: max(ride.laps, 1),
+                isSprint: ride.isSprint
+            )
+        }
+    }
+
+    private func rideAgain() {
+        let saved = ride.savedRouteID.flatMap { id in savedRoutes.first { $0.id == id } }
+            ?? (ride.routeKey.flatMap { key in savedRoutes.first { $0.fingerprintKey == key } })
+        guard let route = RideAgainRoute.make(ride: ride, saved: saved) else { return }
+        RevertHaptics.success()
+        FeatureRideLauncher.start(route: route, roads: saved?.roads ?? [], nav: nav)
     }
 
     // MARK: Heat controls
@@ -581,7 +665,7 @@ struct RideDetailView: View {
                 options: RideHeatMetric.allCases,
                 selection: $metric,
                 title: { $0.title },
-                tint: metric == .speed ? MapUI.cyan : MapUI.magenta
+                tint: metric == .speed ? MapUI.cyan : Pulse.lean
             )
             .onChange(of: metric) { _, newValue in
                 heatSegments = RideAnalysis.heatSegments(from: points, metric: newValue)
@@ -734,7 +818,7 @@ struct RideDetailView: View {
                             Spacer()
                             Text("\(Int(turn.peakLean.rounded()))°")
                                 .font(.headline.monospacedDigit())
-                                .foregroundStyle(MapUI.magenta)
+                                .foregroundStyle(Pulse.lean)
                         }
                         .padding(10)
                         .background(MapUI.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

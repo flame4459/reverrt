@@ -91,11 +91,11 @@ struct SavedPlacesView: View {
                     .foregroundStyle(MapUI.ink)
                 if let saved {
                     Text(String(format: "%.4f, %.4f", saved.latitude, saved.longitude))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.scaledSystem(size: 11, design: .monospaced))
                         .foregroundStyle(MapUI.textTertiary)
                 } else {
                     Text("Set it once and it is always one tap away.")
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.scaledSystem(size: 11, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                 }
             }

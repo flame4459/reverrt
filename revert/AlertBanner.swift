@@ -6,7 +6,7 @@ struct AlertBanner: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: alert.hazard.kind.symbol)
-                .font(.system(size: 30, weight: .bold))
+                .font(.scaledSystem(size: 30, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
                 .background(MapUI.orange, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -42,7 +42,7 @@ struct CurveBanner: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: alert.symbol)
-                .font(.system(size: 30, weight: .bold))
+                .font(.scaledSystem(size: 30, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
                 .background(MapUI.accentDark, in: RoundedRectangle(cornerRadius: 15, style: .continuous))

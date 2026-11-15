@@ -314,17 +314,17 @@ struct ColorSchemePicker: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(theme.title)
-                                .font(.system(size: 13, weight: selected ? .bold : .semibold))
+                                .font(.scaledSystem(size: 13, weight: selected ? .bold : .semibold))
                                 .foregroundStyle(Pulse.ink)
                             Text(theme.subtitle)
-                                .font(.system(size: 10))
+                                .font(.scaledSystem(size: 10))
                                 .foregroundStyle(Pulse.muted)
                         }
 
                         Spacer(minLength: 6)
 
                         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.scaledSystem(size: 18, weight: .semibold))
                             .foregroundStyle(selected ? Pulse.accent : Pulse.muted)
                     }
                     .padding(.vertical, 9)

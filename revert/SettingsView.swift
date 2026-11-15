@@ -4,6 +4,7 @@ import AVFoundation
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alert.voice") private var voice = true
+    @AppStorage("voice.muted") private var voiceMuted = false
     @AppStorage("navigation.voice") private var navigationVoice = true
     @AppStorage("alert.voiceName") private var voiceName = "System default"
     @AppStorage("alert.stop") private var stop = true
@@ -20,8 +21,10 @@ struct SettingsView: View {
     @AppStorage("alert.hazardSpeedThreshold") private var hazardSpeedThreshold = 0
     @AppStorage("alert.reactionTime") private var reactionTime = 1.5
     @AppStorage("rider.selectedBike") private var selectedBike = BikeCatalog.defaultBike
-    @AppStorage("units.metric") private var metric = false
+    @AppStorage("units.system") private var unitSystem = UnitSystemPreference.automatic.rawValue
     @AppStorage("ride.autoPause") private var autoPause = true
+    @AppStorage("ride.launchCountdown") private var launchCountdown = true
+    @AppStorage("rider.name") private var riderName = ""
     @AppStorage("alert.haptics") private var haptics = true
     @AppStorage("voice.commands") private var voiceCommands = false
     @AppStorage("helmet.binaural") private var binaural = true
@@ -33,12 +36,19 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    RevertScreenHeader(
-                        eyebrow: "REVERT CONTROL",
+                    ScreenHeader(
+                        eyebrow: "",
                         title: "Make it yours",
-                        subtitle: "Tune navigation, voice, alerts and the colour of every ride screen.",
-                        systemImage: "slider.horizontal.3"
-                    )
+                        variant: .compact,
+                        identifier: AccessibilityID.Settings.title
+                    ) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .font(.headline.weight(.semibold))
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier(AccessibilityID.Settings.done)
+                    }
 
                     RevertSectionLabel(title: "Appearance")
                         .padding(.top, 4)
@@ -85,21 +95,44 @@ struct SettingsView: View {
                     SettingsCard(
                         title: "Units",
                         icon: "ruler",
-                        footer: "Every speed, distance and elevation in the app follows this setting."
+                        footer: "Automatic follows the iPhone region: US and UK get miles, most other regions get kilometres. Pin Metric or Imperial if you travel or prefer one system."
                     ) {
-                        Toggle("Metric (km, km/h, metres)", isOn: $metric)
-                            .onChange(of: metric) { _, value in
-                                Units.setMetric(value)
-                                WidgetBridge.updateUnits()
+                        Picker("Units", selection: $unitSystem) {
+                            ForEach(UnitSystemPreference.allCases) { preference in
+                                Text(preference.title).tag(preference.rawValue)
                             }
+                        }
+                        .pickerStyle(.segmented)
+                        .tint(MapUI.accent)
+                        .onChange(of: unitSystem) { _, raw in
+                            Units.setPreference(UnitSystemPreference(rawValue: raw) ?? .automatic)
+                            WidgetBridge.updateUnits()
+                        }
+
+                        Text(Units.effectiveDescription)
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(MapUI.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     SettingsCard(
                         title: "Ride recording",
                         icon: "record.circle",
-                        footer: "Auto-pause stops the clock after two minutes without movement and resumes as soon as you pull away."
+                        footer: "Auto-pause stops the clock after two minutes without movement and resumes as soon as you pull away. The loop countdown runs when you reach the loop start and begins the timer at GO, so the ride there is not part of the time."
                     ) {
                         Toggle("Ride auto-pause", isOn: $autoPause)
+                        Toggle("3 · 2 · 1 at the loop start", isOn: $launchCountdown)
+                    }
+
+                    SettingsCard(
+                        title: "Rivals",
+                        icon: "trophy",
+                        footer: "This name travels with a shared time link. Leaderboards are built from links you and your friends send; nothing is uploaded."
+                    ) {
+                        TextField("Your rider name", text: $riderName)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .foregroundStyle(MapUI.ink)
                     }
 
                     SettingsCard(
@@ -119,6 +152,24 @@ struct SettingsView: View {
                             .tint(MapUI.emerald)
                             .accessibilityLabel("Fuel in tank")
                             .accessibilityValue("\(Int((tankFraction * 100).rounded())) percent")
+                    }
+
+                    SettingsCard(
+                        title: "Road preferences",
+                        icon: "road.lanes",
+                        footer: "Loops nudge towards roads you like and away from ones you don't. Applied on the next plan; everything stays on this iPhone."
+                    ) {
+                        NavigationLink {
+                            RoadPreferencesView()
+                        } label: {
+                            HStack {
+                                Label("Roads to prefer or avoid", systemImage: "arrow.triangle.branch")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.scaledSystem(size: 10, weight: .bold))
+                                    .foregroundStyle(MapUI.textTertiary)
+                            }
+                        }
                     }
 
                     RevertSectionLabel(title: "Voice & awareness")
@@ -141,7 +192,7 @@ struct SettingsView: View {
                         } label: {
                             HStack(spacing: 9) {
                                 Image(systemName: "person.wave.2")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.scaledSystem(size: 12, weight: .semibold))
                                     .foregroundStyle(MapUI.emerald)
                                     .frame(width: 26, height: 26)
                                     .background(MapUI.emerald.opacity(0.10), in: Circle())
@@ -150,12 +201,12 @@ struct SettingsView: View {
                                     .foregroundStyle(MapUI.ink)
                                 Spacer(minLength: 6)
                                 Text(narratorLabel)
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .font(.scaledSystem(size: 12, weight: .bold, design: .rounded))
                                     .foregroundStyle(MapUI.emerald)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.scaledSystem(size: 10, weight: .bold))
                                     .foregroundStyle(MapUI.textTertiary)
                             }
                         }
@@ -237,7 +288,7 @@ struct SettingsView: View {
                         RevertOptionPicker(
                             options: [1.0, 1.5, 2.0, 2.5],
                             selection: $reactionTime,
-                            title: { String(format: "%.1f s", $0) }
+                            title: { "\(RevertFormat.number($0, decimals: 1)) s" }
                         )
 
                         Toggle("Railroad crossings", isOn: $rail)
@@ -296,6 +347,14 @@ struct SettingsView: View {
                         .padding(.top, 4)
 
                     SettingsCard(
+                        title: "Mute all voice",
+                        icon: "speaker.slash",
+                        footer: "Silences turn-by-turn and hazard prompts at once. The cockpit has a one-tap toggle for this on the map dock."
+                    ) {
+                        Toggle("Mute every spoken prompt", isOn: $voiceMuted)
+                    }
+
+                    SettingsCard(
                         title: "Helmet audio",
                         icon: "airpodspro",
                         footer: "Spatial cues put hazard and turn alerts on the side of the road they belong to. Your Bluetooth helmet must be connected as the audio route."
@@ -312,7 +371,7 @@ struct SettingsView: View {
                                 Label("Saved places", systemImage: "star")
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.scaledSystem(size: 10, weight: .bold))
                                     .foregroundStyle(MapUI.textTertiary)
                             }
                         }
@@ -324,7 +383,19 @@ struct SettingsView: View {
                                 Label("Offline riding data", systemImage: "arrow.down.circle")
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.scaledSystem(size: 10, weight: .bold))
+                                    .foregroundStyle(MapUI.textTertiary)
+                            }
+                        }
+                        Divider()
+                        NavigationLink {
+                            RideDebugView()
+                        } label: {
+                            HStack {
+                                Label("Ride debug files", systemImage: "doc.text.magnifyingglass")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.scaledSystem(size: 10, weight: .bold))
                                     .foregroundStyle(MapUI.textTertiary)
                             }
                         }
@@ -336,7 +407,7 @@ struct SettingsView: View {
                                 Label("About, privacy & diagnostics", systemImage: "info.circle")
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.scaledSystem(size: 10, weight: .bold))
                                     .foregroundStyle(MapUI.textTertiary)
                             }
                         }
@@ -348,16 +419,7 @@ struct SettingsView: View {
             }
             .pulseBackground()
             .scrollIndicators(.hidden)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .font(.headline.weight(.semibold))
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .tint(MapUI.accent)
         }
     }
@@ -396,7 +458,7 @@ struct SettingsCard<Content: View>: View {
         case "exclamationmark.triangle", "arrow.turn.up.right", "speedometer", "road.lanes":
             return MapUI.amber
         case "gauge.with.dots.needle.67percent":
-            return MapUI.magenta
+            return Pulse.lean
         case "externaldrive":
             return MapUI.violet
         default:

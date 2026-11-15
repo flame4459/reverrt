@@ -15,6 +15,9 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
 
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @ObservationIgnored private(set) var lastLocation: CLLocation?
+    /// When the route simulator is driving the app, real fixes are ignored and
+    /// synthetic ones are published through the same subscriber path.
+    private(set) var isSimulating = false
 
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private var locationSubscribers: [UUID: (CLLocation) -> Void] = [:]
@@ -68,11 +71,40 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
         manager.requestWhenInUseAuthorization()
     }
 
+    // MARK: Simulation
+
+    func beginSimulation() {
+        guard !isSimulating else { return }
+        isSimulating = true
+        manager.stopUpdatingLocation()
+    }
+
+    func endSimulation() {
+        guard isSimulating else { return }
+        isSimulating = false
+        applyConfiguration()
+    }
+
+    /// Publishes a synthetic fix exactly as if Core Location had delivered it.
+    /// Navigation, the recorder and the alert engine all subscribe to this hub,
+    /// so the rest of the app cannot tell the difference.
+    func inject(_ location: CLLocation) {
+        guard isSimulating else { return }
+        lastLocation = location
+        for handler in locationSubscribers.values {
+            handler(location)
+        }
+    }
+
     func requestAlwaysIfNeeded() {
         guard !requestedAlways, authorizationStatus == .authorizedWhenInUse else { return }
         requestedAlways = true
         manager.requestAlwaysAuthorization()
     }
+
+    /// Continuous recording needs "Always". "While Using" stops delivering
+    /// fixes the moment the screen locks, which is most of a ride.
+    var hasBackgroundAuthorization: Bool { authorizationStatus == .authorizedAlways }
 
     /// A claim on one of the hub's accuracy tiers.
     ///
@@ -92,8 +124,6 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
             self.hub = hub
             self.tier = tier
         }
-
-        var isActive: Bool { active }
 
         /// Gives the claim back. Safe to call more than once, and safe after
         /// the hub has gone away.
@@ -129,6 +159,10 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
     var backgroundClaimCount: Int { backgroundClients }
 
     private func applyConfiguration() {
+        if isSimulating {
+            manager.stopUpdatingLocation()
+            return
+        }
         manager.desiredAccuracy = preciseClients > 0 ? kCLLocationAccuracyBest : kCLLocationAccuracyHundredMeters
         manager.distanceFilter = preciseClients > 0 ? 5 : 25
         let wantsBackground = backgroundClients > 0 && authorizationStatus == .authorizedAlways
@@ -156,9 +190,15 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last,
-              location.horizontalAccuracy > 0,
-              location.horizontalAccuracy <= 1_000 else { return }
+        guard !isSimulating else { return }
+        // A batch can carry several fixes after a suspension, a background
+        // stretch or a slow redraw. They are not guaranteed to be in order, so
+        // the newest timestamp is the rider's position — `locations.last`
+        // trusted the delivery order and could hand navigation a fix that was
+        // already seconds old.
+        guard let location = locations
+            .filter({ $0.horizontalAccuracy > 0 && $0.horizontalAccuracy <= 1_000 })
+            .max(by: { $0.timestamp < $1.timestamp }) else { return }
         lastLocation = location
         for handler in locationSubscribers.values {
             handler(location)

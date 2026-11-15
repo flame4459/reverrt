@@ -36,10 +36,6 @@ final class VoicePackLibrary {
         return installed.first { $0.id == selectedID }
     }
 
-    var installedIDs: Set<String> {
-        Set(installed.map(\.id))
-    }
-
     private var clipCache: [String: [VoiceClip: URL]] = [:]
     private let fileManager = FileManager.default
     private let session: URLSession
@@ -93,11 +89,6 @@ final class VoicePackLibrary {
         }
         clipCache[pack.id] = map
         return map
-    }
-
-    /// True when the pack has every clip a navigation prompt can need.
-    func hasRequiredClips(_ pack: InstalledVoicePack) -> Bool {
-        VoiceClip.requiredForInstall.isSubset(of: Set(clips(for: pack).keys))
     }
 
     func select(_ pack: InstalledVoicePack) {

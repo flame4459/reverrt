@@ -28,10 +28,10 @@ nonisolated enum RideDistanceScale {
     }
 
     static func presetLabel(_ miles: Double) -> String {
-        if UserDefaults.standard.bool(forKey: "units.metric") {
+        if Units.isMetric {
             let km = miles * 1.609344
-            return km < 10 ? String(format: "%.1f", km) : String(format: "%.0f", km)
+            return RevertFormat.number(km, decimals: km < 10 ? 1 : 0)
         }
-        return miles >= 1_000 ? "1,000" : String(format: "%.0f", miles)
+        return RevertFormat.number(miles, decimals: 0)
     }
 }

@@ -68,6 +68,58 @@ Device builds sign cleanly and run everything except CarPlay; simulator builds
 include the key, which is what the CarPlay Simulator checks. Neither needs an
 approved profile today.
 
+## The Dashboard: CarPlay without the entitlement
+
+Apple gates the CarPlay *app*, not the CarPlay *screen*. Since iOS 26, widgets
+and Live Activities surface on the CarPlay Dashboard with no CarPlay entitlement
+(the dashboard ride card itself needs iOS 18, where the small activity family was
+introduced; iOS 17 gets the lock-screen card only)
+at all — in Apple's own words from
+[WWDC25 session 216](https://developer.apple.com/videos/play/wwdc2025/216/),
+"you can make them available to drivers in CarPlay, even if you don't have a
+CarPlay App."
+
+So a device build carries two independent surfaces:
+
+| Surface | What it shows | Entitlement |
+|---|---|---|
+| CarPlay app (`CPMapTemplate`) | Full map, car-side lists and search | `com.apple.developer.carplay-maps` — Apple approval |
+| Dashboard Live Activity | Next maneuver, distance, remaining + ETA | none |
+| Dashboard widget | "Start a loop", or "Ride in progress" | none |
+
+The Live Activity is the riding surface, because a widget is limited to a
+timeline budget of a few dozen refreshes a day — fine for "last ride", useless
+for a turn cue. It declares `supplementalActivityFamilies([.small])`, the family
+CarPlay and the Watch Smart Stack render, and switches to a three-fact card
+there (no End button: head-unit touch is unreliable, and ending a route at speed
+should not be one accidental tap away). The widget is the parked surface —
+`systemSmall`, deep-linking to `revert://plan`.
+
+The rider opts in per vehicle under **Settings → General → CarPlay → [vehicle]**;
+Live Activities also have a toggle in the CarPlay Settings app.
+
+### Car mode in the Dashboard snapshot
+
+Since the car surfaces are Dashboard surfaces, the widget and Live Activity
+share a `CarWidgetSnapshot` in the app group. It carries the mode (parked /
+driving / paused / arrived / simulation), vehicle type, next turn, instruction,
+remaining, ETA, speed, speed limit, lap, hazard and the SIM flag. The Dashboard
+widget uses it for its parked/riding/arrived/simulation cards, and the Live
+Activity's small car card adds speed/limit, lap, hazard and SIM to the turn
+card. Both are updated from the phone's navigation state; no coordinates are
+written into the snapshot.
+
+### Checking it
+
+- **Simulator**: install a simulator build, then *I/O → External Displays →
+  CarPlay*. Start a ride to see the Live Activity on the Dashboard, and add the
+  Revert widget from the Dashboard's widget strip.
+- **Phone**: the same widget renders in the Home Screen gallery, and the Live
+  Activity on the Lock Screen in its wide layout (which keeps the End shortcut).
+
+The CarPlay app code stays in place for the day Apple approves the entitlement;
+nothing above depends on it, and nothing below is needed for the Dashboard.
+
 ## Before it works in a vehicle
 
 1. Request the CarPlay Navigation entitlement at

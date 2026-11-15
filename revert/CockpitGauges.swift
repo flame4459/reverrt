@@ -28,12 +28,12 @@ struct VectorArcLeanGauge: View {
                 if maxAngle > 2 {
                     let ghostFraction = min(maxAngle / gaugeLimit, 1.0)
                     GhostNeedle(fraction: ghostFraction)
-                        .stroke(MapUI.magenta.opacity(0.85), style: StrokeStyle(lineWidth: 2.5, dash: [4, 3]))
+                        .stroke(Pulse.lean.opacity(0.85), style: StrokeStyle(lineWidth: 2.5, dash: [4, 3]))
                         .frame(width: 170, height: 110)
                 }
 
                 // Active Live Sweeping Wing
-                if let current = angle, abs(current) >= 0.5 {
+                if isCalibrated, let current = angle, abs(current) >= 0.5 {
                     let clamped = min(abs(current), gaugeLimit)
                     let fraction = clamped / gaugeLimit
                     let isRight = current >= 0
@@ -50,17 +50,17 @@ struct VectorArcLeanGauge: View {
                 VStack(spacing: 0) {
                     if let angle {
                         Text("\(Int(abs(angle).rounded()))°")
-                            .font(.system(size: 34, weight: .heavy, design: .rounded))
+                            .font(.scaledSystem(size: 34, weight: .heavy, design: .rounded))
                             .foregroundStyle(gaugeColor(for: abs(angle)))
                             .monospacedDigit()
                     } else {
                         Text("--°")
-                            .font(.system(size: 34, weight: .heavy, design: .rounded))
+                            .font(.scaledSystem(size: 34, weight: .heavy, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
 
                     Text(leanDirectionText)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.scaledSystem(size: 10, weight: .bold))
                         .tracking(1.4)
                         .foregroundStyle(MapUI.secondaryInk)
                 }
@@ -71,7 +71,7 @@ struct VectorArcLeanGauge: View {
             HStack(spacing: 8) {
                 Image(systemName: "gauge.with.dots.needle.67percent")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(MapUI.magenta)
+                    .foregroundStyle(Pulse.lean)
                 Text("PEAK \(Int(maxAngle.rounded()))°")
                     .font(.caption2.weight(.bold))
                     .monospacedDigit()
@@ -83,17 +83,22 @@ struct VectorArcLeanGauge: View {
             .overlay(Capsule().stroke(MapUI.fiberOpticBorder, lineWidth: 0.8))
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Lean angle: \(Int(abs(angle ?? 0).rounded())) degrees, peak \(Int(maxAngle.rounded())) degrees")
+        .accessibilityLabel(
+            isCalibrated
+                ? "Lean angle: \(Int(abs(angle ?? 0).rounded())) degrees, peak \(Int(maxAngle.rounded())) degrees"
+                : "Lean angle is not calibrated. Hold the phone upright and calibrate. Peak \(Int(maxAngle.rounded())) degrees"
+        )
     }
 
     private var leanDirectionText: String {
+        guard isCalibrated else { return "CALIBRATE" }
         guard let angle, abs(angle) >= 2 else { return "UPRIGHT" }
         return angle > 0 ? "RIGHT LEAN" : "LEFT LEAN"
     }
 
     private func gaugeColor(for degrees: Double) -> Color {
         if degrees >= 42 {
-            return MapUI.magenta
+            return Pulse.lean
         } else if degrees >= 26 {
             return MapUI.emerald
         } else {
@@ -273,8 +278,8 @@ struct GForceRadarView: View {
 
             // Live G magnitude label
             let totalG = sqrt(pow(model.lateralG, 2) + pow(model.longitudinalG, 2))
-            Text(String(format: "%.2f G", totalG))
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+            Text("\(RevertFormat.number(totalG, decimals: 2)) G")
+                .font(.scaledSystem(size: 11, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(MapUI.cyan)
         }
@@ -283,73 +288,15 @@ struct GForceRadarView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(MapUI.fiberOpticBorder, lineWidth: 1))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Traction circle")
-        .accessibilityValue(String(format: "%.2f G", sqrt(pow(model.lateralG, 2) + pow(model.longitudinalG, 2))))
+        .accessibilityValue("\(RevertFormat.number(sqrt(pow(model.lateralG, 2) + pow(model.longitudinalG, 2)), decimals: 2)) G")
         .onAppear { model.start() }
         .onDisappear { model.stop() }
     }
 
     private func trailColor(for pt: CGPoint) -> Color {
         let mag = sqrt(pt.x * pt.x + pt.y * pt.y)
-        if mag >= 0.8 { return MapUI.magenta }
+        if mag >= 0.8 { return Pulse.lean }
         if mag >= 0.45 { return MapUI.emerald }
         return MapUI.cyan
-    }
-}
-
-// MARK: - Custom Motorcycle Road Marker
-struct CockpitBikeMarker: View {
-    let bikeName: String
-    let heading: Double
-
-    var body: some View {
-        ZStack {
-            // Road surface glow aura
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [MapUI.cyan.opacity(0.45), .clear],
-                        center: .center,
-                        startRadius: 4,
-                        endRadius: 28
-                    )
-                )
-                .frame(width: 56, height: 56)
-
-            // Superbike Vector Chase Silhouette
-            SuperbikeSilhouette()
-                .fill(
-                    LinearGradient(
-                        colors: [MapUI.cyan, Color.white],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 28, height: 38)
-                .shadow(color: MapUI.cyan, radius: 6)
-                .rotationEffect(.degrees(heading))
-        }
-        .accessibilityLabel("Motorcycle marker facing \(Int(heading)) degrees")
-    }
-}
-
-private struct SuperbikeSilhouette: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width
-        let h = rect.height
-
-        // Front tire / aero windscreen
-        path.move(to: CGPoint(x: w * 0.5, y: 0))
-        path.addLine(to: CGPoint(x: w * 0.72, y: h * 0.28))
-        path.addLine(to: CGPoint(x: w * 0.85, y: h * 0.55))
-        // Tail
-        path.addLine(to: CGPoint(x: w * 0.62, y: h * 0.95))
-        path.addLine(to: CGPoint(x: w * 0.5, y: h))
-        path.addLine(to: CGPoint(x: w * 0.38, y: h * 0.95))
-        // Left flank
-        path.addLine(to: CGPoint(x: w * 0.15, y: h * 0.55))
-        path.addLine(to: CGPoint(x: w * 0.28, y: h * 0.28))
-        path.closeSubpath()
-        return path
     }
 }

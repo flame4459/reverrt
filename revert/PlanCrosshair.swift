@@ -94,17 +94,17 @@ struct PlanAimReadout: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "scope")
-                .font(.system(size: 9, weight: .bold))
+                .font(.scaledSystem(size: 9, weight: .bold))
                 .foregroundStyle(tint)
             Text(target)
-                .font(.system(size: 9, weight: .black, design: .rounded))
+                .font(.scaledSystem(size: 9, weight: .black, design: .rounded))
                 .tracking(1)
                 .foregroundStyle(tint)
             Rectangle()
                 .fill(.white.opacity(0.22))
                 .frame(width: 0.7, height: 10)
             Text(coordinateText)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.scaledSystem(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.92))
         }
         .animation(.easeInOut(duration: 0.2), value: target)

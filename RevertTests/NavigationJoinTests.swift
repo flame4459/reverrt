@@ -1,0 +1,39 @@
+import Testing
+import Foundation
+import CoreLocation
+@testable import Revert
+
+@MainActor
+struct NavigationJoinTests {
+    private func route(kind: RouteKind, count: Int = 400) -> PlannedRoute {
+        let points = (0..<count).map { index in
+            RoutePoint(lat: 40.0 + Double(index) * 0.00005, lon: -73.0, road: 0)
+        }
+        return PlannedRoute(points: points, roads: [:], twistPerKm: 0,
+                            retraced: 0, bearing: 0, kind: kind)
+    }
+
+    @Test func pointToPointJoinsAwayFromTheStart() {
+        let nav = NavigationManager()
+        defer { nav.stop() }
+        nav.start(route(kind: .directions), roads: [])
+        // ~200 m along the line. The old 75 m gate to the route's first point
+        // refused this, so guidance never advanced and the first turn was
+        // announced for the rest of the ride.
+        nav.handle(CLLocation(latitude: 40.0 + 0.002, longitude: -73.0))
+        #expect(nav.joined)
+    }
+
+    @Test func timedLoopStillWaitsForItsStartLine() {
+        let nav = NavigationManager()
+        defer { nav.stop() }
+        nav.start(route(kind: .loop), roads: [])
+        // 400 m from the start: a loop must not join early, or the clock
+        // would begin at the house instead of the start line.
+        nav.handle(CLLocation(latitude: 40.0 + 0.004, longitude: -73.0))
+        #expect(!nav.joined)
+        // At the line it joins.
+        nav.handle(CLLocation(latitude: 40.0 + 0.0002, longitude: -73.0))
+        #expect(nav.joined)
+    }
+}

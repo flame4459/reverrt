@@ -121,7 +121,9 @@ final class CarPlayMapViewController: UIViewController, MKMapViewDelegate {
         if let end = route.destination ?? coordinates.last {
             let pin = MKPointAnnotation()
             pin.coordinate = end
-            pin.title = route.kind == .loop ? "Start / finish" : "Destination"
+            pin.title = route.kind.isLoop
+                ? "Start / finish"
+                : (route.kind.isSprint ? "Finish" : "Destination")
             mapView.addAnnotation(pin)
             destinationAnnotation = pin
         }

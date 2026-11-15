@@ -26,6 +26,18 @@ struct OpenGarageIntent: AppIntent {
     }
 }
 
+struct StartUsualRideIntent: AppIntent {
+    static var title: LocalizedStringResource = "Start my usual loop"
+    static var description = IntentDescription("Ride the saved loop you have completed most often.")
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult {
+        UserDefaults.standard.set(true, forKey: "intent.usualRide")
+        NotificationCenter.default.post(name: .revertOpenIntent, object: nil)
+        return .result()
+    }
+}
+
 /// Bridges App Intents to the running UI. The UserDefaults flag covers a cold
 /// launch; the notification reaches an app that is already on screen, where
 /// `onAppear` will not fire again.
@@ -63,6 +75,15 @@ struct RevertShortcuts: AppShortcutsProvider {
             phrases: ["Open my garage in \(.applicationName)"],
             shortTitle: "Open garage",
             systemImageName: "motorcycle"
+        )
+        AppShortcut(
+            intent: StartUsualRideIntent(),
+            phrases: [
+                "Start my usual loop with \(.applicationName)",
+                "Ride my usual loop with \(.applicationName)"
+            ],
+            shortTitle: "Usual loop",
+            systemImageName: "arrow.clockwise"
         )
     }
 }

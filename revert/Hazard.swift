@@ -16,18 +16,6 @@ enum HazardKind: String, Codable, CaseIterable {
         }
     }
 
-    var spokenText: String {
-        switch self {
-        case .stop: "Stop sign ahead"
-        case .signal: "Traffic light ahead"
-        case .speedCamera: "Speed camera ahead"
-        case .redLightCamera: "Red light camera ahead"
-        case .railCrossing: "Railroad crossing ahead"
-        case .school: "School zone ahead"
-        case .roundabout: "Roundabout ahead"
-        }
-    }
-
     /// Short noun for spoken warnings, e.g. "Stop sign in 300 feet".
     var approachName: String {
         switch self {
@@ -64,13 +52,13 @@ enum HazardKind: String, Codable, CaseIterable {
         }
     }
 
-    // How far off your heading / sideways the hazard may be and still count as "ahead"
-    var maxBearing: Double { self == .school ? 70 : 30 }
+    /// Sideways tolerance, in metres, for the alert engine's corridor
+    /// projection. The one place these numbers live; AlertManager reads them.
     var lateralTolerance: Double {
         switch self {
-        case .school: 150      // schools sit back from the road
-        case .roundabout: 45
-        default: 30
+        case .school: 45       // schools sit back from the road
+        case .roundabout: 30
+        default: 14
         }
     }
     var maxLookahead: Double { self == .school ? 250 : 450 }
@@ -85,7 +73,6 @@ nonisolated struct Hazard: Codable, Hashable, Identifiable, Sendable {
     let lon: Double
 
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lon) }
-    var location: CLLocation { CLLocation(latitude: lat, longitude: lon) }
 }
 
 enum AlertSettings {

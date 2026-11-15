@@ -270,6 +270,191 @@ struct RideSafetyTests {
         #expect(nav.route == nil)
     }
 
+    // MARK: Position accuracy
+
+    /// A 1 km straight run east from `lon` with a turn at `turnAt` and the
+    /// finish at 1 km. The geometry has no corners, so the maneuvers are
+    /// supplied by hand: these tests are about where the app thinks the rider
+    /// is, not about turn detection.
+    private static func accuracyRoute(lon: Double = -73.5,
+                                      turnAt: Double = 400,
+                                      length: Double = 1_000) -> PlannedRoute {
+        let degreesPerMeter = 1 / (111_320 * cos(40.7 * .pi / 180))
+        let points = stride(from: 0.0, through: length, by: 10).map { meters in
+            RoutePoint(lat: 40.7, lon: lon + meters * degreesPerMeter, road: 1)
+        }
+        var route = PlannedRoute(points: points, roads: [:], twistPerKm: 0,
+                                 retraced: 0, bearing: 90)
+        route.steps = [
+            NavStep(id: 0, turn: .start, road: nil, at: 0, distance: 0),
+            NavStep(id: 1, turn: .right, road: "Main St", at: 40, distance: turnAt),
+            NavStep(id: 2, turn: .arrive, road: nil, at: points.count - 1, distance: length)
+        ]
+        return route
+    }
+
+    /// A fix `meters` along the accuracy route, `lateral` metres off it, taken
+    /// `age` seconds ago.
+    private static func accuracyFix(on route: PlannedRoute, at meters: Double,
+                                    lateral: Double = 0, speed: Double = 20,
+                                    course: Double = 90, age: TimeInterval = 0) -> CLLocation {
+        let degreesPerMeter = 1 / (111_320 * cos(40.7 * .pi / 180))
+        let coordinate = CLLocationCoordinate2D(
+            latitude: 40.7 + lateral / 110_540,
+            longitude: route.points[0].lon + meters * degreesPerMeter
+        )
+        return CLLocation(coordinate: coordinate,
+                          altitude: 10,
+                          horizontalAccuracy: 5,
+                          verticalAccuracy: 5,
+                          course: course,
+                          speed: speed,
+                          timestamp: Date().addingTimeInterval(-age))
+    }
+
+    /// Navigation with the voice muted: speaking in the test host activates an
+    /// audio session and costs about thirty seconds per prompt.
+    private static func silentNavigation(_ route: PlannedRoute) -> NavigationManager {
+        UserDefaults.standard.set(false, forKey: "navigation.voice")
+        let nav = NavigationManager()
+        nav.start(route, roads: [])
+        return nav
+    }
+
+    @Test func approachManeuversSitAtTheEndOfTheirMapKitStep() {
+        // Real MKDirections data: a 1290 m "Turn right onto 7th Ave" is the
+        // ride east along 46th St, so the turn itself is 1290 m in. Reading
+        // each step's distance as its start pointed every maneuver at the
+        // previous junction.
+        let steps = NavigationManager.approachSteps(from: [
+            (instruction: "", distance: 0),
+            (instruction: "Continue onto Murray St", distance: 70.6),
+            (instruction: "Turn right onto West St", distance: 563.5),
+            (instruction: "Turn left onto W 46th St", distance: 2_017.8),
+            (instruction: "Turn right onto 7th Ave", distance: 1_290),
+            (instruction: "Arrive at the destination", distance: 75.5)
+        ])
+
+        #expect(steps.count == 5)
+        #expect(abs(steps[0].at - 70.6) < 0.01)
+        #expect(abs(steps[4].at - 4_017.4) < 0.01)
+        #expect(steps[4].instruction.hasPrefix("Arrive"))
+        // Monotonic: the arrival is the furthest maneuver, not one step short
+        // of the destination.
+        #expect(zip(steps, steps.dropFirst()).allSatisfy { $0.at < $1.at })
+    }
+
+    @Test func turnCounterCoversTheAgeOfTheFix() {
+        let route = Self.accuracyRoute()
+        let nav = Self.silentNavigation(route)
+
+        nav.handle(Self.accuracyFix(on: route, at: 0))
+        #expect(nav.joined)
+        #expect(abs(nav.stepDistance - 400) < 1)
+
+        // This fix was taken 1.5 s ago at 20 m/s, so the rider is 30 m past
+        // it. The counter used to read the fix position verbatim and show
+        // 400 - 300 = 100 m for a junction 70 m away.
+        nav.handle(Self.accuracyFix(on: route, at: 300, age: 1.5))
+        #expect(abs(nav.routeProgress - 330) < 1.5)
+        #expect(abs(nav.stepDistance - 70) < 1.5)
+
+        // The arrow rides the route at the predicted distance instead of
+        // hanging back at the stale fix.
+        let arrow = nav.userCoordinate
+        #expect(arrow != nil)
+        if let arrow {
+            let expected = route.points[33].lon
+            #expect(abs(arrow.longitude - expected) < 1e-6)
+            #expect(abs(arrow.latitude - 40.7) < 1e-6)
+        }
+        nav.stop()
+    }
+
+    @Test func predictionNeverPassesTheNextManeuver() {
+        let route = Self.accuracyRoute()
+        let nav = Self.silentNavigation(route)
+        nav.handle(Self.accuracyFix(on: route, at: 0))
+
+        // 2 s at 25 m/s is 50 m of lead with 10 m left to the turn: the
+        // counter hits zero and waits for a fix to prove the turn was made.
+        nav.handle(Self.accuracyFix(on: route, at: 390, speed: 25, age: 2))
+        #expect(nav.routeProgress <= 401)
+        #expect(nav.routeProgress >= 399)
+        nav.stop()
+    }
+
+    @Test func predictionDoesNotRetireTheTurnTheRiderIsLookingAt() {
+        let route = Self.accuracyRoute()
+        let nav = Self.silentNavigation(route)
+        nav.handle(Self.accuracyFix(on: route, at: 0))
+
+        // A stale fix 60 m before the junction with enough lead to reach it:
+        // the banner must still be the turn, at zero, not the maneuver after
+        // it. This is the "TURN NOW" state at the light.
+        nav.handle(Self.accuracyFix(on: route, at: 340, speed: 30, age: 2))
+        #expect(nav.step?.id == 1)
+        #expect(nav.stepDistance < 0.01, "distance \(nav.stepDistance) progress \(nav.routeProgress)")
+
+        // A fresh fix past the junction retires the turn.
+        nav.handle(Self.accuracyFix(on: route, at: 410, speed: 30))
+        #expect(nav.step?.id == 2)
+        nav.stop()
+    }
+
+    @Test func fixNoiseDoesNotTickTheTurnCounterBackwards() {
+        let route = Self.accuracyRoute()
+        let nav = Self.silentNavigation(route)
+        nav.handle(Self.accuracyFix(on: route, at: 0))
+        nav.handle(Self.accuracyFix(on: route, at: 300))
+        #expect(abs(nav.routeProgress - 300) < 1)
+
+        // Three metres behind the last match is drift, not reversing.
+        nav.handle(Self.accuracyFix(on: route, at: 297))
+        #expect(abs(nav.routeProgress - 300) < 1)
+        nav.stop()
+    }
+
+    @Test func leavingTheRouteStopsTheCountdownImmediately() {
+        let route = Self.accuracyRoute()
+        let nav = Self.silentNavigation(route)
+        nav.handle(Self.accuracyFix(on: route, at: 0))
+        nav.handle(Self.accuracyFix(on: route, at: 200))
+        #expect(!nav.offRoute)
+
+        // 60 m to the side of the line: say so now rather than leaving the
+        // last good "70 m to the turn" on screen.
+        nav.handle(Self.accuracyFix(on: route, at: 210, lateral: 60))
+        #expect(nav.offRoute)
+        #expect(abs(nav.routeProgress - 200) < 1)
+        nav.stop()
+    }
+
+    @Test func stoppedAtALightTheHeadingComesFromTheRoute() {
+        let route = Self.accuracyRoute()
+        let nav = Self.silentNavigation(route)
+        nav.handle(Self.accuracyFix(on: route, at: 0))
+
+        // Stationary with an invalid course used to leave the arrow spinning
+        // on whatever the last fix happened to say.
+        nav.handle(Self.accuracyFix(on: route, at: 320, speed: 0, course: -1))
+        #expect(nav.userHeading > 85 && nav.userHeading < 95)
+        nav.stop()
+    }
+
+    @Test func fixAgeIsNeverNegative() {
+        let future = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 40.7, longitude: -73.5),
+                                altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5,
+                                course: 0, speed: 0,
+                                timestamp: Date().addingTimeInterval(30))
+        #expect(NavigationManager.fixAge(of: future) == 0)
+        let old = CLLocation(coordinate: CLLocationCoordinate2D(latitude: 40.7, longitude: -73.5),
+                             altitude: 0, horizontalAccuracy: 5, verticalAccuracy: 5,
+                             course: 0, speed: 0,
+                             timestamp: Date().addingTimeInterval(-3))
+        #expect(abs(NavigationManager.fixAge(of: old) - 3) < 0.5)
+    }
+
     // MARK: Elevation cache
 
     @Test func elevationKeyDistinguishesLoopsWithTheSameEndpoints() {

@@ -204,7 +204,7 @@ struct BikeArtworkView: View {
                     .scaledToFit()
             } else {
                 Image(systemName: "motorcycle")
-                    .font(.system(size: height * 0.52, weight: .regular))
+                    .font(.scaledSystem(size: height * 0.52, weight: .regular))
                     .foregroundStyle(MapUI.textTertiary.opacity(0.55))
             }
         }
@@ -256,7 +256,7 @@ struct BikeShowcase: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "motorcycle")
-                        .font(.system(size: 54, weight: .thin))
+                        .font(.scaledSystem(size: 54, weight: .thin))
                         .foregroundStyle(MapUI.textTertiary)
                     Text("Artwork coming soon")
                         .font(.caption2.weight(.semibold))

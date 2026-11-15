@@ -38,7 +38,7 @@ struct OnboardingView: View {
     private var primaryTitle: String {
         switch status {
         case .notDetermined: "Enable location"
-        case .authorizedAlways, .authorizedWhenInUse: "Start riding"
+        case .authorizedAlways, .authorizedWhenInUse: "Enter Revert"
         case .denied, .restricted: "Open Settings"
         @unknown default: "Continue"
         }
@@ -55,17 +55,17 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(alignment: .center, spacing: 10) {
                         Image(systemName: "motorcycle")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.scaledSystem(size: 22, weight: .bold))
                             .foregroundStyle(Pulse.accentInk)
                             .frame(width: 46, height: 46)
                             .background(MapUI.cyan, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         VStack(alignment: .leading, spacing: 1) {
                             Text("REVERT")
-                                .font(.system(size: 16, weight: .black, design: .rounded))
+                                .font(.scaledSystem(size: 16, weight: .black, design: .rounded))
                                 .tracking(4)
                                 .foregroundStyle(MapUI.ink)
                             Text("SCENIC RIDING COMPANION")
-                                .font(.system(size: 9, weight: .heavy, design: .rounded))
+                                .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                                 .tracking(1.6)
                                 .foregroundStyle(MapUI.cyan)
                         }
@@ -75,6 +75,7 @@ struct OnboardingView: View {
                         Text("Find the bends.")
                             .font(RevertType.display(34, weight: .heavy))
                             .foregroundStyle(MapUI.ink)
+                            .accessibilityIdentifier(AccessibilityID.Onboarding.title)
                         Text("Plan twisty loops, follow turn-by-turn directions, record the ride and keep the good ones. Everything stays on this iPhone.")
                             .font(.system(.body, design: .rounded))
                             .foregroundStyle(MapUI.textSecondary)
@@ -130,16 +131,18 @@ struct OnboardingView: View {
                             Label(primaryTitle, systemImage: "arrow.right")
                         }
                         .buttonStyle(RevertPrimaryButtonStyle())
+                        .accessibilityIdentifier(AccessibilityID.Onboarding.primary)
 
                         Button("Not now") {
                             RevertHaptics.tap()
                             onFinish()
                         }
+                        .accessibilityIdentifier(AccessibilityID.Onboarding.skip)
                         .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
                     }
 
                     Text("Location is used on-device. No account, no tracking, no upload.")
-                        .font(.system(size: 10, design: .rounded))
+                        .font(.scaledSystem(size: 10, design: .rounded))
                         .foregroundStyle(MapUI.textTertiary)
                         .frame(maxWidth: .infinity)
                 }
@@ -162,7 +165,7 @@ struct OnboardingView: View {
     private func feature(_ icon: String, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .bold))
+                .font(.scaledSystem(size: 13, weight: .bold))
                 .foregroundStyle(MapUI.cyan)
                 .frame(width: 30, height: 30)
                 .background(MapUI.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))

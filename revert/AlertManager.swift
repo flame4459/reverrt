@@ -1,7 +1,9 @@
 import Foundation
 import CoreLocation
 import AVFoundation
+#if canImport(UIKit)
 import UIKit
+#endif
 import Observation
 
 struct ActiveAlert: Equatable {
@@ -30,6 +32,9 @@ final class AlertManager {
     var surfaceAlert: SurfaceAlert?
     var speedLimitMph: Int?
     var isOverLimit = false
+    /// Updated when the rider crosses onto a new OSM way; voice marks use it
+    /// to name the road being avoided without another geocoding pass.
+    private(set) var currentRoadName: String?
 
     @ObservationIgnored private let store = HazardStore.shared
     @ObservationIgnored private let roadStore = RoadStore.shared
@@ -70,11 +75,24 @@ final class AlertManager {
     /// route, or arrived) traffic-device alerts are suppressed entirely.
     @ObservationIgnored var routeProvider: (() -> RideRouteContext?)?
 
+    // MARK: Debug counters
+
+    var hazardTileCount: Int { store.loadedTileCount }
+    var hazardItemCount: Int { store.itemCount }
+    var roadTileCount: Int { roadStore.loadedTileCount }
+    var roadItemCount: Int { roadStore.itemCount }
+    var pendingTileCount: Int { store.pendingCount + roadStore.pendingCount }
+    /// nil until the route-corridor query answers.
+    var routeHazardCount: Int? { routeHazardsLoaded ? routeHazards.count : nil }
+
+    @ObservationIgnored private var lastDataLine = Date.distantPast
+
     /// Call on every GPS update.
     func handle(_ loc: CLLocation) {
-        // When the route-corridor query has succeeded, the tile cache is not
-        // needed for traffic devices and we avoid a second Overpass download.
-        if !routeHazardsLoaded {
+        // When the route-corridor query has succeeded *with devices*, the tile
+        // cache is not needed and we avoid a second Overpass download. An empty
+        // answer keeps the tiles warm as a fallback.
+        if !routeHazardsLoaded || routeHazards.isEmpty {
             store.ensureTiles(around: loc.coordinate)
         }
         roadStore.ensureTiles(around: loc.coordinate)
@@ -94,6 +112,24 @@ final class AlertManager {
         handleRoad(loc, now)
 
         handleHazards(loc, now, context: routeContext)
+        logDataIfDue(now, context: routeContext)
+    }
+
+    private func logDataIfDue(_ now: Date, context: RideRouteContext?) {
+        guard now.timeIntervalSince(lastDataLine) > 60 else { return }
+        lastDataLine = now
+        RideDebug.shared.data([
+            ("hazardTiles", "\(hazardTileCount)"),
+            ("hazardItems", "\(hazardItemCount)"),
+            ("roadTiles", "\(roadTileCount)"),
+            ("roadItems", "\(roadItemCount)"),
+            ("pending", "\(pendingTileCount)"),
+            ("routeHazards", routeHazardCount.map { "\($0)" } ?? "not-loaded"),
+            ("source", (routeHazardsLoaded && !routeHazards.isEmpty) ? "corridor" : "tiles"),
+            ("context", context == nil ? "none" : "ok"),
+            ("matchedRoad", curveEngine.current.map { "\($0.road.id)" } ?? "none"),
+            ("limit", speedLimitMph.map { "\($0)" } ?? "none")
+        ])
     }
 
     // MARK: Stop signs, lights, cameras, rail crossings, schools, roundabouts
@@ -134,33 +170,25 @@ final class AlertManager {
             + loc.speed * 5.0
 
         let hazards: [Hazard]
-        if routeHazardsRouteID == context.route.id, routeHazardsLoaded {
+        if routeHazardsRouteID == context.route.id, routeHazardsLoaded, !routeHazards.isEmpty {
             hazards = routeHazards
         } else {
-            hazards = store.items(near: loc.coordinate)
+            // Either the corridor query has not answered, failed, or answered
+            // with nothing. Tiles are always a valid second opinion: the same
+            // corridor projection filters them before anything is announced.
+            hazards = HazardStore.items(near: loc.coordinate)
         }
 
-        var best: (hazard: Hazard, ahead: Double, match: RouteCorridorMatch)?
+        var best: (hazard: Hazard, ahead: Double, match: RouteCorridorMatch, lookahead: Double)?
 
         for h in hazards {
             let kind = h.kind
-            guard AlertSettings.enabled(kind.settingsKey) else { continue }
-            if (kind == .stop || kind == .signal), speedMph < hazardThreshold { continue }
-            guard !announcedDevices.contains(h.id) else { continue }
-            if kind.kindCooldown > 0, let t = lastKindAlert[kind], now.timeIntervalSince(t) < kind.kindCooldown {
-                continue
-            }
             // Cheap reject before projecting a distant device onto the route.
             if abs(h.lat - loc.coordinate.latitude) > 0.01
                 || abs(h.lon - loc.coordinate.longitude) > 0.015 { continue }
 
             let lookahead = min(max(rawLookahead, 150), min(kind.maxLookahead, 400))
-            let lateralLimit: Double
-            switch kind {
-            case .school: lateralLimit = 45       // schools sit back from the road
-            case .roundabout: lateralLimit = 30
-            default: lateralLimit = 14
-            }
+            let lateralLimit = kind.lateralTolerance
             guard let match = RouteCorridor.project(
                 latitude: h.lat, longitude: h.lon,
                 route: context.route, near: context.progress,
@@ -171,8 +199,28 @@ final class AlertManager {
 
             let ahead = match.along - context.progress
             guard ahead >= 8, ahead <= lookahead else { continue }
+
+            // Settings are only consulted once a device is genuinely on the
+            // corridor, so a withheld alert can name the reason it was withheld.
+            guard AlertSettings.enabled(kind.settingsKey) else {
+                RideDebug.shared.skip(h, reason: "disabled", ahead: ahead)
+                continue
+            }
+            if (kind == .stop || kind == .signal), speedMph < hazardThreshold {
+                RideDebug.shared.skip(h, reason: "under-speed-gate", ahead: ahead)
+                continue
+            }
+            guard !announcedDevices.contains(h.id) else {
+                RideDebug.shared.skip(h, reason: "already-announced", ahead: ahead)
+                continue
+            }
+            if kind.kindCooldown > 0, let t = lastKindAlert[kind], now.timeIntervalSince(t) < kind.kindCooldown {
+                RideDebug.shared.skip(h, reason: "cooldown", ahead: ahead)
+                continue
+            }
+
             if best == nil || ahead < best!.ahead {
-                best = (h, ahead, match)
+                best = (h, ahead, match, lookahead)
             }
         }
 
@@ -181,7 +229,15 @@ final class AlertManager {
         lastKindAlert[best.hazard.kind] = now
         activeAlert = ActiveAlert(hazard: best.hazard, distance: best.ahead, since: now)
         haptic()
-        Speaker.shared.say(Narrator.hazard(best.hazard.kind, distance: best.ahead))
+        let spoken = Narrator.hazard(best.hazard.kind, distance: best.ahead)
+        Speaker.shared.say(spoken)
+        RideDebug.shared.hazard(best.hazard,
+                               ahead: best.ahead,
+                               lateral: best.match.lateral,
+                               location: loc,
+                               progress: context.progress,
+                               lookahead: best.lookahead,
+                               spoken: spoken.fallback)
         HelmetAudio.shared.hazardCue(
             relativeBearing: signedBearing(from: loc, to: best.hazard.coordinate),
             urgent: best.hazard.kind == .stop || best.hazard.kind == .signal
@@ -205,12 +261,13 @@ final class AlertManager {
         }
 
         // Always match to the road (needed for limits and surface); only detect curves when none is showing
-        let roads = roadStore.items(near: loc.coordinate)
+        let roads = RoadStore.items(near: loc.coordinate)
         if let w = curveEngine.evaluate(loc, roads: roads, detectCurves: curvesOn && curveAlert == nil) {
             curveAlert = w
             haptic()
             speak(w.spoken)
             HelmetAudio.shared.turnCue(direction: w.dir == .left ? -1 : 1)
+            RideDebug.shared.curve(w, location: loc)
         }
         updateRoadInfo(loc, now)
     }
@@ -227,7 +284,10 @@ final class AlertManager {
 
         // Speed limit
         let limit = cur.road.speedLimitMph(forward: cur.forward)
-        if limit != speedLimitMph { speedLimitMph = limit }
+        if limit != speedLimitMph {
+            speedLimitMph = limit
+            RideDebug.shared.speedLimit(limit, road: cur.road.name, location: loc)
+        }
         let mph = loc.speed * 2.23694
         if let l = limit, mph > Double(l) {
             if !isOverLimit { isOverLimit = true }
@@ -238,6 +298,7 @@ final class AlertManager {
                     lastOverAlert = now
                     haptic()
                     speak("Over the speed limit")
+                    RideDebug.shared.overLimit(mph: mph, limit: l, location: loc)
                 }
             } else {
                 overSince = nil
@@ -250,25 +311,32 @@ final class AlertManager {
         // Surface: warn when you move onto an unpaved road
         if cur.road.id != lastRoadID {
             lastRoadID = cur.road.id
+            currentRoadName = cur.road.name
+            RideDebug.shared.road(cur.road, limit: limit, unpaved: cur.road.isUnpaved, location: loc)
             if AlertSettings.enabled("alert.surface"), cur.road.isUnpaved,
                now.timeIntervalSince(surfaceAlertedAt[cur.road.id] ?? .distantPast) > 600 {
                 surfaceAlertedAt[cur.road.id] = now
                 surfaceAlert = SurfaceAlert(text: cur.road.surfaceName, since: now)
                 haptic()
                 speak("Unpaved road")
+                RideDebug.shared.surface(cur.road.surfaceName, location: loc)
             }
         }
     }
 
     // MARK: Feedback
+    #if canImport(UIKit)
     @ObservationIgnored private let feedback = UINotificationFeedbackGenerator()
+    #endif
 
     private func haptic() {
         // Riders who silence their phone still get the visual banner; this
         // key exists so that choice is explicit rather than accidental.
         guard UserDefaults.standard.object(forKey: "alert.haptics") == nil
                 || UserDefaults.standard.bool(forKey: "alert.haptics") else { return }
+        #if canImport(UIKit)
         feedback.notificationOccurred(.warning)
+        #endif
     }
 
     private func speak(_ text: String) { Speaker.shared.say(text) }

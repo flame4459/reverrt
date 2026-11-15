@@ -146,6 +146,25 @@ nonisolated final class RouteTaste: @unchecked Sendable {
         defaults.removeObject(forKey: preferredKey)
     }
 
+    /// Drops a name from the preferred list.
+    func stopPreferring(_ name: String) {
+        remove(named: RoadPreferences.normalize(name), from: preferredKey)
+    }
+
+    /// Drops a name from the avoided list.
+    func stopAvoiding(_ name: String) {
+        remove(named: RoadPreferences.normalize(name), from: avoidedKey)
+    }
+
+    private func remove(named normalized: String, from key: String) {
+        guard !normalized.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        var list = defaults.stringArray(forKey: key) ?? []
+        list.removeAll { $0 == normalized }
+        defaults.set(list, forKey: key)
+    }
+
     private func mutateList(_ addKey: String, adding name: String, removingFrom removeKey: String) {
         let normalized = RoadPreferences.normalize(name)
         guard !normalized.isEmpty else { return }

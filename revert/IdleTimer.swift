@@ -30,35 +30,3 @@ enum IdleTimer {
         UIApplication.shared.isIdleTimerDisabled = false
     }
 }
-
-/// Holds an `IdleTimer` token for exactly as long as the view it is attached
-/// to is on screen, so the display never dims or locks underneath a live map.
-private struct KeepsScreenAwake: ViewModifier {
-    let owner: String
-    @State private var holding = false
-
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                // `onAppear` can fire again without an intervening disappear
-                // (tab switches, cover dismissal); never double-hold.
-                guard !holding else { return }
-                holding = true
-                IdleTimer.acquire(owner)
-            }
-            .onDisappear {
-                guard holding else { return }
-                holding = false
-                IdleTimer.release(owner)
-            }
-    }
-}
-
-extension View {
-    /// Keeps the screen on for as long as this view is visible, without
-    /// clobbering the other owners of the shared flag (ride recording, offline
-    /// downloads, route planning).
-    func keepsScreenAwake(_ owner: String) -> some View {
-        modifier(KeepsScreenAwake(owner: owner))
-    }
-}

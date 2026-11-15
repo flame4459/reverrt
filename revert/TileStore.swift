@@ -9,6 +9,10 @@ nonisolated final class TileStore<Item: Codable & Sendable>: @unchecked Sendable
 
     private let dir: URL
     private let pauseNs: UInt64
+    /// How many tiles may be in flight at once. Road tiles are split into
+    /// halves, so their store runs fewer tiles to keep the request count the
+    /// same as before.
+    private let concurrency: Int
     private let cacheDays = 30.0
     private let fetchTile: @Sendable (Int, Int) async throws -> [Item]
     private let idOf: @Sendable (Item) -> Int64
@@ -30,11 +34,23 @@ nonisolated final class TileStore<Item: Codable & Sendable>: @unchecked Sendable
         lock.withLock { queued.count }
     }
 
-    init(folder: String, pause: Double, idOf: @escaping @Sendable (Item) -> Int64,
+    /// How much data is actually in memory. The ride debug log records these so
+    /// "the app said nothing" can be told apart from "the app had nothing".
+    var loadedTileCount: Int {
+        lock.withLock { tiles.count }
+    }
+
+    var itemCount: Int {
+        lock.withLock { tiles.values.reduce(0) { $0 + $1.count } }
+    }
+
+    init(folder: String, pause: Double, concurrency: Int = 4,
+         idOf: @escaping @Sendable (Item) -> Int64,
          fetch: @escaping @Sendable (Int, Int) async throws -> [Item]) {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         dir = base.appendingPathComponent(folder, isDirectory: true)
         pauseNs = UInt64(pause * 1_000_000_000)
+        self.concurrency = max(1, concurrency)
         self.idOf = idOf
         fetchTile = fetch
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -276,7 +292,7 @@ nonisolated final class TileStore<Item: Codable & Sendable>: @unchecked Sendable
         let generation = lock.withLock { self.generation }
 
         Task {
-            let concurrency = 4
+            let concurrency = self.concurrency
             await withTaskGroup(of: (key: String, next: (x: Int, y: Int, keep: Bool), items: [Item]?).self) { group in
                 var active = 0
 

@@ -56,23 +56,63 @@ enum Narrator {
     }
 
     static func routeStarted(road: String?) -> VoicePrompt {
-        let fallback = road.map { "Route started. Head out on \($0)" } ?? "Route started"
+        let normalized = road.map(StreetNames.road)
+        let fallback = normalized.map { "Route started. Head out on \($0)" } ?? "Route started"
         var parts: [VoicePrompt.Part] = [
             .clip(.randomStart(), fallback: "Starting navigation")
         ]
-        if let road, !road.isEmpty {
-            parts.append(.text("on \(road)"))
+        if let normalized, !normalized.isEmpty {
+            parts.append(.text("on \(normalized)"))
         }
         return VoicePrompt(parts: parts, fallback: fallback)
+    }
+
+    /// A long straight: Google-style "Continue on <road> for <distance>".
+    static func straight(road: String?, distance: Double) -> VoicePrompt {
+        let spoken = Units.spokenDistance(distance)
+        let normalized = road.map(StreetNames.road)
+        let fallback: String
+        var parts: [VoicePrompt.Part] = [
+            .clip(.straight, fallback: "Continue straight")
+        ]
+        if let normalized, !normalized.isEmpty {
+            fallback = "Continue on \(normalized) for \(spoken)"
+            parts.append(.text("on \(normalized)"))
+        } else {
+            fallback = "Continue straight for \(spoken)"
+        }
+        parts.append(.text("for \(spoken)"))
+        return VoicePrompt(parts: parts, fallback: fallback)
+    }
+
+    /// "Turn left onto X" reads as "In 300 feet, turn left onto X": after a
+    /// distance the verb loses its capital, as it does in every nav voice.
+    private static func afterDistance(_ instruction: String) -> String {
+        guard let first = instruction.first else { return instruction }
+        return first.lowercased() + instruction.dropFirst()
     }
 
     /// A turn-by-turn announcement. `distance` is the distance still to run
     /// before the manoeuvre, or `nil` when the rider is almost on it.
     static func instruction(_ step: NavStep, distance: Double?) -> VoicePrompt {
-        let fallback = distance.map { "In \(Units.spokenDistance($0)), \(step.instruction)" }
+        let spokenInstruction = afterDistance(step.instruction)
+        let laneLead = step.laneGuidance.flatMap { lanes -> String? in
+            distance == nil || lanes.phrase.isEmpty ? nil : "\(lanes.phrase) to "
+        } ?? ""
+        let fallback = distance.map { "In \(Units.spokenDistance($0)), \(laneLead)\(spokenInstruction)" }
             ?? step.instruction
 
-        if step.turn == .arrive { return arrival }
+        if step.turn == .arrive {
+            // The arrive step is current for the last few hundred metres, so a
+            // bare "You have arrived" used to fire a quarter mile early.
+            // Within a few metres it is the arrival itself, not an approach.
+            guard let distance, distance > 30 else { return arrival }
+            let spoken = Units.spokenDistance(distance)
+            return VoicePrompt(
+                parts: [.clip(.arrive, fallback: "You will arrive")],
+                fallback: "In \(spoken), you will arrive"
+            )
+        }
 
         // MapKit routes carry prose ("Turn right onto Market Street"); offline
         // routes carry a manoeuvre and a road name.
@@ -91,11 +131,15 @@ enum Narrator {
            let clip = VoiceClip.distanceClip(forMeters: distance, metric: Units.isMetric) {
             parts.append(.optionalClip(clip))
         }
+        if let lanes = step.laneGuidance, distance != nil, !lanes.phrase.isEmpty {
+            parts.append(.text("\(lanes.phrase) to"))
+        }
         if let clip = turnClip(step.turn) {
             parts.append(.clip(clip, fallback: turnPhrase(step.turn)))
         }
         if let road = step.road, !road.isEmpty {
-            parts.append(.text(step.turn == .start ? "on \(road)" : "onto \(road)"))
+            let normalized = StreetNames.road(road)
+            parts.append(.text(step.turn == .start ? "on \(normalized)" : "onto \(normalized)"))
         }
         guard parts.contains(where: { part in
             switch part {
@@ -158,7 +202,9 @@ enum Narrator {
     /// Splits an English MapKit instruction into a recorded manoeuvre clip and
     /// whatever follows it (usually "onto Main Street", spoken by TTS).
     static func parse(_ text: String) -> [VoicePrompt.Part] {
-        var working = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var working = StreetNames.instruction(
+            text.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
         guard !working.isEmpty else { return [] }
 
         // MapKit can prefix its own distance; Revert announces distance first.
@@ -170,16 +216,44 @@ enum Narrator {
         }
 
         let lower = working.lowercased()
+
+        // Roundabout exits. A Waze pack records each ordinal as a whole phrase
+        // ("take the second exit"), so use it instead of handing that part of
+        // the instruction to the system voice.
+        if let exitParts = roundaboutExitParts(working) {
+            var parts: [VoicePrompt.Part] = []
+            if lower.contains("roundabout") {
+                parts.append(.clip(.roundabout, fallback: "At the roundabout"))
+            }
+            parts.append(contentsOf: exitParts)
+            return parts
+        }
+
         let manoeuvres: [(phrase: String, clip: VoiceClip, spoken: String)] = [
             ("continue straight", .straight, "Continue straight"),
+            ("continue", .straight, "Continue"),
             ("head straight", .straight, "Continue straight"),
             ("go straight", .straight, "Continue straight"),
+            ("proceed", .straight, "Continue"),
             ("turn left", .turnLeft, "Turn left"),
             ("turn right", .turnRight, "Turn right"),
             ("keep left", .keepLeft, "Keep left"),
             ("keep right", .keepRight, "Keep right"),
             ("bear left", .keepLeft, "Keep left"),
             ("bear right", .keepRight, "Keep right"),
+            ("slight left", .keepLeft, "Slight left"),
+            ("slight right", .keepRight, "Slight right"),
+            ("sharp left", .turnLeft, "Sharp left"),
+            ("sharp right", .turnRight, "Sharp right"),
+            ("merge left", .keepLeft, "Merge left"),
+            ("merge right", .keepRight, "Merge right"),
+            ("fork left", .keepLeft, "Keep left"),
+            ("fork right", .keepRight, "Keep right"),
+            ("stay left", .keepLeft, "Stay left"),
+            ("stay right", .keepRight, "Stay right"),
+            ("take the ramp on the left", .exitLeft, "Take the ramp on the left"),
+            ("take the ramp on the right", .exitRight, "Take the ramp on the right"),
+            ("take the ramp", .exitRight, "Take the ramp"),
             ("make a u-turn", .uTurn, "Make a U-turn"),
             ("make a u turn", .uTurn, "Make a U-turn"),
             ("u-turn", .uTurn, "Make a U-turn"),
@@ -205,5 +279,51 @@ enum Narrator {
             return parts
         }
         return []
+    }
+
+    /// Every ordinal a Waze pack records, with the clip that says it.
+    private static let roundaboutExitClips: [(word: String, clip: VoiceClip, spoken: String)] = [
+        ("1st", .firstExit, "first"),
+        ("first", .firstExit, "first"),
+        ("2nd", .secondExit, "second"),
+        ("second", .secondExit, "second"),
+        ("3rd", .thirdExit, "third"),
+        ("third", .thirdExit, "third"),
+        ("4th", .fourthExit, "fourth"),
+        ("fourth", .fourthExit, "fourth"),
+        ("5th", .fifthExit, "fifth"),
+        ("fifth", .fifthExit, "fifth"),
+        ("6th", .sixthExit, "sixth"),
+        ("sixth", .sixthExit, "sixth"),
+        ("7th", .seventhExit, "seventh"),
+        ("seventh", .seventhExit, "seventh")
+    ]
+
+    /// Splits "…take the 2nd exit onto Main Street" into the recorded exit
+    /// phrase and the road name. Returns nil when the instruction has no
+    /// ordinal exit (a plain "take the exit on the left", an eighth exit, or
+    /// a street that happens to contain the word "exit").
+    private static func roundaboutExitParts(_ text: String) -> [VoicePrompt.Part]? {
+        let lower = text.lowercased()
+        // Indices from `lower` are only safe on `text` when the fold kept the
+        // same byte layout; otherwise fall back to the system voice.
+        guard lower.utf8.count == text.utf8.count,
+              let exitRange = lower.range(of: " exit") else { return nil }
+        let lead = String(lower[..<exitRange.lowerBound])
+        guard let match = roundaboutExitClips.first(where: { lead.hasSuffix($0.word) }) else { return nil }
+
+        // Reject "21st", "twenty-first": the ordinal has to stand on its own.
+        let start = lead.index(lead.endIndex, offsetBy: -match.word.count)
+        if start > lead.startIndex {
+            let previous = lead[lead.index(before: start)]
+            guard !previous.isNumber, !previous.isLetter, previous != "-" else { return nil }
+        }
+
+        let cut = text.index(text.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: exitRange.upperBound))
+        let trailing = String(text[cut...])
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,.-"))
+        var parts: [VoicePrompt.Part] = [.clip(match.clip, fallback: "take the \(match.spoken) exit")]
+        if !trailing.isEmpty { parts.append(.text(trailing)) }
+        return parts
     }
 }

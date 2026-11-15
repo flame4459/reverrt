@@ -10,6 +10,10 @@ struct PulseHomeView: View {
     @Environment(NavigationManager.self) private var nav
     @Query(sort: \Ride.startDate, order: .reverse) private var rides: [Ride]
     @Query(sort: \Bike.createdAt, order: .reverse) private var bikes: [Bike]
+    @State private var showingFeatureLab = false
+    @SceneStorage("routes.destination") private var destinationDraft = ""
+    @SceneStorage("routes.focusOnAppear") private var focusRoutesOnAppear = false
+    @FocusState private var destinationFocused: Bool
 
     var onOpenRoutes: () -> Void
     var onOpenCockpit: () -> Void
@@ -42,10 +46,10 @@ struct PulseHomeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 hero
-                metrics
+                quickActions
+                summaryLine
                 activeMachine
                 nextRoute
-                quickActions
                 recentRides
                 footerNote
             }
@@ -55,53 +59,49 @@ struct PulseHomeView: View {
         }
         .scrollIndicators(.hidden)
         .pulseBackground()
+        .sheet(isPresented: $showingFeatureLab) {
+            FeatureHubView()
+        }
     }
 
     // MARK: Header
 
     private var header: some View {
-        PulseScreenHeader(eyebrow: "WELCOME BACK", title: "Your next ride") {
+        ScreenHeader(eyebrow: "WELCOME BACK",
+                     title: "Your next ride",
+                     variant: .compact,
+                     identifier: AccessibilityID.Home.title) {
             HStack(spacing: 8) {
-                PulseCircleButton(systemImage: "paintpalette.fill", label: "Color scheme") {
+                PulseCircleButton(systemImage: "paintpalette.fill",
+                                  label: "Color scheme",
+                                  identifier: AccessibilityID.Home.colorScheme) {
                     onOpen(.settings)
                 }
 
                 Menu {
                     Button {
-                        onOpen(.settings)
+                        onOpen(.offline)
                     } label: {
-                        Label("App settings", systemImage: "slider.horizontal.3")
-                    }
-                    Button {
-                        onOpen(.settings)
-                    } label: {
-                        Label("Color scheme", systemImage: "paintpalette.fill")
-                    }
-                    Divider()
-                    Button { onOpen(.insights) } label: {
-                        Label("Ride insights", systemImage: "chart.bar.fill")
-                    }
-                    Button { onOpen(.safety) } label: {
-                        Label("Safety alerts", systemImage: "exclamationmark.triangle.fill")
-                    }
-                    Button { onOpen(.savedPlaces) } label: {
-                        Label("Saved places", systemImage: "star.fill")
-                    }
-                    Button { onOpen(.offline) } label: {
                         Label("Offline maps", systemImage: "arrow.down.circle.fill")
                     }
-                    Button { onOpen(.posters) } label: {
-                        Label("Story posters", systemImage: "photo.artframe")
+                    Button {
+                        RevertHaptics.tap()
+                        showingFeatureLab = true
+                    } label: {
+                        Label("Ride Lab", systemImage: "flask.fill")
                     }
                 } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "ellipsis")
+                        .font(.scaledSystem(size: 15, weight: .semibold))
                         .foregroundStyle(Pulse.accent)
                         .frame(width: 37, height: 37)
                         .background(Pulse.iconWell, in: Circle())
                         .overlay(Circle().stroke(Pulse.accentLine.opacity(0.7), lineWidth: 0.8))
                 }
-                .accessibilityLabel("Ride menu")
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+                .accessibilityLabel("More")
+                .accessibilityIdentifier(AccessibilityID.Home.menu)
             }
         }
     }
@@ -109,13 +109,83 @@ struct PulseHomeView: View {
     // MARK: Hero
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(nav.route == nil ? "THE ROAD IS CALLING" : "RIDE IN PROGRESS")
+        Group {
+            if nav.route != nil {
+                activeRideHero
+            } else {
+                planHero
+            }
+        }
+        .padding(16)
+        .background { heroBackground }
+    }
+
+    private var planHero: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("THE ROAD IS CALLING")
                 .font(PulseType.eyebrow)
                 .tracking(2)
                 .foregroundStyle(Pulse.accent)
 
-            Text(nav.route == nil ? "Where to today?" : "Back on the road.")
+            Text("Where to today?")
+                .font(PulseType.display(29))
+                .tracking(-0.9)
+                .foregroundStyle(Pulse.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .font(.scaledSystem(size: 14, weight: .bold))
+                    .foregroundStyle(Pulse.accent)
+
+                TextField("Search a destination", text: $destinationDraft)
+                    .font(.scaledSystem(size: 15, weight: .semibold))
+                    .foregroundStyle(Pulse.ink)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled(false)
+                    .submitLabel(.go)
+                    .focused($destinationFocused)
+                    .onSubmit(planRoute)
+                    .accessibilityIdentifier(AccessibilityID.Home.destination)
+
+                if !destinationDraft.isEmpty {
+                    Button {
+                        destinationDraft = ""
+                        destinationFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.scaledSystem(size: 16))
+                            .foregroundStyle(Pulse.muted)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear destination")
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 50)
+            .background(Pulse.canvas.opacity(0.58), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(destinationFocused ? Pulse.accent.opacity(0.7) : Pulse.lineBright, lineWidth: 0.8)
+            }
+
+            Button(action: planRoute) {
+                Label("Plan route", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+            }
+            .buttonStyle(PulsePrimaryButtonStyle())
+            .accessibilityIdentifier(AccessibilityID.Home.planRoute)
+        }
+    }
+
+    private var activeRideHero: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("RIDE IN PROGRESS")
+                .font(PulseType.eyebrow)
+                .tracking(2)
+                .foregroundStyle(Pulse.accent)
+
+            Text("Back on the road.")
                 .font(PulseType.display(29))
                 .tracking(-0.9)
                 .foregroundStyle(Pulse.ink)
@@ -124,111 +194,94 @@ struct PulseHomeView: View {
             if let route = nav.route {
                 HStack(spacing: 6) {
                     Image(systemName: nav.arrived ? "flag.checkered" : "location.north.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.scaledSystem(size: 10, weight: .bold))
                     Text(nav.arrived
                          ? "Arrived at \(route.displayName ?? "your destination")"
                          : (nav.step?.instruction ?? "Following the active route"))
-                        .font(.system(size: 12))
+                        .font(.scaledSystem(size: 12))
                         .lineLimit(2)
                 }
                 .foregroundStyle(Pulse.mutedStrong)
-            } else {
-                Text("Plan a new route or pick up where you left off.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Pulse.muted)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 9) {
-                Button {
-                    RevertHaptics.tap()
-                    onOpenRoutes()
-                } label: {
-                    Label(nav.route == nil ? "Plan a route" : "Open map",
-                          systemImage: nav.route == nil ? "arrow.triangle.turn.up.right.diamond.fill" : "map.fill")
-                }
-                .buttonStyle(PulsePrimaryButtonStyle())
-
-                Button {
-                    RevertHaptics.tap()
-                    onOpenCockpit()
-                } label: {
-                    Image(systemName: "speedometer")
-                }
-                .buttonStyle(PulseGhostButtonStyle())
-                .frame(width: 54)
-                .accessibilityLabel("Open cockpit")
+            Button {
+                RevertHaptics.tap()
+                onOpenRoutes()
+            } label: {
+                Label("Open map", systemImage: "map.fill")
             }
-            .padding(.top, 5)
-        }
-        .padding(16)
-        .background {
-            RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous)
-                .fill(Pulse.heroGradient)
-                .overlay(alignment: .topTrailing) {
-                    RadialGradient(
-                        colors: [Pulse.accent.opacity(0.16), .clear],
-                        center: .topTrailing,
-                        startRadius: 0,
-                        endRadius: 210
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous)
-                        .strokeBorder(Pulse.accentDeep.opacity(0.42), lineWidth: 0.8)
-                }
+            .buttonStyle(PulsePrimaryButtonStyle())
+            .accessibilityIdentifier(AccessibilityID.Home.planRoute)
         }
     }
 
-    // MARK: Metrics
+    private var heroBackground: some View {
+        RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous)
+            .fill(Pulse.heroGradient)
+            .overlay(alignment: .topTrailing) {
+                RadialGradient(
+                    colors: [Pulse.accent.opacity(0.16), .clear],
+                    center: .topTrailing,
+                    startRadius: 0,
+                    endRadius: 210
+                )
+                .clipShape(RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: PulseMetrics.cardRadius, style: .continuous)
+                    .strokeBorder(Pulse.accentDeep.opacity(0.42), lineWidth: 0.8)
+            }
+    }
 
-    private var metrics: some View {
-        HStack(spacing: 10) {
-            PulseMetric(
-                label: "Total rides",
-                value: "\(rides.count)",
-                unit: "recorded"
-            )
-            PulseMetric(
-                label: "Distance",
-                value: Units.distanceText(totalDistance, decimals: 0)
-                    .replacingOccurrences(of: " \(Units.distanceUnit)", with: ""),
-                unit: Units.distanceUnit,
-                tint: Pulse.accent
-            )
-            PulseMetric(
-                label: "Bikes",
-                value: "\(bikes.count)",
-                unit: "garage"
-            )
+    private func planRoute() {
+        RevertHaptics.tap()
+        destinationFocused = false
+        focusRoutesOnAppear = true
+        onOpenRoutes()
+    }
+
+    // MARK: Summary
+
+    private var summaryLine: some View {
+        HStack(spacing: 6) {
+            Text("\(rides.count) \(rides.count == 1 ? "ride" : "rides")")
+            Text("·")
+            Text(Units.distanceText(totalDistance, decimals: 0))
+            Text("·")
+            Text("\(bikes.count) \(bikes.count == 1 ? "vehicle" : "vehicles")")
         }
+        .font(.scaledSystem(size: 11, weight: .semibold))
+        .foregroundStyle(Pulse.muted)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Active machine
 
     private var activeMachine: some View {
         VStack(alignment: .leading, spacing: 9) {
-            PulseSectionHeader(title: "Active machine", actionTitle: "View garage", action: onOpenGarage)
+            PulseSectionHeader(title: "Active vehicle",
+                               actionTitle: "View garage",
+                               action: onOpenGarage,
+                               actionIdentifier: AccessibilityID.Home.viewGarage)
 
             Button {
                 RevertHaptics.tap()
                 onOpenGarage()
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "motorcycle")
-                        .font(.system(size: 18, weight: .semibold))
+                    Image(systemName: primaryBike?.isCar == true ? "car.fill" : "motorcycle")
+                        .font(.scaledSystem(size: 18, weight: .semibold))
                         .foregroundStyle(Pulse.accent)
                         .frame(width: 42, height: 42)
                         .background(Pulse.iconWell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(primaryBike?.displayName ?? "Add a bike")
-                            .font(.system(size: 14, weight: .semibold))
+                        Text(primaryBike?.displayName ?? "Add a vehicle")
+                            .font(.scaledSystem(size: 14, weight: .semibold))
                             .foregroundStyle(Pulse.ink)
                             .lineLimit(1)
                         Text(machineSubtitle)
-                            .font(.system(size: 10.5))
+                            .font(.scaledSystem(size: 10.5))
                             .foregroundStyle(Pulse.muted)
                             .lineLimit(1)
                     }
@@ -236,7 +289,7 @@ struct PulseHomeView: View {
                     Spacer(minLength: 8)
 
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.scaledSystem(size: 11, weight: .bold))
                         .foregroundStyle(Pulse.muted)
                 }
                 .padding(13)
@@ -248,7 +301,7 @@ struct PulseHomeView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(RevertCardButtonStyle())
-            .accessibilityLabel("Active machine, \(primaryBike?.displayName ?? "no bike")")
+            .accessibilityLabel("Active vehicle, \(primaryBike?.displayName ?? "none")")
         }
     }
 
@@ -272,9 +325,12 @@ struct PulseHomeView: View {
     private var nextRoute: some View {
         VStack(alignment: .leading, spacing: 9) {
             PulseSectionHeader(
-                title: nav.route == nil ? "Your next route" : "Live route",
+                title: nav.route == nil
+                    ? (latestRide != nil ? "Last ride" : "Your next route")
+                    : "Live route",
                 actionTitle: "Saved places",
-                action: { onOpen(.savedPlaces) }
+                action: { onOpen(.savedPlaces) },
+                actionIdentifier: AccessibilityID.Home.savedPlaces
             )
 
             Button {
@@ -298,7 +354,7 @@ struct PulseHomeView: View {
             return route.displayName ?? "Active route"
         }
         if let ride = latestRide {
-            return "\(ride.startDate.formatted(.dateTime.month(.abbreviated).day()))  •  \(Units.distanceText(ride.distanceMeters, decimals: 1))"
+            return "\(RevertFormat.shortDate(ride.startDate))  •  \(Units.distanceText(ride.distanceMeters, decimals: 1))"
         }
         return "Plan a route to see it here"
     }
@@ -310,7 +366,11 @@ struct PulseHomeView: View {
             PulseSectionHeader(title: "Quick access")
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
-                quickAction("Open cockpit", systemImage: "speedometer", tint: Pulse.accent, action: onOpenCockpit)
+                quickAction("Open cockpit",
+                            systemImage: "speedometer",
+                            tint: Pulse.accent,
+                            identifier: AccessibilityID.Home.openCockpit,
+                            action: onOpenCockpit)
                 quickAction("Ride insights", systemImage: "chart.bar.fill", tint: Pulse.accent) {
                     onOpen(.insights)
                 }
@@ -324,19 +384,21 @@ struct PulseHomeView: View {
         }
     }
 
-    private func quickAction(_ title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
+    private func quickAction(_ title: String, systemImage: String, tint: Color,
+                             identifier: String? = nil,
+                             action: @escaping () -> Void) -> some View {
         Button {
             RevertHaptics.tap()
             action()
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.scaledSystem(size: 14, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
                     .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 Text(title)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.scaledSystem(size: 11.5, weight: .semibold))
                     .foregroundStyle(Pulse.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -352,13 +414,17 @@ struct PulseHomeView: View {
         }
         .buttonStyle(RevertCardButtonStyle())
         .accessibilityLabel(title)
+        .accessibilityIdentifier(ifPresent: identifier)
     }
 
     // MARK: Recent rides
 
     private var recentRides: some View {
         VStack(alignment: .leading, spacing: 9) {
-            PulseSectionHeader(title: "Recent rides", actionTitle: "View history", action: onOpenHistory)
+            PulseSectionHeader(title: "Recent rides",
+                               actionTitle: "View history",
+                               action: onOpenHistory,
+                               actionIdentifier: AccessibilityID.Home.viewHistory)
 
             if rides.isEmpty {
                 PulseEmptyState(
@@ -378,11 +444,11 @@ struct PulseHomeView: View {
                         } label: {
                             HStack(spacing: 11) {
                                 VStack(spacing: 2) {
-                                    Text(ride.startDate.formatted(.dateTime.day()))
+                                    Text(RevertFormat.dayNumber(ride.startDate))
                                         .font(PulseType.number(17))
                                         .foregroundStyle(Pulse.accent)
-                                    Text(ride.startDate.formatted(.dateTime.month(.abbreviated)).uppercased())
-                                        .font(.system(size: 8, weight: .heavy))
+                                    Text(RevertFormat.monthAbbreviation(ride.startDate).uppercased())
+                                        .font(.scaledSystem(size: 8, weight: .heavy))
                                         .tracking(0.8)
                                         .foregroundStyle(Pulse.muted)
                                 }
@@ -391,11 +457,11 @@ struct PulseHomeView: View {
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(ride.routeName ?? "Recorded ride")
-                                        .font(.system(size: 12.5, weight: .semibold))
+                                        .font(.scaledSystem(size: 12.5, weight: .semibold))
                                         .foregroundStyle(Pulse.ink)
                                         .lineLimit(1)
                                     Text("\(Units.distanceText(ride.distanceMeters, decimals: 1))  •  \(Units.clock(ride.durationSeconds))  •  \(ride.bikeDisplayName)")
-                                        .font(.system(size: 10))
+                                        .font(.scaledSystem(size: 10))
                                         .foregroundStyle(Pulse.muted)
                                         .lineLimit(1)
                                 }
@@ -403,7 +469,7 @@ struct PulseHomeView: View {
                                 Spacer(minLength: 4)
 
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.scaledSystem(size: 10, weight: .bold))
                                     .foregroundStyle(Pulse.muted)
                             }
                             .padding(12)
@@ -424,12 +490,12 @@ struct PulseHomeView: View {
     private var footerNote: some View {
         HStack(alignment: .top, spacing: 7) {
             Image(systemName: "iphone")
-                .font(.system(size: 9, weight: .bold))
+                .font(.scaledSystem(size: 9, weight: .bold))
                 .padding(.top, 2)
             Text("Rides, bikes and routes stay on this iPhone. Ride data is only shared when you export it.")
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 10))
+        .font(.scaledSystem(size: 10))
         .foregroundStyle(Pulse.muted)
         .padding(.top, 4)
     }
@@ -493,11 +559,11 @@ struct PulseRoutePreview: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(tag)
-                    .font(.system(size: 8.5, weight: .heavy))
+                    .font(.scaledSystem(size: 8.5, weight: .heavy))
                     .tracking(1.2)
                     .foregroundStyle(Pulse.accent)
                 Text(caption)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.scaledSystem(size: 12, weight: .semibold))
                     .foregroundStyle(Pulse.ink)
                     .lineLimit(1)
             }

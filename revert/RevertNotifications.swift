@@ -1,5 +1,5 @@
 import Foundation
 
-extension Notification.Name {
+nonisolated extension Notification.Name {
     static let revertOpenIntent = Notification.Name("revert.openIntent")
 }

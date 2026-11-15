@@ -35,7 +35,6 @@ enum Pulse {
     static var panelHigh: Color { palette.panelHigh }
     static var panelLift: Color { palette.panelLift }
     static var panelDeep: Color { palette.panelDeep }
-    static var field: Color { palette.panelDeep }
     static var iconWell: Color { palette.panelHigh }
     static var metricWell: Color { palette.panel }
 
@@ -43,7 +42,6 @@ enum Pulse {
     static var line: Color { palette.line }
     static var lineSoft: Color { palette.lineSoft }
     static var lineBright: Color { palette.lineBright }
-    static var fieldLine: Color { palette.lineBright }
 
     // Text
     static var ink: Color { palette.ink }
@@ -69,48 +67,41 @@ enum Pulse {
     static let orange = color(0xFFA96B)
     static let violet = color(0xBEB2FF)
     static let magenta = color(0xFFA8B8)
-    static let ice = color(0xDAF8F5)
+
+    // Semantic roles. Prefer these over the palette names in new code; they
+    // make it possible to change the treatment of a role without touching
+    // every data view.
+    static var action: Color { palette.accent }
+    static var positive: Color { emerald }
+    static var caution: Color { palette.warning }
+    static var lean: Color { magenta }
 
     static var accentGradient: LinearGradient { palette.accentGradient }
 
     static var heroGradient: LinearGradient { palette.heroGradient }
 
     static var cardGradient: LinearGradient { palette.cardGradient }
-
-    static var barGradient: LinearGradient {
-        LinearGradient(
-            colors: [accent.opacity(0.75), accentDeep.opacity(0.25), .clear],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
 }
 
 enum PulseMetrics {
     static let screenPadding: CGFloat = 19
     static let cardPadding: CGFloat = 16
     static let cardRadius: CGFloat = 17
-    static let fieldRadius: CGFloat = 11
-    static let controlRadius: CGFloat = 13
-    static let chipRadius: CGFloat = 30
-    static let sectionSpacing: CGFloat = 18
-    static let rowSpacing: CGFloat = 10
 }
 
 enum PulseType {
-    static func display(_ size: CGFloat = 28) -> Font {
-        .system(size: size, weight: .heavy)
+    static func display(_ size: CGFloat = 28, weight: Font.Weight = .heavy) -> Font {
+        .scaledSystem(size: size, weight: weight)
     }
 
     static func number(_ size: CGFloat, weight: Font.Weight = .heavy) -> Font {
-        .system(size: size, weight: weight).monospacedDigit()
+        .scaledSystem(size: size, weight: weight).monospacedDigit()
     }
 
-    static var eyebrow: Font { .system(size: 10, weight: .black) }
-    static var section: Font { .system(size: 11, weight: .heavy) }
-    static var title: Font { .system(size: 17, weight: .bold) }
-    static var body: Font { .system(size: 13) }
-    static var caption: Font { .system(size: 10.5) }
+    static var eyebrow: Font { .scaledSystem(size: 10, weight: .black) }
+    static var section: Font { .scaledSystem(size: 11, weight: .heavy) }
+    static var body: Font { .scaledSystem(size: 13) }
+    static var headline: Font { .scaledSystem(size: 16, weight: .bold) }
 }
 
 // MARK: - Background
@@ -205,50 +196,35 @@ struct PulseScreenHeader<Trailing: View>: View {
     let eyebrow: String
     let title: String
     var subtitle: String? = nil
+    var identifier: String? = nil
     let trailing: Trailing
 
     init(
         eyebrow: String,
         title: String,
         subtitle: String? = nil,
+        identifier: String? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.eyebrow = eyebrow
         self.title = title
         self.subtitle = subtitle
+        self.identifier = identifier
         self.trailing = trailing()
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(eyebrow.uppercased())
-                    .font(PulseType.eyebrow)
-                    .tracking(2)
-                    .foregroundStyle(Pulse.accent)
-                Text(title)
-                    .font(PulseType.display(27))
-                    .tracking(-0.7)
-                    .foregroundStyle(Pulse.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Pulse.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 8)
+        ScreenHeader(
+            eyebrow: eyebrow,
+            title: title,
+            subtitle: subtitle,
+            systemImage: nil,
+            tint: Pulse.accent,
+            variant: .dashboard,
+            identifier: identifier
+        ) {
             trailing
         }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-extension PulseScreenHeader where Trailing == EmptyView {
-    init(eyebrow: String, title: String, subtitle: String? = nil) {
-        self.init(eyebrow: eyebrow, title: title, subtitle: subtitle, trailing: { EmptyView() })
     }
 }
 
@@ -256,6 +232,7 @@ struct PulseSectionHeader: View {
     let title: String
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
+    var actionIdentifier: String? = nil
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -270,11 +247,12 @@ struct PulseSectionHeader: View {
                     action()
                 } label: {
                     Text(actionTitle.uppercased())
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.scaledSystem(size: 10, weight: .bold))
                         .tracking(0.8)
                         .foregroundStyle(Pulse.accent)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(ifPresent: actionIdentifier)
             }
         }
         .padding(.top, 4)
@@ -285,6 +263,7 @@ struct PulseCircleButton: View {
     let systemImage: String
     var tint: Color = Pulse.accent
     var label: String
+    var identifier: String? = nil
     var action: () -> Void
 
     var body: some View {
@@ -293,7 +272,7 @@ struct PulseCircleButton: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.scaledSystem(size: 15, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 37, height: 37)
                 .background(Pulse.iconWell, in: Circle())
@@ -301,7 +280,10 @@ struct PulseCircleButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .frame(width: 44, height: 44)
+        .contentShape(Circle())
         .accessibilityLabel(label)
+        .accessibilityIdentifier(ifPresent: identifier)
     }
 }
 
@@ -316,7 +298,7 @@ struct PulseMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .heavy))
+                .font(.scaledSystem(size: 9, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(Pulse.muted)
                 .lineLimit(1)
@@ -330,7 +312,7 @@ struct PulseMetric: View {
                     .minimumScaleFactor(0.6)
                 if let unit {
                     Text(unit.uppercased())
-                        .font(.system(size: 8, weight: .heavy))
+                        .font(.scaledSystem(size: 8, weight: .heavy))
                         .tracking(0.5)
                         .foregroundStyle(Pulse.accent)
                         .lineLimit(1)
@@ -358,10 +340,10 @@ struct PulseTag: View {
         HStack(spacing: 4) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.scaledSystem(size: 8, weight: .bold))
             }
             Text(text.uppercased())
-                .font(.system(size: 9, weight: .heavy))
+                .font(.scaledSystem(size: 9, weight: .heavy))
                 .tracking(1)
         }
         .foregroundStyle(tint)
@@ -382,19 +364,19 @@ struct PulseListRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.scaledSystem(size: 16, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 40, height: 40)
                 .background(Pulse.iconWell, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.scaledSystem(size: 13, weight: .semibold))
                     .foregroundStyle(Pulse.ink)
                     .lineLimit(2)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 10.5))
+                        .font(.scaledSystem(size: 10.5))
                         .foregroundStyle(Pulse.muted)
                         .lineLimit(2)
                 }
@@ -404,7 +386,7 @@ struct PulseListRow: View {
 
             if showsChevron {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.scaledSystem(size: 11, weight: .bold))
                     .foregroundStyle(Pulse.muted)
             }
         }
@@ -428,14 +410,14 @@ struct PulseEmptyState: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 30, weight: .light))
+                .font(.scaledSystem(size: 30, weight: .light))
                 .foregroundStyle(Pulse.accent)
                 .frame(width: 76, height: 76)
                 .background(Pulse.accent.opacity(0.08), in: Circle())
                 .overlay(Circle().stroke(Pulse.accent.opacity(0.22), lineWidth: 0.8))
 
             Text(title)
-                .font(.system(size: 18, weight: .bold))
+                .font(.scaledSystem(size: 18, weight: .bold))
                 .foregroundStyle(Pulse.ink)
             Text(message)
                 .font(PulseType.body)
@@ -462,7 +444,7 @@ struct PulsePrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: compact ? 13 : 14, weight: .heavy))
+            .font(.scaledSystem(size: compact ? 13 : 14, weight: .heavy))
             .tracking(0.3)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
@@ -487,7 +469,7 @@ struct PulseGhostButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: compact ? 12 : 13, weight: .bold))
+            .font(.scaledSystem(size: compact ? 12 : 13, weight: .bold))
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .frame(maxWidth: .infinity, minHeight: minHeight)
@@ -523,12 +505,12 @@ struct PulseSegmented<Option: Hashable>: View {
                     }
                 } label: {
                     Text(title(option).uppercased())
-                        .font(.system(size: 10, weight: .heavy))
+                        .font(.scaledSystem(size: 10, weight: .heavy))
                         .tracking(0.6)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(selected ? Pulse.accentBright : Pulse.mutedStrong)
-                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .background(
                             selected ? Pulse.accentWell : .clear,
                             in: RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -584,11 +566,11 @@ struct PulseToggleRow: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.scaledSystem(size: 12.5, weight: .semibold))
                         .foregroundStyle(Pulse.ink)
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 10))
+                            .font(.scaledSystem(size: 10))
                             .foregroundStyle(Pulse.muted)
                     }
                 }
@@ -631,6 +613,12 @@ enum PulseTab: String, CaseIterable, Identifiable {
         case .history: "clock.arrow.circlepath"
         }
     }
+
+    /// Filled variant where SF Symbols provides one; colour alone is a weak
+    /// selection cue on an OLED bar.
+    var activeSystemImage: String {
+        self == .home ? "house.fill" : systemImage
+    }
 }
 
 struct PulseTabBar: View {
@@ -647,20 +635,23 @@ struct PulseTabBar: View {
                     onSelect(tab)
                 } label: {
                     VStack(spacing: 5) {
-                        Image(systemName: tab.systemImage)
-                            .font(.system(size: 19, weight: .medium))
+                        Image(systemName: active ? tab.activeSystemImage : tab.systemImage)
+                            .font(.scaledSystem(size: 19, weight: .medium))
                             .frame(height: 22)
                         Text(tab.title.uppercased())
-                            .font(.system(size: 8.5, weight: .bold))
+                            // Fixed by design: five tab labels cannot grow
+                            // with Dynamic Type without colliding.
+                            .font(.system(size: 10.5, weight: .bold))
                             .tracking(0.7)
                     }
                     .foregroundStyle(active ? Pulse.accent : Pulse.tabInactive)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 2)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(tab.title)
+                .accessibilityIdentifier(AccessibilityID.TabBar.id(for: tab))
                 .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
             }
         }

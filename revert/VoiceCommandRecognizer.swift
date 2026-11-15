@@ -20,6 +20,8 @@ final class VoiceCommandRecognizer {
         case repeatInstruction
         case calibrate
         case nextCamera
+        case markHazard
+        case avoidRoad
     }
 
     var isListening = false
@@ -210,7 +212,11 @@ final class VoiceCommandRecognizer {
             ("end route", .endRoute), ("stop navigation", .endRoute), ("end navigation", .endRoute),
             ("repeat", .repeatInstruction), ("say again", .repeatInstruction),
             ("calibrate", .calibrate), ("calibrate lean", .calibrate),
-            ("change camera", .nextCamera), ("camera", .nextCamera)
+            ("change camera", .nextCamera), ("camera", .nextCamera),
+            ("mark hazard", .markHazard), ("hazard here", .markHazard),
+            ("mark this hazard", .markHazard), ("mark gravel", .markHazard),
+            ("avoid this road", .avoidRoad), ("avoid road", .avoidRoad),
+            ("avoid this street", .avoidRoad)
         ]
         guard let match = matches.first(where: { normalized.hasSuffix(" \($0.0) ") }) else { return }
         guard now.timeIntervalSince(lastCommandAt) > 1.5 || lastCommand != match.1 else { return }

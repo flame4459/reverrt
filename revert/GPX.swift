@@ -8,10 +8,6 @@ enum GPX {
     }
 
     // MARK: Export
-    static func export(_ ride: Ride) -> String {
-        export(points: ride.points, startDate: ride.startDate)
-    }
-
     /// Pure formatter so it can run off the main actor for long tracks.
     nonisolated static func export(points: [RidePoint], startDate: Date) -> String {
         let f = ISO8601DateFormatter()
@@ -33,10 +29,6 @@ enum GPX {
         }
         lines.append("    </trkseg>\n  </trk>\n</gpx>\n")
         return lines.joined()
-    }
-
-    static func writeTempFile(for ride: Ride) -> URL? {
-        writeTempFile(points: ride.points, startDate: ride.startDate)
     }
 
     nonisolated static func writeTempFile(points: [RidePoint], startDate: Date) -> URL? {

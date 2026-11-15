@@ -32,7 +32,7 @@ enum RideHeatMetric: String, CaseIterable, Identifiable {
             case ..<8: return MapUI.cyan
             case ..<18: return MapUI.emerald
             case ..<28: return MapUI.orange
-            case ..<40: return MapUI.magenta
+            case ..<40: return Pulse.lean
             default: return Color(red: 1.0, green: 0.10, blue: 0.55)
             }
         }
@@ -45,7 +45,7 @@ struct RideHeatSegment: Identifiable {
     let color: Color
 }
 
-struct RideTurn: Identifiable {
+nonisolated struct RideTurn: Identifiable {
     let id: Int
     let apexIndex: Int
     let direction: Int          // +1 right, -1 left
@@ -104,7 +104,7 @@ enum RideAnalysis {
     /// Finds the meaningful corners in a recorded track: heading changes over a
     /// 25 m window, grouped into one entry per corner, with peak lean and apex
     /// speed. Runs entirely on-device over the recorded points.
-    static func turns(from points: [RidePoint]) -> [RideTurn] {
+    nonisolated static func turns(from points: [RidePoint]) -> [RideTurn] {
         guard points.count > 6 else { return [] }
         let window = max(2, min(8, points.count / 80))
         var turns: [RideTurn] = []

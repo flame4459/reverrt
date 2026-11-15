@@ -40,7 +40,7 @@ nonisolated struct MinHeap {
 /// Road network built from the cached OpenStreetMap ways.
 /// Nodes are junctions and chunk boundaries; edges are short stretches of road.
 nonisolated final class RoadGraph {
-    struct Edge {
+    struct Edge: Codable {
         let from: Int
         let to: Int
         let road: Int        // index into `roads`
@@ -85,6 +85,94 @@ nonisolated final class RoadGraph {
     private(set) var outEdges: [[Int]] = []
     private(set) var inEdges: [[Int]] = []
     private var nodeOfKey: [Int64: Int] = [:]
+
+    /// Everything needed to reconstruct the graph from cached road data.
+    /// `roads` itself is not stored: the caller already has it, and the hash
+    /// proves it is the same road set.
+    nonisolated struct Snapshot: Codable, Sendable {
+        let roadsHash: Int
+        let roadCount: Int
+        let nodeLat: [Double]
+        let nodeLon: [Double]
+        let edges: [Edge]
+        let twin: [Int]
+    }
+
+    /// Deterministic across launches, unlike `Hasher`, which is seeded per
+    /// process and would make every cached file a miss after a restart.
+    static func roadsHash(_ roads: [Road]) -> Int {
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        func mix(_ v: UInt64) {
+            h ^= v
+            h = h &* 0x0000_0100_0000_01b3
+        }
+        mix(UInt64(roads.count))
+        for road in roads {
+            mix(UInt64(bitPattern: road.id))
+            mix(UInt64(road.coords.count))
+            if let first = road.coords.first, let last = road.coords.last {
+                mix(UInt64(bitPattern: Int64((first * 1_000_000).rounded())))
+                mix(UInt64(bitPattern: Int64((last * 1_000_000).rounded())))
+            }
+        }
+        return Int(truncatingIfNeeded: h)
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(roadsHash: RoadGraph.roadsHash(roads),
+                 roadCount: roads.count,
+                 nodeLat: nodeLat,
+                 nodeLon: nodeLon,
+                 edges: edges,
+                 twin: twin)
+    }
+
+    init?(snapshot: Snapshot, roads: [Road]) {
+        guard snapshot.roadCount == roads.count,
+              snapshot.roadsHash == RoadGraph.roadsHash(roads),
+              snapshot.twin.count == snapshot.edges.count else { return nil }
+        self.roads = roads
+        nodeLat = snapshot.nodeLat
+        nodeLon = snapshot.nodeLon
+        edges = snapshot.edges
+        twin = snapshot.twin
+        guard edges.allSatisfy({ $0.from < nodeLat.count && $0.to < nodeLat.count && $0.road < roads.count }) else {
+            return nil
+        }
+        rebuildAdjacency()
+        for index in nodeLat.indices {
+            nodeOfKey[RoadGraph.key(nodeLat[index], nodeLon[index])] = index
+        }
+    }
+
+    private func rebuildAdjacency() {
+        outEdges = Array(repeating: [], count: nodeLat.count)
+        inEdges = Array(repeating: [], count: nodeLat.count)
+        for (index, edge) in edges.enumerated() {
+            outEdges[edge.from].append(index)
+            inEdges[edge.to].append(index)
+        }
+    }
+
+    /// Nearest existing node, used when a cached graph does not contain the
+    /// exact start vertex. Chunk boundaries put a node at least every ~220 m,
+    /// so this normally lands within half a chunk of the pin.
+    func nearestNode(latitude: Double, longitude: Double, withinMeters: Double) -> Int? {
+        let latScale = 110_540.0
+        let lonScale = 111_320.0 * cos(latitude * .pi / 180)
+        var best = -1
+        var bestDistance = withinMeters * withinMeters
+        for index in nodeLat.indices {
+            let dy = (nodeLat[index] - latitude) * latScale
+            let dx = (nodeLon[index] - longitude) * lonScale
+            let distance = dx * dx + dy * dy
+            if distance <= bestDistance {
+                bestDistance = distance
+                best = index
+            }
+        }
+        return best >= 0 ? best : nil
+    }
 
     /// Same OSM node always has identical coordinates, so rounding gives a stable id.
     static func key(_ lat: Double, _ lon: Double) -> Int64 {
