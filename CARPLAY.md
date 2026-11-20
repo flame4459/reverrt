@@ -5,6 +5,11 @@ a CarPlay vehicle, the car screen gets the live ride: the planned route on a map
 turn-by-turn cards, distance/time remaining, and a list of saved rides and places
 to start from. Rides started or ended on either screen stay in sync.
 
+> **Before the entitlement is granted**, there is a second path that needs no
+> Apple approval: export a track-only GPX and let a free CarPlay GPX app (Organic Maps)
+> draw it, while Revert keeps navigating and stays the only voice. Car-only
+> scope; the implementation is `CarHandoff.swift`.
+
 ## What the car screen offers
 
 - **Live map** rendered with MapKit in the CarPlay window: the route line, the

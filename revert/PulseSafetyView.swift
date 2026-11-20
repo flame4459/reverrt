@@ -167,7 +167,7 @@ struct PulseSafetyView: View {
             PulseSectionHeader(title: "Alert preview")
 
             Button {
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                RevertHaptics.warning()
                 Speaker.shared.say(Narrator.exampleAlert)
             } label: {
                 HStack(spacing: 11) {

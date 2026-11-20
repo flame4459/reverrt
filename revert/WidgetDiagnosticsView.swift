@@ -58,7 +58,7 @@ struct WidgetDiagnosticsView: View {
         }
         .scrollIndicators(.hidden)
         .pulseBackground()
-        .navigationTitle("CarPlay diagnostics")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: reload)
     }

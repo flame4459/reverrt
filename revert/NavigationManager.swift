@@ -63,7 +63,10 @@ final class NavigationManager {
     /// point routes always report 1 / 1.
     var lap = 1
     var lastLapDuration: TimeInterval?
-    var totalLaps: Int { max(route?.laps ?? 1, 1) }
+    var totalLaps: Int {
+        guard let route, route.kind.isLoop else { return 1 }
+        return max(route.laps, 1)
+    }
     var currentSpeedMps = 0.0
     var offRoute = false
     var rerouting = false
@@ -113,6 +116,11 @@ final class NavigationManager {
     @ObservationIgnored private var straightAnnounced = Set<Int>()
     @ObservationIgnored private var offSince: Date?
     @ObservationIgnored private var lastReroute = Date.distantPast
+    /// Low-passed course, so the heading-up map does not twitch with GPS noise.
+    @ObservationIgnored private var smoothedHeading: Double = 0
+    /// Where the last reroute attempt started, so a failed attempt is only
+    /// retried once the rider has actually moved.
+    @ObservationIgnored private var lastReroutePoint: CLLocationCoordinate2D?
     @ObservationIgnored private var normalDestination: CLLocationCoordinate2D?
     @ObservationIgnored private var lastPoseAt = Date.distantPast
     @ObservationIgnored private var lastPoseHeading = 0.0
@@ -233,11 +241,11 @@ final class NavigationManager {
     /// already left.
     private static let staleFixAge = 5.0
     /// Lateral offset (m) at which the fix stops being "on the route".
-    private static let offRouteEnter = 50.0
+    private static let offRouteEnter = 65.0
     /// Offset (m) it has to come back inside before the route is trusted
     /// again. The band between the two stops a drifting fix on a junction from
     /// flapping the banner and the alerts.
-    private static let offRouteClear = 35.0
+    private static let offRouteClear = 30.0
 
     /// Age of a fix, never negative (device clock corrections can push it
     /// below zero for a moment).
@@ -260,6 +268,12 @@ final class NavigationManager {
         }
         publishCameraPose(at: loc.coordinate, heading: userHeading, speed: speed)
 
+        // A 60 m fix cannot prove the rider left the route. Matching on it is
+        // how a street canyon installed a reroute that replaced a perfectly
+        // good route; wait for a fix that can be trusted. Unknown accuracy
+        // (negative, as in scripted fixes) is not evidence of a bad fix.
+        guard loc.horizontalAccuracy <= 30 else { return }
+
         guard let r = route, !arrived, r.points.count > 1 else { return }
 
         // Not on the route yet: wait until the rider reaches the start area.
@@ -277,11 +291,22 @@ final class NavigationManager {
                 // past the line — which left the ride un-joinable and the
                 // recording locked behind it.
                 updateApproach(with: loc)
-                guard distanceToStart < 150,
-                      let m = project(loc.coordinate, onto: r,
-                                      from: 0, to: r.points.count - 1,
-                                      firstWithin: 60) else { return }
-                join(r, m, at: loc, speed: speed)
+                let nearStart = project(loc.coordinate, onto: r,
+                                        from: 0, to: r.points.count - 1,
+                                        firstWithin: 80)
+                if distanceToStart < 300, let m = nearStart {
+                    join(r, m, at: loc, speed: speed)
+                } else if let m = project(loc.coordinate, onto: r,
+                                          from: 0, to: r.points.count - 1,
+                                          firstWithin: 40) {
+                    // A saved loop can be ridden from anywhere along it. This
+                    // used to refuse to join unless you were at the exact
+                    // start, which left a rider who began a mile into the loop
+                    // with no guidance and no way to record.
+                    join(r, m, at: loc, speed: speed)
+                } else {
+                    return
+                }
             } else {
                 // Point-to-point is not a loop with a start line: the rider is
                 // already on it wherever they are. Join at the nearest point on
@@ -318,8 +343,12 @@ final class NavigationManager {
                     ("speed", "\(Int(speed))")
                 ])
             }
-            if let o = offSince, Date().timeIntervalSince(o) > 8, speed > 2, !rerouting,
-               Date().timeIntervalSince(lastReroute) > 20 {
+            // A GPS bias of 50 m beside a road used to sit right on the old
+            // 50 m line, so every fix flipped in and out and re-routed. The
+            // band is wider now and a re-route cannot repeat for 40 seconds.
+            if let o = offSince, Date().timeIntervalSince(o) > 10, speed > 2, !rerouting,
+               Date().timeIntervalSince(lastReroute) > 40,
+               movedSinceReroute(loc.coordinate) {
                 reroute(from: loc)
             }
             return
@@ -461,7 +490,9 @@ final class NavigationManager {
             // the map spins at every light. The route's own tangent does not.
             userHeading = heading(on: r, at: along)
         }
-        publishCameraPose(at: position, heading: userHeading, speed: speed)
+        // Same fix as the raw pose published on the way in, so bypass the
+        // throttle: the projected point is the one the camera should follow.
+        publishCameraPose(at: position, heading: userHeading, speed: speed, force: true)
     }
 
     /// Dead-reckons the route distance to cover the age of the fix.
@@ -527,49 +558,94 @@ final class NavigationManager {
     }
 
     private func publishCameraPose(at coordinate: CLLocationCoordinate2D,
-                                   heading: Double, speed: Double) {
+                                   heading: Double, speed: Double, force: Bool = false) {
         let now = Date()
         let headingMoved = abs(heading - lastPoseHeading) >= 4
-        guard now.timeIntervalSince(lastPoseAt) >= 0.08 || headingMoved else { return }
+        // A hot phone or Low Power Mode should not be asked for twelve map
+        // updates a second. Halving the rate is invisible at speed and buys
+        // back battery and thermals on a long ride.
+        let throttled = ProcessInfo.processInfo.isLowPowerModeEnabled
+            || ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        let minimumInterval = throttled ? 0.25 : 0.08
+        guard force || now.timeIntervalSince(lastPoseAt) >= minimumInterval || headingMoved && !throttled else { return }
         lastPoseAt = now
         lastPoseHeading = heading
+
+        // Course from CoreLocation jitters by several degrees per fix. The map
+        // rotates with this value, so feeding it raw makes the whole world
+        // shiver. A circular low-pass over successive fixes is what makes the
+        // rotation feel like Apple Maps instead of a compass in a paint shaker.
+        var delta = heading - smoothedHeading
+        while delta > 180 { delta -= 360 }
+        while delta <= -180 { delta += 360 }
+        smoothedHeading = smoothedHeading + delta * 0.22
+        smoothedHeading = smoothedHeading.truncatingRemainder(dividingBy: 360)
+        if smoothedHeading < 0 { smoothedHeading += 360 }
+
         cameraPose = RideCameraPose(latitude: coordinate.latitude,
                                     longitude: coordinate.longitude,
-                                    heading: heading,
+                                    heading: smoothedHeading,
                                     speed: speed)
     }
 
-    /// Distance rungs, in metres. Imperial: 1,000 ft, 500 ft, 200 ft.
-    /// Metric: 800 m, 400 m, 150 m. The junction itself gets a final call with
-    /// no distance, which is the only one that should ever omit it.
-    private static var calloutRungs: [Double] {
-        Units.isMetric ? [800, 400, 150] : [305, 152, 61]
+    /// Waze's approach bands. The faster the rider, the earlier the first
+    /// turn/exit prompt. The table is deliberately speed-banded rather than a
+    /// continuous formula: it gives a stable, predictable prompt distance.
+    nonisolated static func approachDistance(forSpeed speed: Double) -> Double {
+        let kmh = max(speed, 0) * 3.6
+        if kmh < 70 { return 305 }       // 1,000 ft
+        if kmh < 90 { return 805 }       // 0.5 mi
+        if kmh < 150 { return 3_218 }    // 2 mi
+        return 4_828                     // 3 mi
+    }
+
+    /// Three decreasing rungs: the approach band, half of it, then the close
+    /// prompt. All are in metres and independent of the unit setting.
+    nonisolated static func calloutRungs(forSpeed speed: Double) -> [Double] {
+        let approach = approachDistance(forSpeed: speed)
+        return [approach, approach * 0.5, max(150, approach * 0.18)]
+    }
+
+    /// The final no-distance prompt must also scale; 25 m at 80 mph is under
+    /// a second of warning.
+    nonisolated static func finalPromptDistance(forSpeed speed: Double) -> Double {
+        min(max(speed * 3.0, 35), 150)
     }
 
     private func speakIfNeeded(_ s: NavStep, speed: Double) {
         guard !s.instruction.isEmpty else { return }
         var spoken = announcedCallouts[s.id, default: []]
+        let rungs = Self.calloutRungs(forSpeed: speed)
 
-        // Announce the largest rung the rider has just passed, and only that
-        // one, so a fast approach does not fire three callouts at once.
-        for (index, rung) in Self.calloutRungs.enumerated()
-        where stepDistance <= rung && !spoken.contains(index) {
-            spoken.insert(index)
+        // A step can become current already inside several rungs — the next
+        // manoeuvre after a turn is often 40 m away. Announce once, with the
+        // live distance, and mark every rung already passed so the following
+        // fixes do not fire a burst of duplicates.
+        let crossed = rungs.enumerated()
+            .filter { stepDistance <= $0.element && !spoken.contains($0.offset) }
+        if let first = crossed.first {
+            for rung in crossed { spoken.insert(rung.offset) }
             announcedCallouts[s.id] = spoken
             RideDebug.shared.event("NAV-CUE", [
-                ("stage", "rung\(index + 1)"),
+                ("stage", "rung\(first.offset + 1)"),
                 ("turn", "\(s.turn)"),
                 ("road", s.road ?? "—"),
                 ("instruction", s.instruction),
                 ("distance", "\(Int(stepDistance))"),
-                ("speed", "\(Int(speed))")
+                ("speed", "\(Int(speed))"),
+                ("band", "\(Int(speed * 3.6)) km/h"),
+                ("lookahead", "\(Int(first.element)) m")
             ])
+            if UserDefaults.standard.bool(forKey: "voice.muted"), first.offset == rungs.count - 1 {
+                TurnCue.approach()
+            }
             Speaker.shared.say(Narrator.instruction(s, distance: stepDistance), kind: .navigation)
             return
         }
 
-        // On the junction: "Turn left onto X", no distance.
-        if stepDistance <= 25, !spoken.contains(99) {
+        // On the junction: "Turn left onto X", no distance. Scale this too.
+        let final = Self.finalPromptDistance(forSpeed: speed)
+        if stepDistance <= final, !spoken.contains(99) {
             spoken.insert(99)
             announcedCallouts[s.id] = spoken
             RideDebug.shared.event("NAV-CUE", [
@@ -578,7 +654,8 @@ final class NavigationManager {
                 ("road", s.road ?? "—"),
                 ("instruction", s.instruction),
                 ("distance", "\(Int(stepDistance))"),
-                ("speed", "\(Int(speed))")
+                ("speed", "\(Int(speed))"),
+                ("finalBand", "\(Int(final)) m")
             ])
             Speaker.shared.say(Narrator.instruction(s, distance: nil), kind: .navigation)
         }
@@ -650,11 +727,20 @@ final class NavigationManager {
     }
 
     // MARK: Rerouting
+    /// True when the rider has moved far enough that another reroute attempt
+    /// is worth speaking; a failed attempt used to repeat every 20 seconds.
+    private func movedSinceReroute(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        guard let previous = lastReroutePoint else { return true }
+        return CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+            .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) > 300
+    }
+
     private func reroute(from loc: CLLocation) {
         guard let r = route else { return }
         let generation = routeGeneration
         rerouting = true
         lastReroute = Date()
+        lastReroutePoint = loc.coordinate
         RideDebug.shared.event("NAV-REROUTE", [
             ("roads", "\(roads.count)"),
             ("along", "\(Int(along))"),

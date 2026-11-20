@@ -35,7 +35,7 @@ final class RevertServices {
 
     private init() {
         let schema = Schema([Ride.self, Bike.self, MaintenanceEntry.self, SavedRoute.self,
-                             Trip.self, TripDay.self, SetupNote.self])
+                             Trip.self, TripDay.self, SetupNote.self, SegmentRecord.self])
         do {
             modelContainer = try ModelContainer(for: schema)
         } catch {

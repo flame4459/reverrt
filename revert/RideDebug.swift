@@ -33,6 +33,7 @@ final class RideDebug {
 
     private let overrideDirectory: URL?
     private var handle: FileHandle?
+    private var bytesWritten = 0
     private var startedAt: Date?
     private var lastSample = Date.distantPast
     private var counts: [String: Int] = [:]
@@ -75,6 +76,7 @@ final class RideDebug {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             prune()
             let url = directory.appendingPathComponent(Self.fileName(for: now, route: route?.displayName))
+            bytesWritten = 0
             FileManager.default.createFile(atPath: url.path, contents: nil)
             handle = try FileHandle(forWritingTo: url)
             fileURL = url
@@ -383,10 +385,18 @@ final class RideDebug {
 
     // MARK: Writing
 
+    /// A cap per file: a long day of riding produced transcripts big enough to
+    /// be awkward to share, and the debug export is meant to be attached to a
+    /// message. Once the cap is reached the ride keeps running; it just stops
+    /// adding lines.
+    private static let maxFileBytes = 8 * 1024 * 1024
+
     private func write(_ text: String) {
         guard let handle, let data = (text + "\n").data(using: .utf8) else { return }
+        guard bytesWritten + data.count <= Self.maxFileBytes else { return }
         do {
             try handle.write(contentsOf: data)
+            bytesWritten += data.count
         } catch {
             close()
         }
@@ -432,6 +442,10 @@ final class RideDebug {
     private func settingsBlock() -> String {
         let defaults = UserDefaults.standard
         var lines = ["--- SETTINGS ---"]
+        let process = ProcessInfo.processInfo
+        let thermal = ["nominal", "fair", "serious", "critical"][min(process.thermalState.rawValue, 3)]
+        lines.append("device.thermal = \(thermal)")
+        lines.append("device.lowPower = \(process.isLowPowerModeEnabled)")
         var seen = Set<String>()
         for (key, label, fallback) in Self.curatedSettings {
             seen.insert(key)

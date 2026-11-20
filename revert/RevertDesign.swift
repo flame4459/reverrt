@@ -703,14 +703,21 @@ struct RevertProgressBar: View {
 /// glove-sized hit target.
 struct RevertMapDock<Content: View>: View {
     @ViewBuilder let content: Content
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         VStack(spacing: 2) {
             content
         }
         .padding(5)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RevertMetrics.dockRadius, style: .continuous))
-        .background(Pulse.bar.opacity(0.86), in: RoundedRectangle(cornerRadius: RevertMetrics.dockRadius, style: .continuous))
+        .background {
+            if !reduceTransparency {
+                RoundedRectangle(cornerRadius: RevertMetrics.dockRadius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            }
+        }
+        .background(Pulse.bar.opacity(reduceTransparency ? 1 : 0.86),
+                    in: RoundedRectangle(cornerRadius: RevertMetrics.dockRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: RevertMetrics.dockRadius, style: .continuous)
                 .strokeBorder(MapUI.lineStrong, lineWidth: 0.8)

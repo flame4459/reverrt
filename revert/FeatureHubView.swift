@@ -69,9 +69,8 @@ struct FeatureHubView: View {
                 .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                 .tracking(1.8)
                 .foregroundStyle(Pulse.accent)
-            Text("Ride Lab")
-                .font(PulseType.display(32))
-                .foregroundStyle(Pulse.ink)
+            // The navigation bar already says "Ride Lab"; a second 32 pt copy
+            // right underneath just pushes the first section off screen.
             Text("Planning conditions, touring, route links, hands-free marks, ghost runs, corner and segment reports, monthly posters and setup notes — all on this iPhone.")
                 .font(.system(.subheadline, design: .rounded))
                 .foregroundStyle(Pulse.muted)
@@ -84,7 +83,7 @@ struct FeatureHubView: View {
             NavigationLink {
                 ConditionsFeatureView(routes: savedRoutes, rides: rides, bikes: bikes)
             } label: {
-                FeatureRow(title: "Conditions", subtitle: "Sunset, daylight and finish-in-the-dark warnings",
+                FeatureRow(title: "Conditions (light)", subtitle: "Sunset, daylight and finish-in-the-dark warnings",
                            systemImage: "sun.horizon.fill", tint: Pulse.warning)
             }
             NavigationLink {
@@ -321,7 +320,7 @@ struct ConditionsFeatureView: View {
             .padding(.top, 8)
         }
         .pulseBackground()
-        .navigationTitle("Conditions")
+        .navigationTitle("Conditions (light)")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -371,10 +370,10 @@ struct RangeFeatureView: View {
                             .font(.scaledSystem(size: 24, weight: .bold))
                             .foregroundStyle(Pulse.accent)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(Units.distanceText(base.rangeKm * 1_000, decimals: 0)) range")
+                            Text("\(Units.distanceText(base.usableKm * 1_000, decimals: 0)) usable range")
                                 .font(.system(.headline, design: .rounded).weight(.heavy))
                                 .foregroundStyle(Pulse.ink)
-                            Text("Comfortable turn-back at \(Units.distanceText(base.comfortableKm * 1_000, decimals: 0))")
+                            Text("At \(Int(base.tankFraction * 100))% tank · comfortable turn-back \(Units.distanceText(base.comfortableKm * 1_000, decimals: 0))")
                                 .font(.scaledSystem(size: 10, design: .rounded))
                                 .foregroundStyle(Pulse.muted)
                         }
@@ -440,6 +439,7 @@ struct TripListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Trip.createdAt, order: .reverse) private var trips: [Trip]
     @State private var showingAdd = false
+    @State private var editingTrip: Trip?
 
     var body: some View {
         ScrollView {
@@ -473,6 +473,19 @@ struct TripListView: View {
                             .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                editingTrip = trip
+                            } label: {
+                                Label("Edit trip", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                context.delete(trip)
+                                try? context.save()
+                            } label: {
+                                Label("Delete trip", systemImage: "trash")
+                            }
+                        }
                     }
                 }
             }
@@ -485,6 +498,9 @@ struct TripListView: View {
         .sheet(isPresented: $showingAdd) {
             TripEditorView()
         }
+        .sheet(item: $editingTrip) { trip in
+            TripEditorView(trip: trip)
+        }
     }
 
     private func totalDistance(_ trip: Trip) -> String {
@@ -493,10 +509,17 @@ struct TripListView: View {
 }
 
 struct TripEditorView: View {
+    var trip: Trip? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var title = ""
     @State private var notes = ""
+
+    init(trip: Trip? = nil) {
+        self.trip = trip
+        _title = State(initialValue: trip?.title ?? "")
+        _notes = State(initialValue: trip?.notes ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -508,14 +531,20 @@ struct TripEditorView: View {
             }
             .scrollContentBackground(.hidden)
             .pulseBackground()
-            .navigationTitle("New trip")
+            .navigationTitle(trip == nil ? "New trip" : "Edit trip")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        context.insert(Trip(title: title.trimmingCharacters(in: .whitespaces), notes: notes))
+                        let trimmed = title.trimmingCharacters(in: .whitespaces)
+                        guard !trimmed.isEmpty else { return }
+                        if let trip {
+                            trip.title = trimmed
+                            trip.notes = notes
+                        } else {
+                            context.insert(Trip(title: trimmed, notes: notes))
+                        }
                         try? context.save()
                         dismiss()
                     }
@@ -528,9 +557,12 @@ struct TripEditorView: View {
 struct TripDetailView: View {
     let trip: Trip
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
     @Environment(NavigationManager.self) private var nav
     @State private var showingAddDay = false
+    @State private var editingTrip = false
+    @State private var editingDay: TripDay?
 
     var body: some View {
         ScrollView {
@@ -591,9 +623,35 @@ struct TripDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                         .contextMenu {
+                            Button {
+                                editingDay = day
+                            } label: {
+                                Label("Edit day", systemImage: "pencil")
+                            }
+                            if let saved = savedRoute(for: day), let url = RouteLink.url(for: saved) {
+                                ShareLink(item: url) {
+                                    Label("Share day link", systemImage: "link")
+                                }
+                            }
+                            if let saved = savedRoute(for: day), let gpx = saved.gpxExportURL {
+                                ShareLink(item: gpx) {
+                                    Label("Share day GPX", systemImage: "doc.badge.arrow.up")
+                                }
+                            }
+                            Button {
+                                moveDay(day, by: -1)
+                            } label: {
+                                Label("Move up", systemImage: "arrow.up")
+                            }
+                            Button {
+                                moveDay(day, by: 1)
+                            } label: {
+                                Label("Move down", systemImage: "arrow.down")
+                            }
                             Button(role: .destructive) {
                                 context.delete(day)
                                 try? context.save()
+                                renumberDays()
                             } label: {
                                 Label("Delete day", systemImage: "trash")
                             }
@@ -607,9 +665,52 @@ struct TripDetailView: View {
         .pulseBackground()
         .navigationTitle(trip.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        editingTrip = true
+                    } label: {
+                        Label("Edit trip", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        context.delete(trip)
+                        try? context.save()
+                        dismiss()
+                    } label: {
+                        Label("Delete trip", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Trip actions")
+            }
+        }
         .sheet(isPresented: $showingAddDay) {
             TripDayEditorView(trip: trip, savedRoutes: savedRoutes)
         }
+        .sheet(isPresented: $editingTrip) {
+            TripEditorView(trip: trip)
+        }
+        .sheet(item: $editingDay) { day in
+            TripDayEditorView(trip: trip, savedRoutes: savedRoutes, day: day)
+        }
+    }
+
+    private func moveDay(_ day: TripDay, by offset: Int) {
+        var days = trip.sortedDays
+        guard let index = days.firstIndex(where: { $0.id == day.id }) else { return }
+        let target = index + offset
+        guard days.indices.contains(target) else { return }
+        days.swapAt(index, target)
+        for (order, item) in days.enumerated() { item.order = order }
+        trip.days = days
+        try? context.save()
+    }
+
+    private func renumberDays() {
+        for (order, day) in trip.sortedDays.enumerated() { day.order = order }
+        try? context.save()
     }
 
     private func savedRoute(for day: TripDay) -> SavedRoute? {
@@ -621,6 +722,7 @@ struct TripDetailView: View {
 struct TripDayEditorView: View {
     let trip: Trip
     let savedRoutes: [SavedRoute]
+    var day: TripDay? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var title = ""
@@ -629,6 +731,18 @@ struct TripDayEditorView: View {
     @State private var distance = 0.0
     @State private var notes = ""
     @State private var savedRouteID: UUID?
+
+    init(trip: Trip, savedRoutes: [SavedRoute], day: TripDay? = nil) {
+        self.trip = trip
+        self.savedRoutes = savedRoutes
+        self.day = day
+        _title = State(initialValue: day?.title ?? "")
+        _start = State(initialValue: day?.startLabel ?? "")
+        _end = State(initialValue: day?.endLabel ?? "")
+        _distance = State(initialValue: day?.distanceKm ?? 0)
+        _notes = State(initialValue: day?.notes ?? "")
+        _savedRouteID = State(initialValue: day?.savedRouteID)
+    }
 
     var body: some View {
         NavigationStack {
@@ -659,19 +773,30 @@ struct TripDayEditorView: View {
             }
             .scrollContentBackground(.hidden)
             .pulseBackground()
-            .navigationTitle("Add day")
+            .navigationTitle(day == nil ? "Add day" : "Edit day")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let next = (trip.days ?? []).count
-                        let day = TripDay(order: next,
-                                          title: title.trimmingCharacters(in: .whitespaces).isEmpty ? "Day \(next + 1)" : title,
-                                          startLabel: start, endLabel: end,
-                                          distanceKm: distance, notes: notes, savedRouteID: savedRouteID)
-                        day.trip = trip
-                        context.insert(day)
+                        let trimmed = title.trimmingCharacters(in: .whitespaces)
+                        if let day {
+                            day.title = trimmed.isEmpty ? day.title : trimmed
+                            day.startLabel = start
+                            day.endLabel = end
+                            day.distanceKm = distance
+                            day.notes = notes
+                            day.savedRouteID = savedRouteID
+                        } else {
+                            let next = (trip.days ?? []).count
+                            let newDay = TripDay(order: next,
+                                                 title: trimmed.isEmpty ? "Day \(next + 1)" : trimmed,
+                                                 startLabel: start, endLabel: end,
+                                                 distanceKm: distance, notes: notes,
+                                                 savedRouteID: savedRouteID)
+                            newDay.trip = trip
+                            context.insert(newDay)
+                        }
                         try? context.save()
                         dismiss()
                     }
@@ -736,6 +861,13 @@ struct LoopDeckView: View {
                         deckStat("CLIMB", Units.elevationText(route.climbMeters))
                         deckStat("CURVES", "\(route.curviness)/5")
                     }
+                    if let comparison = comparison(for: route) {
+                        Text(comparison)
+                            .font(.scaledSystem(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Pulse.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(comparison)
+                    }
                     HStack(spacing: 9) {
                         Button {
                             RevertHaptics.tap()
@@ -765,12 +897,50 @@ struct LoopDeckView: View {
                 .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
                                         removal: .move(edge: .leading).combined(with: .opacity)))
             }
+            if routes.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 30, weight: .light))
+                        .foregroundStyle(Pulse.muted)
+                    Text("No loops yet")
+                        .font(PulseType.display(22))
+                        .foregroundStyle(Pulse.ink)
+                    Text("Widen the distance or move the start point, then plan again.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(Pulse.muted)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+            }
             Text("Keep swiping. One route at a time, no list to scan at speed.")
                 .font(.scaledSystem(size: 10, design: .rounded))
                 .foregroundStyle(Pulse.muted)
         }
         .padding(.vertical, 18)
         .pulseBackground()
+    }
+
+    /// The pitch is that a loop can be longer but far more interesting. Say it
+    /// in the deck instead of making the rider compare numbers by memory.
+    private func comparison(for route: PlannedRoute) -> String? {
+        guard routes.count > 1,
+              let shortest = routes.min(by: { $0.length < $1.length }),
+              shortest.id != route.id else { return nil }
+        let distance = (route.length - shortest.length) / max(shortest.length, 1) * 100
+        let curves = (route.twistPerKm - shortest.twistPerKm) / max(shortest.twistPerKm, 1) * 100
+        var parts: [String] = []
+        if abs(distance) >= 5 {
+            parts.append(distance > 0
+                         ? "\(Int(distance.rounded()))% longer than the shortest option"
+                         : "\(Int(-distance.rounded()))% shorter than the shortest option")
+        }
+        if abs(curves) >= 10 {
+            parts.append(curves > 0
+                         ? "\(Int(curves.rounded()))% more curves"
+                         : "\(Int(-curves.rounded()))% fewer curves")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private func deckStat(_ label: String, _ value: String) -> some View {
@@ -800,6 +970,8 @@ struct RouteImportView: View {
     @State private var importedName = "Imported route"
     @State private var track: [CLLocationCoordinate2D] = []
     @State private var replanning = false
+    @State private var replanTask: Task<Void, Never>?
+    @State private var replanProgress: (done: Int, total: Int)?
 
     var body: some View {
         ScrollView {
@@ -829,13 +1001,25 @@ struct RouteImportView: View {
                         Text("\(Units.distanceText(route.length, decimals: 1)) · \(route.points.count) points")
                             .font(.scaledSystem(size: 10, design: .rounded))
                             .foregroundStyle(Pulse.muted)
-                        Button {
-                            replan(route)
-                        } label: {
-                            Label(replanning ? "Re-planning…" : "Re-plan with roads", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                        if replanning {
+                            HStack(spacing: 9) {
+                                ProgressView().controlSize(.small)
+                                Text(replanProgress.map { "Routing \($0.done)/\($0.total) legs…" } ?? "Preparing route…")
+                                    .font(.system(.caption, design: .rounded))
+                                    .foregroundStyle(Pulse.muted)
+                                Spacer()
+                                Button("Cancel") { cancelReplan() }
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Pulse.warning)
+                            }
+                        } else {
+                            Button {
+                                replan(route)
+                            } label: {
+                                Label("Re-plan with roads", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                            }
+                            .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
                         }
-                        .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
-                        .disabled(replanning)
 
                         HStack(spacing: 9) {
                             Button {
@@ -865,6 +1049,7 @@ struct RouteImportView: View {
         .pulseBackground()
         .navigationTitle("Import route")
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { replanTask?.cancel() }
         .fileImporter(isPresented: $importing, allowedContentTypes: GPX.contentTypes,
                       allowsMultipleSelection: false) { result in
             switch result {
@@ -894,8 +1079,17 @@ struct RouteImportView: View {
     private func replan(_ route: PlannedRoute) {
         guard !track.isEmpty else { return }
         replanning = true
-        Task {
-            if let newRoute = await RouteReplanner.replan(track: track, name: importedName) {
+        replanProgress = nil
+        replanTask?.cancel()
+        replanTask = Task {
+            let result = await RouteReplanner.replan(track: track, name: importedName) { done, total in
+                replanProgress = (done, total)
+            }
+            guard !Task.isCancelled else {
+                replanning = false
+                return
+            }
+            if let newRoute = result {
                 self.route = newRoute
                 error = nil
                 RevertHaptics.success()
@@ -903,7 +1097,15 @@ struct RouteImportView: View {
                 error = "MapKit could not re-plan this track."
             }
             replanning = false
+            replanProgress = nil
         }
+    }
+
+    private func cancelReplan() {
+        replanTask?.cancel()
+        replanTask = nil
+        replanning = false
+        replanProgress = nil
     }
 
 }
@@ -916,6 +1118,7 @@ struct RouteLinkFeatureView: View {
     @Environment(NavigationManager.self) private var nav
     @State private var pasted = ""
     @State private var incoming: PlannedRoute?
+    @State private var qrItem: RouteQRCodeItem?
     @State private var error: String?
 
     var body: some View {
@@ -944,6 +1147,29 @@ struct RouteLinkFeatureView: View {
                                 .padding(10)
                                 .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
+                            .contextMenu {
+                                Button {
+                                    qrItem = RouteQRCodeItem(url: url, name: saved.name)
+                                } label: {
+                                    Label("Show QR code", systemImage: "qrcode")
+                                }
+                            }
+                        } else {
+                            HStack(spacing: 9) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Pulse.warning)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(saved.name)
+                                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                        .foregroundStyle(Pulse.ink)
+                                    Text("Route is too large for a single link; use a GPX export or split it.")
+                                        .font(.scaledSystem(size: 9.5, design: .rounded))
+                                        .foregroundStyle(Pulse.muted)
+                                }
+                                Spacer()
+                            }
+                            .padding(10)
+                            .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                     }
                 }
@@ -977,6 +1203,9 @@ struct RouteLinkFeatureView: View {
         .pulseBackground()
         .navigationTitle("Route links")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $qrItem) { item in
+            RouteQRCodeView(item: item)
+        }
     }
 
     private func openPasted() {
@@ -1069,6 +1298,10 @@ struct RidePackFeatureView: View {
     @State private var selectedID: UUID?
     @State private var packing = false
     @State private var message: String?
+    @State private var packingText: String?
+    @State private var packedRoads = 0
+    @State private var packedHazards = 0
+    @State private var packedChunks = 0
 
     private var saved: SavedRoute? {
         if let selectedID { return savedRoutes.first { $0.id == selectedID } }
@@ -1108,11 +1341,12 @@ struct RidePackFeatureView: View {
                             Text(route.displayName ?? "Route")
                                 .font(.system(.headline, design: .rounded).weight(.heavy))
                                 .foregroundStyle(Pulse.ink)
-                            packRow("Road graph", "\(roadCount) cached ways", ok: roadCount > 0)
-                            packRow("Hazards", "\(hazardCount) cached devices", ok: hazardCount > 0)
+                            packRow("Road graph", packedRoads > 0 ? "\(packedRoads) corridor ways" : "\(roadCount) cached ways", ok: packedRoads > 0 || roadCount > 0)
+                            packRow("Hazards", packedHazards > 0 ? "\(packedHazards) corridor devices" : "\(hazardCount) cached devices", ok: packedHazards > 0 || hazardCount > 0)
                             packRow("Route geometry", "\(route.points.count) points on disk", ok: true)
+                            packRow("Corridor", packedChunks > 0 ? "\(packedChunks) chunks packed" : "Not packed", ok: packedChunks > 0)
                             packRow("Elevation", "Fetched on demand", ok: false)
-                            Text("A corridor pack downloads a \(Units.distanceText(12_000, decimals: 0)) area around the start. Use the full Offline screen for a larger radius.")
+                            Text("Pack the whole route, not just the start: each \(Units.distanceText(8_000, decimals: 0)) of the route gets an overlapping \(Units.distanceText(8_000, decimals: 0)) area of roads and hazards. Elevation remains on demand.")
                                 .font(.scaledSystem(size: 10, design: .rounded))
                                 .foregroundStyle(Pulse.muted)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -1122,7 +1356,7 @@ struct RidePackFeatureView: View {
                         Button {
                             pack(center: center, route: route)
                         } label: {
-                            Label(packing ? "Packing…" : "Pack this area", systemImage: "arrow.down.circle.fill")
+                            Label(packing ? (packingText ?? "Packing…") : "Pack route corridor", systemImage: "arrow.down.circle.fill")
                         }
                         .buttonStyle(RevertPrimaryButtonStyle())
                         .disabled(packing)
@@ -1163,14 +1397,58 @@ struct RidePackFeatureView: View {
     }
 
     private func pack(center: CLLocationCoordinate2D, route: PlannedRoute) {
+        let chunks = corridorSamples(route)
         packing = true
         message = nil
+        packingText = "Preparing corridor…"
+        packedRoads = 0
+        packedHazards = 0
+        packedChunks = 0
         Task {
-            let roads = await RoadStore.store(for: route.surface).loadArea(center: center, radiusKm: 12)
-            let hazards = await HazardStore.shared.loadArea(center: center, radiusKm: 12)
+            var roads = 0
+            var hazards = 0
+            for (index, chunk) in chunks.enumerated() {
+                packingText = "Packing \(index + 1)/\(chunks.count)…"
+                let loadedRoads = await RoadStore.store(for: route.surface)
+                    .loadArea(center: chunk, radiusKm: 8)
+                let loadedHazards = await HazardStore.shared
+                    .loadArea(center: chunk, radiusKm: 8)
+                roads += loadedRoads.count
+                hazards += loadedHazards.count
+                packedChunks = index + 1
+                packedRoads = roads
+                packedHazards = hazards
+            }
             packing = false
-            message = "Packed \(roads.count) roads and \(hazards.count) hazards around the start."
+            packingText = nil
+            message = "Packed \(roads) roads and \(hazards) hazards across \(chunks.count) route chunks."
             RevertHaptics.success()
         }
+    }
+
+    /// One overlapping 8 km area every ~8 km along the actual route geometry.
+    private func corridorSamples(_ route: PlannedRoute) -> [CLLocationCoordinate2D] {
+        let points = route.points
+        guard let first = points.first?.coordinate else { return [center].compactMap { $0 } }
+        var samples: [CLLocationCoordinate2D] = [first]
+        var last = first
+        var accumulated = 0.0
+        for point in points.dropFirst() {
+            accumulated += CLLocation(latitude: last.latitude, longitude: last.longitude)
+                .distance(from: CLLocation(latitude: point.lat, longitude: point.lon))
+            last = point.coordinate
+            if accumulated >= 8_000 {
+                samples.append(point.coordinate)
+                accumulated = 0
+            }
+            if samples.count >= 12 { break }
+        }
+        if let final = points.last?.coordinate,
+           CLLocation(latitude: final.latitude, longitude: final.longitude)
+            .distance(from: CLLocation(latitude: samples.last!.latitude,
+                                       longitude: samples.last!.longitude)) > 100 {
+            samples.append(final)
+        }
+        return samples
     }
 }

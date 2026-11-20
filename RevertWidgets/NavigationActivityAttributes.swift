@@ -68,6 +68,11 @@ nonisolated struct CarWidgetSnapshot: Codable, Hashable, Sendable {
         case simulation
     }
 
+    /// Written by this build. Older payloads decode as nil and are treated as
+    /// version 1 rather than guessed at.
+    var schema: Int? = CarWidgetSnapshot.currentSchema
+    static let currentSchema = 2
+
     var mode: Mode = .parked
     var vehicleKind: String = "motorcycle"
     var routeName: String = ""

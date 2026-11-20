@@ -82,11 +82,12 @@ struct VectorArcLeanGauge: View {
             .background(MapUI.titanium, in: Capsule())
             .overlay(Capsule().stroke(MapUI.fiberOpticBorder, lineWidth: 0.8))
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lean angle")
+        .accessibilityValue(
             isCalibrated
-                ? "Lean angle: \(Int(abs(angle ?? 0).rounded())) degrees, peak \(Int(maxAngle.rounded())) degrees"
-                : "Lean angle is not calibrated. Hold the phone upright and calibrate. Peak \(Int(maxAngle.rounded())) degrees"
+                ? "\(Int(abs(angle ?? 0).rounded())) degrees, peak \(Int(maxAngle.rounded())) degrees"
+                : "Not calibrated, peak \(Int(maxAngle.rounded())) degrees"
         )
     }
 

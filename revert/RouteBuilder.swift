@@ -9,30 +9,13 @@ import CoreLocation
 /// graph is chunked (see `RoadGraph`), the cost function can see the good part
 /// of a long road instead of averaging it away.
 nonisolated enum RouteBuilder {
-    nonisolated private static let failureLock = NSLock()
-    nonisolated(unsafe) private static var _lastFailure: String?
-
-    /// Why the last `loops(...)` call returned nothing, for the UI.
-    static var lastFailure: String? {
-        failureLock.withLock { _lastFailure }
-    }
-
-    /// Something the rider should know about a *successful* plan — currently
-    /// "the start moved to the nearest road".
-    nonisolated(unsafe) private static var _lastNotice: String?
-    nonisolated private static let noticeLock = NSLock()
-
-    static var lastNotice: String? {
-        noticeLock.withLock { _lastNotice }
-    }
-
-    private static func note(_ text: String?) {
-        noticeLock.withLock { _lastNotice = text }
-    }
-
-    private static func fail(_ reason: String) -> [PlannedRoute] {
-        failureLock.withLock { _lastFailure = reason }
-        return []
+    /// What a loop search produced, including why it found nothing. Returning
+    /// this instead of writing static globals means a reroute planning
+    /// concurrently cannot overwrite this plan's failure or notice.
+    nonisolated struct LoopPlanResult: Sendable {
+        var routes: [PlannedRoute]
+        var failure: String?
+        var notice: String?
     }
 
     /// Distance in metres from `start` to the nearest vertex of any usable road.
@@ -218,6 +201,7 @@ nonisolated enum RouteBuilder {
     // MARK: - Loop search
 
     /// Up to three different loops of about `length` meters starting and ending at `start`.
+    /// Backwards-compatible wrapper for callers that only want the routes.
     nonisolated static func loops(
         roads: [Road],
         start: CLLocationCoordinate2D,
@@ -230,7 +214,28 @@ nonisolated enum RouteBuilder {
         preferences: RoadPreferences = .empty,
         hazards: [Hazard] = []
     ) -> [PlannedRoute] {
-        failureLock.withLock { _lastFailure = nil }
+        loopsResult(roads: roads, start: start, length: length, style: style, date: date,
+                    deadline: deadline, surface: surface, preferredRoads: preferredRoads,
+                    preferences: preferences, hazards: hazards).routes
+    }
+
+    nonisolated static func loopsResult(
+        roads: [Road],
+        start: CLLocationCoordinate2D,
+        length: Double,
+        style: RouteStyle,
+        date: Date = Date(),
+        deadline: Date? = nil,
+        surface: LoopSurface = .paved,
+        preferredRoads: [String] = [],
+        preferences: RoadPreferences = .empty,
+        hazards: [Hazard] = []
+    ) -> LoopPlanResult {
+        var notice: String?
+        func note(_ text: String?) { notice = text }
+        func fail(_ reason: String) -> LoopPlanResult {
+            LoopPlanResult(routes: [], failure: reason, notice: notice)
+        }
         note(nil)
         guard let sv = nearestVertex(roads, to: start, includeUnpaved: surface.includesUnpaved) else {
             return fail("no mapped roads are loaded around this start")
@@ -248,7 +253,9 @@ nonisolated enum RouteBuilder {
         guard let planning = planningGraph(roads: roads,
                                            anchors: [(sv.key, sv.lat, sv.lon)],
                                            includeUnpaved: surface.includesUnpaved),
-              let s = planning.nodes.first else { return [] }
+              let s = planning.nodes.first else {
+            return fail("the mapped roads here don't contain enough connected junctions to build a loop")
+        }
         let graph = planning.graph
 
         let deadlineDate = deadline ?? Date().addingTimeInterval(12)
@@ -672,7 +679,7 @@ nonisolated enum RouteBuilder {
                 if picked.count == 3 { break }
             }
         }
-        return picked.map(\.route)
+        return LoopPlanResult(routes: picked.map(\.route), failure: nil, notice: notice)
     }
 
     // MARK: - Improvement

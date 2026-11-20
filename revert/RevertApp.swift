@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import SwiftData
 
 @main
@@ -22,6 +23,53 @@ struct RevertApp: App {
         // No navigation state survives a process restart, so any activity from
         // a previous launch is stale.
         RevertDiagnostics.log("launch \(RevertDiagnostics.appVersion) (\(RevertDiagnostics.appBuild))")
+
+        // Handoff GPX files are disposable: anything not used for a day is
+        // removed on launch, so the Files folder never becomes a dumping ground.
+        CarHandoffStore.cleanupExpired()
+        DebugHousekeeping.cleanupExpired()
+        UNUserNotificationCenter.current().delegate = NotificationPresenter.shared
+        Task { await BackupReminder.schedule() }
+        #if DEBUG
+        if CommandLine.arguments.contains("-debugBackupReminder") {
+            Task { await BackupReminder.scheduleDebugDemo() }
+        }
+        if CommandLine.arguments.contains("-debugOpenBackup") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                NotificationCenter.default.post(name: .revertOpenBackup, object: nil)
+            }
+        }
+        #endif
+
+        #if DEBUG
+        // Device check for the backup path without walking the Settings UI.
+        if CommandLine.arguments.contains("-debugBackupExport") {
+            Task { @MainActor in
+                let context = ModelContext(RevertServices.shared.modelContainer)
+                if let url = try? RevertBackupService.write(context: context) {
+                    RevertDiagnostics.log("backup.debug file=\(url.lastPathComponent)")
+                } else {
+                    RevertDiagnostics.log("backup.debug failed")
+                }
+                if CommandLine.arguments.contains("-debugBackupRestore"),
+                   let newest = RevertBackupService.newestBackupURL,
+                   let summary = try? RevertBackupService.restore(from: newest, context: context) {
+                    RevertDiagnostics.log("backup.debug restored=\(summary.added) skipped=\(summary.skipped)")
+                }
+            }
+        }
+        #endif
+
+        #if DEBUG
+        // Removes test exports left in Documents/CarHandoff by the handoff
+        // checks. Launch-only, debug-only, never compiled into a release.
+        if CommandLine.arguments.contains("-debugClearCarHandoff") {
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("CarHandoff", isDirectory: true)
+            try? FileManager.default.removeItem(at: directory)
+            RevertDiagnostics.log("handoff.cleared")
+        }
+        #endif
         Units.migrateLegacyPreferenceIfNeeded()
         #if DEBUG
         if CommandLine.arguments.contains("-debugUnitsMetric") {
@@ -115,6 +163,10 @@ struct RevertApp: App {
             } else if DebugScreens.isFeatureLab {
                 FeatureHubView()
                     .environment(nav)
+            } else if DebugScreens.isChaseReplay {
+                RideChaseReplayView(ride: DebugScreens.sampleRide())
+            } else if DebugScreens.isDirectorReplay {
+                RideDirectorReplayView(ride: DebugScreens.sampleRide())
             } else if DebugScreens.isRide {
                 RideView()
                     .environment(nav)
@@ -135,8 +187,10 @@ struct RevertApp: App {
                     UserDefaults.standard.set(true, forKey: "intent.openGarage")
                 case "end":
                     UserDefaults.standard.set(true, forKey: "intent.endRoute")
-                case "drive":
+                case "drive", "ride":
                     UserDefaults.standard.set(true, forKey: "intent.openRide")
+                case "history":
+                    UserDefaults.standard.set(true, forKey: "intent.openHistory")
                 case RouteLink.host:
                     if let payload = RouteLink.payload(from: url),
                        let route = RouteLink.route(from: payload) {
@@ -154,6 +208,17 @@ struct RevertApp: App {
                 NotificationCenter.default.post(name: .revertOpenIntent, object: nil)
             }
             .onChange(of: scenePhase) { _, phase in
+                // Keep the screen awake whenever Revert is in front. A phone on
+                // a bar mount that locks mid-route is worse than the battery
+                // cost, and the cockpit already assumes the screen is on.
+                switch phase {
+                case .active:
+                    IdleTimer.acquire("app")
+                case .inactive, .background:
+                    IdleTimer.release("app")
+                @unknown default:
+                    break
+                }
                 guard phase == .background else { return }
                 // A live ride keeps navigating in the background, so its card
                 // stays. With no ride there is nothing behind the card, and

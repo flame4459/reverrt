@@ -446,6 +446,20 @@ final class RoutePlanner {
     ) async {
         phase = .routing
 
+        // Apple's router has no notion of "twisty": it returns the quickest
+        // line and only Revert's graph honours the preference. For a sporty
+        // sprint the graph therefore goes first, and MapKit is the fallback
+        // rather than the default.
+        if via.isEmpty, kind == .sprint || preference == .sporty {
+            if let local = await localDirections(from: start, to: destination,
+                                                 surface: surface, preference: preference) {
+                results = [local]
+                phase = .done
+                await attachElevation(to: local.id, prefersPasses: false)
+                return
+            }
+        }
+
         // A normal A→B search can give the rider genuine alternatives. The
         // multi-stop path below still needs one route per leg so the choices
         // stay combinable.
@@ -492,7 +506,7 @@ final class RoutePlanner {
                     await attachElevation(to: local.id, prefersPasses: false)
                     return
                 }
-                phase = .failed("Couldn't get directions to that destination. Check your connection and try again.")
+                phase = .failed(Self.failureCopy(for: error))
                 return
             }
         }
@@ -545,7 +559,31 @@ final class RoutePlanner {
                 phase = .idle
                 return
             }
-            phase = .failed("Couldn't get directions to that destination. Check your connection and try again.")
+            phase = .failed(Self.failureCopy(for: error))
+        }
+    }
+
+    /// Turns a transport error into something the rider can act on. "Check your
+    /// connection" for a DNS failure and for a captive portal are different
+    /// problems; saying the same sentence for both is how a bug report becomes
+    /// "it just doesn't work".
+    nonisolated static func failureCopy(for error: Error) -> String {
+        guard let urlError = error as? URLError else {
+            return "Couldn't plan that route. Try again in a moment."
+        }
+        switch urlError.code {
+        case .notConnectedToInternet, .networkConnectionLost:
+            return "You're offline. Reconnect and try again — areas you've already downloaded still plan."
+        case .timedOut:
+            return "The route service didn't answer in time. Try again, or plan a smaller area."
+        case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost:
+            return "Couldn't reach the route service. Check your connection or try a different network."
+        case .secureConnectionFailed, .serverCertificateUntrusted:
+            return "The route service's secure connection failed. Try again on another network."
+        case .badServerResponse:
+            return "The route service returned an unreadable answer. Try again in a moment."
+        default:
+            return "Couldn't plan that route. Check your connection and try again."
         }
     }
 
@@ -1278,8 +1316,8 @@ final class RoutePlanner {
             let hazards = await hazardsTask.value
             let taste = RouteTaste.shared.snapshot()
 
-            func plan(_ roads: [Road], deadline: Date) -> [PlannedRoute] {
-                RouteBuilder.loops(
+            func plan(_ roads: [Road], deadline: Date) -> RouteBuilder.LoopPlanResult {
+                RouteBuilder.loopsResult(
                     roads: roads,
                     start: start,
                     length: length,
@@ -1315,6 +1353,8 @@ final class RoutePlanner {
 
             var usedRoads = downloaded
             var routes: [PlannedRoute] = []
+            var failure: String?
+            var notice: String?
             if !downloaded.isEmpty {
                 // Do not spend the full planning budget on a graph that does
                 // not reach the pin when a denser download is about to replace
@@ -1322,17 +1362,18 @@ final class RoutePlanner {
                 // planning ceiling.
                 let firstBudget = uncovered ? 4.0 : 10.0
                 let searchStart = Date()
-                routes = plan(
+                let firstPass = plan(
                     downloaded,
                     deadline: Date().addingTimeInterval(min(firstBudget, remaining))
                 )
+                routes = firstPass.routes
+                failure = firstPass.failure
+                notice = firstPass.notice
                 RevertDiagnostics.log("plan.search pass=1"
                                       + " \(Int(Date().timeIntervalSince(searchStart) * 1_000))ms"
                                       + " routes=\(routes.count) roads=\(downloaded.count)"
-                                      + " failure=\(RouteBuilder.lastFailure ?? "—")")
+                                      + " failure=\(failure ?? "—")")
             }
-            var failure = RouteBuilder.lastFailure
-            var notice = RouteBuilder.lastNotice
 
             let needsDenseGrid = uncovered
                 || (failure?.contains("junction") ?? false)
@@ -1358,13 +1399,14 @@ final class RoutePlanner {
                     let denseElapsed = Date().timeIntervalSince(planningStart)
                     let denseBudget = max(2.0, min(12.0, 58.0 - denseElapsed))
                     let denseStart = Date()
-                    routes = plan(dense, deadline: Date().addingTimeInterval(denseBudget))
+                    let densePass = plan(dense, deadline: Date().addingTimeInterval(denseBudget))
+                    routes = densePass.routes
+                    failure = densePass.failure
+                    notice = densePass.notice
                     RevertDiagnostics.log("plan.search pass=dense"
                                           + " \(Int(Date().timeIntervalSince(denseStart) * 1_000))ms"
                                           + " routes=\(routes.count) roads=\(dense.count)"
                                           + " failure=\(failure ?? "—")")
-                    failure = RouteBuilder.lastFailure
-                    notice = RouteBuilder.lastNotice
                 }
             }
             if !routes.isEmpty { failure = nil }

@@ -104,7 +104,7 @@ struct VoicePacksView: View {
         }
         .pulseBackground()
         .scrollIndicators(.hidden)
-        .navigationTitle("Voice packs")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .tint(MapUI.accent)
         .toolbar {

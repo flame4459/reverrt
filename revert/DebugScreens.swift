@@ -55,6 +55,8 @@ enum DebugScreens {
     static var isRideDebug: Bool { CommandLine.arguments.contains("-debugRideDebug") }
     static var isWidgetDiagnostics: Bool { CommandLine.arguments.contains("-debugWidgetDiagnostics") }
     static var isFeatureLab: Bool { CommandLine.arguments.contains("-debugFeatureLab") }
+    static var isChaseReplay: Bool { CommandLine.arguments.contains("-debugChaseReplay") }
+    static var isDirectorReplay: Bool { CommandLine.arguments.contains("-debugDirectorReplay") }
     static var menu: CentralMenuDestination? {
         if CommandLine.arguments.contains("-debugPlan") { return .plan }
         if CommandLine.arguments.contains("-debugSettings") { return .settings }

@@ -56,12 +56,30 @@ final class LiveRideActivity {
         ])
     }
 
+    /// At most one push per second unless the payload actually changed; alerts
+    /// always go through. Navigation updates ran at display rate before, which
+    /// burns the system budget and battery for no visible difference.
+    private static let minimumPushInterval: TimeInterval = 1.0
+    @ObservationIgnored private var lastPushAt = Date.distantPast
+    @ObservationIgnored private var lastSignature = ""
+
     func update(title: String, distance: String, speed: String, offRoute: Bool,
                 turnSymbol: String, remaining: String, eta: String,
                 speedLimit: String? = nil, lap: Int = 0, totalLaps: Int = 0,
                 hazard: String? = nil, isSimulation: Bool = false,
                 vehicleKind: String = "motorcycle", mapImage: String? = nil,
                 progress: Double = 0, alert: String? = nil, stepID: Int = -1) {
+        let signature = "\(title)|\(distance)|\(stepID)|\(mapImage ?? "")"
+            + "|\(Int(progress * 100))|\(offRoute ? 1 : 0)|\(alert ?? "")"
+        let now = Date()
+        if alert == nil,
+           signature == lastSignature,
+           now.timeIntervalSince(lastPushAt) < Self.minimumPushInterval {
+            return
+        }
+        lastPushAt = now
+        lastSignature = signature
+
         let state = NavigationActivityAttributes.ContentState(
             title: title, distance: distance, speed: speed, offRoute: offRoute,
             updatedAt: Date(), turnSymbol: turnSymbol, remaining: remaining, eta: eta,

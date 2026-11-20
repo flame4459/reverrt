@@ -14,6 +14,10 @@ final class AddressSearchService: NSObject, MKLocalSearchCompleterDelegate {
     }
 
     var suggestions: [Suggestion] = []
+    /// True between a keystroke and the completer's answer, so the UI can say
+    /// "searching" instead of "nothing found".
+    var isSearching = false
+    private var pendingQuery = ""
 
     private let completer = MKLocalSearchCompleter()
 
@@ -29,17 +33,23 @@ final class AddressSearchService: NSObject, MKLocalSearchCompleterDelegate {
         guard trimmedQuery.count >= 2 else {
             suggestions = []
             completer.queryFragment = ""
+            pendingQuery = ""
+            isSearching = false
             return
         }
 
         if let region {
             completer.region = region
         }
+        pendingQuery = trimmedQuery
+        isSearching = true
         completer.queryFragment = trimmedQuery
     }
 
     func clear() {
         suggestions = []
+        isSearching = false
+        pendingQuery = ""
         completer.queryFragment = ""
     }
 
@@ -94,6 +104,7 @@ final class AddressSearchService: NSObject, MKLocalSearchCompleterDelegate {
     }
 
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        isSearching = false
         suggestions = completer.results.map {
             Suggestion(
                 id: "\($0.title)|\($0.subtitle)",
@@ -105,6 +116,7 @@ final class AddressSearchService: NSObject, MKLocalSearchCompleterDelegate {
     }
 
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        isSearching = false
         suggestions = []
     }
 }

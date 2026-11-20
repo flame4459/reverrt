@@ -28,9 +28,13 @@ enum WidgetBridge {
     nonisolated(unsafe) private static var lastWidgetReload = Date.distantPast
 
     @MainActor
+    private static var lastWidgetWrite = Date.distantPast
     static func updateCarState(_ snapshot: CarWidgetSnapshot, force: Bool = false,
                                reason: String = "state") {
         guard let defaults else { return }
+        let writeNow = Date()
+        if !force, writeNow.timeIntervalSince(lastWidgetWrite) < 5 { return }
+        lastWidgetWrite = writeNow
         if let data = try? JSONEncoder().encode(snapshot) {
             defaults.set(data, forKey: "widget.carState")
         }

@@ -1,10 +1,14 @@
 import SwiftUI
 import MapKit
 
-/// The three camera languages the cockpit offers.
-enum RideCameraMode: String, CaseIterable, Identifiable {
+/// The camera languages the cockpit offers.
+nonisolated enum RideCameraMode: String, CaseIterable, Identifiable {
     case cockpit
     case chase
+    /// Classic follow: the camera sits behind the rider, looks where they are
+    /// heading, and keeps them centred. No look-ahead, no zoom anticipation —
+    /// the view car navigation users expect.
+    case classic
     case northUp
 
     var id: String { rawValue }
@@ -13,6 +17,7 @@ enum RideCameraMode: String, CaseIterable, Identifiable {
         switch self {
         case .cockpit: "2.5D cockpit"
         case .chase: "Chase"
+        case .classic: "Classic follow"
         case .northUp: "North up"
         }
     }
@@ -21,6 +26,7 @@ enum RideCameraMode: String, CaseIterable, Identifiable {
         switch self {
         case .cockpit: "view.3d"
         case .chase: "location.north.line.fill"
+        case .classic: "location.north.fill"
         case .northUp: "map.fill"
         }
     }
@@ -29,11 +35,16 @@ enum RideCameraMode: String, CaseIterable, Identifiable {
         switch self {
         case .cockpit: 46
         case .chase: 34
+        case .classic: 32
         case .northUp: 0
         }
     }
 
     var usesPose: Bool { self != .northUp }
+
+    /// Whether the camera leads the rider down the road. Classic follow keeps
+    /// the rider centred instead, so the map moves under them.
+    var usesLookAhead: Bool { self != .classic }
 
     /// Lower camera when slow, pull back at speed. A bike at 70 mph needs to
     /// see further down the road than one easing out of a village. The old
@@ -43,6 +54,7 @@ enum RideCameraMode: String, CaseIterable, Identifiable {
         switch self {
         case .cockpit: min(max(300 + speed * 8.5, 320), 820)
         case .chase: min(max(340 + speed * 6, 360), 760)
+        case .classic: min(max(250 + speed * 5, 280), 620)
         case .northUp: 0
         }
     }

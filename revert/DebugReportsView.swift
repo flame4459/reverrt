@@ -6,13 +6,14 @@ struct DebugReportsView: View {
     @State private var reports: [DebugReports.Entry] = []
     @State private var compiled: [URL] = []
     @State private var compiling = false
+    @State private var handoffFiles: [URL] = []
 
     var body: some View {
         List {
             Section {
                 EmptyView()
             } footer: {
-                Text("Crash reports and loop-generation failures are written here automatically. They sit beside the ride transcripts in the Revert debug folder.")
+                Text("Crash reports and loop-generation failures are written here automatically. They sit beside the ride transcripts in the Revert debug folder, and anything nobody has opened for three days is deleted automatically.")
             }
 
             Section {
@@ -87,7 +88,48 @@ struct DebugReportsView: View {
             } header: {
                 Text("Compiled by date")
             } footer: {
-                Text("One text file per calendar day, containing every ride transcript and report from that day. Compiled files are written to the debug folder and can be shared from here.")
+                Text("One text file per calendar day, containing every ride transcript and report from that day. Compiled files are written to the debug folder, can be shared from here, and are deleted after three days without being opened.")
+            }
+
+            Section {
+                if handoffFiles.isEmpty {
+                    Text("No GPX handoff files. Save one from a route's \"Send to car screen\" action and it appears here and in Files under Revert/CarHandoff.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(MapUI.secondaryInk)
+                } else {
+                    ForEach(handoffFiles, id: \.self) { url in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(url.deletingPathExtension().lastPathComponent)
+                                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                    .foregroundStyle(MapUI.ink)
+                                    .lineLimit(2)
+                                Text("\(sizeLabel(url)) · removed after 24 h unused")
+                                    .font(.system(.caption2, design: .rounded))
+                                    .foregroundStyle(MapUI.textTertiary)
+                            }
+                            Spacer(minLength: 4)
+                            ShareLink(item: url) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.scaledSystem(size: 13, weight: .bold))
+                                    .foregroundStyle(MapUI.cyan)
+                                    .frame(width: 34, height: 34)
+                                    .background(MapUI.cyan.opacity(0.10), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Share \(url.lastPathComponent)")
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Car handoff GPX")
+                    Spacer()
+                    Text("\(handoffFiles.count)")
+                        .foregroundStyle(MapUI.textTertiary)
+                }
+            } footer: {
+                Text("Files shared with Organic Maps. Delete sweeps anything older than a day; the same cleanup runs on every launch.")
             }
         }
         .scrollContentBackground(.hidden)
@@ -109,6 +151,9 @@ struct DebugReportsView: View {
             }
         }
         .onAppear {
+            handoffFiles = CarHandoffStore.files()
+            DebugHousekeeping.cleanupExpired()
+            reload()
             #if DEBUG
             if CommandLine.arguments.contains("-debugSeedReports") {
                 if DebugReports.files().isEmpty {

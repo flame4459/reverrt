@@ -7,6 +7,9 @@ entry points, data models and limitations are described in the README’s
 Scope: the sixteen features agreed after the two brainstorm rounds, minus four
 that were explicitly dropped (§10).
 
+Refinements to what already shipped are tracked separately, one checkbox each:
+[REFINEMENTS.md](REFINEMENTS.md) (264 items, three per week).
+
 ---
 
 ## 1. Ground rules
@@ -18,7 +21,7 @@ assuming a backend.
 | Rule | Consequence |
 | --- | --- |
 | No accounts, no analytics, no server of ours | Anything social travels inside a link, a QR code or AirDrop. Nothing needs a login. |
-| Everything on the phone | Weather is the one exception: WeatherKit is Apple's service, called from the device, no account. |
+| Everything on the phone | Weather is the one exception: a keyless forecast API (Open-Meteo) called directly from the device, no account. |
 | SwiftUI + SwiftData, iOS 17.4, no dependencies | New data goes into the existing store with defaults so old stores keep opening. |
 | One store shared by app, widgets, Live Activity, CarPlay | New models must be reachable from the widget and CarPlay processes without duplicating logic. |
 | The cockpit is used with gloves, in wind, at speed | New in-ride interactions are voice, haptic or single large targets. No new small buttons. |
@@ -59,21 +62,61 @@ shaded over the timeline. Warnings are plain sentences, not icons:
 "6 °C at 900 m on the ridge".
 
 **Data.** No new persisted model in v1 — the forecast is fetched per plan and
-cached for ~30 minutes. A `RideConditions` value type (window, hourly samples,
-sun times, warnings) is computed and attached to the plan presentation.
-If the plan is saved, persist a compact snapshot so the saved route still
-explains itself later.
+cached for ~15 minutes. `ConditionsService.snapshot` (already in
+`FeatureCore.swift`, sun-only today) grows a `RideConditions` value type: window,
+hourly samples, sun times, warnings. If the plan is saved, persist a compact
+snapshot so the saved route still explains itself later.
 
-**Touches.** New `ConditionsService` (WeatherKit + `CoreLocation` + sun
-calculation), `PlanView` plan card, `TwistyLoopEngine`/`LoopRanking` output
-plumbing, `SettingsView` toggle ("show conditions"), `Info.plist` WeatherKit
-entitlement.
+**Source: no Apple entitlement.** WeatherKit is dropped — it needs a paid Apple
+Developer Program membership and an App ID capability, and the app is not going
+there. Three keyless providers instead, behind one protocol:
+
+| Provider | Role | Notes |
+| --- | --- | --- |
+| **Open-Meteo** | Primary forecast | No key. 48 h hourly. Takes several coordinates in one call, so a whole loop is one request. Free for non-commercial use; attribute "Weather data by Open-Meteo.com" (CC-BY 4.0) |
+| **MET Norway** | Fallback forecast | No key. Global. Requires a descriptive `User-Agent` with contact — a generic one returns 403 — and results must be cached |
+| **NWS** | Severe-weather alerts, US | No key. `api.weather.gov/alerts/active?point=…`, used for warnings only, not forecasting |
+
+Request shape (Open-Meteo), sampled at start, thirds and end of the route plus
+its highest point:
+
+```
+/v1/forecast?latitude=a,b,c&longitude=x,y,z
+ &hourly=temperature_2m,precipitation_probability,precipitation,
+         wind_speed_10m,wind_gusts_10m,visibility,dew_point_2m
+ &timezone=auto&forecast_days=2
+```
+
+Field mapping into `RideConditions`:
+
+| Ride need | Open-Meteo field |
+| --- | --- |
+| Temperature, and the ridge drop | `temperature_2m` per sample point |
+| "Wet roads likely" | `precipitation_probability` + `precipitation` |
+| Wind and gusts | `wind_speed_10m`, `wind_gusts_10m` |
+| Fog | `dew_point_2m` within 2 °C of `temperature_2m` |
+| Low sun / visibility | `visibility` (m) plus the existing on-device sun times |
+
+Warning thresholds, one table, tuned per region later: gusts > 40 km/h; precip
+probability > 50 % inside the ride window; precipitation > 1 mm/h; visibility
+< 2 km; temperature < 5 °C; dew-point spread < 2 °C; sunset inside the ride
+duration. Each maps to one plain sentence, never an icon alone.
+
+The sun maths stays on-device so an offline plan still gets daylight warnings;
+a failed fetch degrades to sun-only rather than blocking the plan.
+
+**Touches.** `FeatureCore.swift` (`ConditionsService`, `RideConditions`), new
+`WeatherProviders.swift` (protocol, Open-Meteo, MET Norway, NWS), `PlanView`
+plan card, `TwistyLoopEngine`/`LoopRanking` plumbing, `SettingsView` toggle,
+`AboutView` for the attribution and the coordinates-leave-the-device line.
 
 **Depends on.** Nothing.
 
-**Risk.** WeatherKit needs an Apple Developer Program membership and a request quota; rural
-grid cells are coarse; riders in California and riders in Scotland need
-different warnings, so keep the rules in one table.
+**Risk.** Three providers means three failure modes; keep them behind one
+protocol and cache per rounded coordinate cell (~15 min) so a plan screen cannot
+hammer anyone's free tier. Rural sample points are coarse. Coordinates now go to
+a third party — say so in the privacy copy. Riders in California and Scotland
+need different warning thresholds.
 
 **Smallest slice.** Temperature + rain chance + sunset for the plan card only,
 no hourly view, no elevation nuance.
@@ -548,14 +591,121 @@ does not; make the toggle explicit and reversible.
 
 ---
 
+### D2. In-car handoff (no entitlement)
+
+**Problem.** Riders want the planned route on the car screen, and Apple's
+`com.apple.developer.carplay-maps` entitlement is not granted yet. The entitled
+CarPlay app in `CarPlayRideCoordinator.swift` exists but cannot sign.
+
+**Shape.** Revert keeps navigating and keeps talking; a free GPX app (Roavic)
+draws the track on the head unit with its own voice off. One action, "Send to car
+screen", writes a track-only GPX and opens the share sheet. Car-only scope — this
+does not touch the bike cockpit.
+
+**Data.** None new. A track-only GPX exporter variant (`<trk>`/`<trkseg>`, no
+`<rte>`), synthetic `<time>` values, ≤50 m gaps, curve vertices preserved.
+
+**Touches.** `CarHandoff.swift` (both exporters and the handoff sheet), plan
+card/route preview/saved-route menu in `PlanView`, tests in
+`RevertTests/CarHandoffTests.swift`.
+
+**Depends on.** Nothing. Independent of the entitlement work.
+
+**Risk.** Roavic is a one-person app with no API; the mute is a rider step.
+Mitigation: the handoff is app-agnostic, so any GPX handler in the share sheet
+works.
+
+**Smallest slice.** Track-only export plus share sheet, with the reminder copy.
+
+**Effort.** S. Implemented: `CarHandoff.swift`.
+
+---
+
+### D3. The companion (voice and personality)
+
+**Problem.** Narration is a voice pack plus system TTS, and the system tier is
+the compact one nobody downloaded. There is no character behind the voice, so
+nothing in the app sounds like it has a point of view.
+
+**Shape.** Tom (Enhanced) as the ship voice, pinned by name rather than "first
+enhanced in the list", with a quality badge and a download hint in the picker.
+On top: canned and templated lines that answer questions, make the odd dry
+remark, and check in on a nine-minute budget — dry, brief, never during a
+maneuver. A one-tap off switch (On / Asked only / Off) silences him without
+touching navigation prompts. Free-form answers only on iOS 26 Foundation Models, and every fact
+still comes from a tool. Tiers 0–1 ship without any model.
+
+**Data.** New `CompanionScript`, `CompanionDirector`, `CompanionMemory`,
+`CompanionTools`. No new server, no account, nothing leaves the device.
+
+**Touches.** `Speaker.swift`, `VoicePickerView.swift`, `SettingsView.swift`,
+`HandlebarRemote.swift`, `VoiceCommandRecognizer.swift`.
+
+**Depends on.** A1 (conditions) for weather answers; B4 for "third time on this
+loop"; `FuelService`, `HazardStore`, `RideJournal` for the rest.
+
+**Risk.** A chatty companion at speed is a safety problem, and a model that
+guesses facts is worse. Mitigation: the Director owns a hard speaking budget,
+and Tier 2 answers must be tool-backed or refused.
+
+**Smallest slice.** Pin Tom, label tiers, and ship Tier 0 lines only.
+
+**Effort.** L. Implemented: `Companion.swift`, `CompanionLanguageModel.swift`,
+`CompanionWeather.swift`.
+
+**Status.** Tier 0/1, Tier 2 Foundation Models, Tom voice pinning, the
+always-waiting “Hey Ace” wake word, Bluetooth/Cardo microphone preference,
+hold-to-talk, state chip/remote/Settings and the on-device 20-episode memory are
+built. The companion uses the keyless Open-Meteo reader; the planner’s full
+weather card still needs the A1 provider UI. It refuses to invent conditions.
+
+### D4. Map experience (the Google-Maps feel)
+
+**Problem.** The ride map is a SwiftUI `Map` whose camera is animated through
+state every 80 ms, overlays are rebuilt on every GPS tick, and the puck is raw
+GPS. It works; it does not feel like Google Maps.
+
+**Shape.** A camera engine (look-ahead, heading EMA, speed pitch, spring
+interpolation on a display link), a route matcher so the puck sits on the road,
+an `MKMapView` renderer behind a `MapRenderer` protocol, a ribbon with casing and
+travelled/remaining split, a vector basemap styled by us (satellite is out), choreographed
+transitions, tabular digits, and a chevron puck with a speed cone. Optional
+later: a corridor road overlay drawn from `RoadStore`, ribbon shading by pace or
+twistiness, and instant search.
+
+**Data.** None new. Precomputed per-segment bearings and look-ahead tables at
+plan time; `progress` (metres along the route) becomes the single source for
+distance, ETA and camera.
+
+**Touches.** `RideView.swift` (map view), `CockpitCamera.swift`, `MapUI.swift`,
+new `RideCameraEngine`, `RouteMatcher`, `RouteRibbon`, `MapRenderer` +
+`MapKitRenderer`, `MapConfig`, `NavBanner`/`RideView` chrome.
+
+**Depends on.** Nothing hard. F13 (app-wide perceived performance) touches
+startup and screen transitions, so it should land with it rather than after.
+
+**Risk.** `MKMapView` inside SwiftUI needs discipline (no state writes from
+`updateUIView`, gestures owned by the map). Satellite imagery is softer offline.
+The corridor overlay is easy to make slower than the map it sits on.
+
+**Smallest slice.** Camera engine + puck + tabular digits on the existing SwiftUI
+map — a day, and already most of the perceived difference.
+
+**Effort.** L. Implemented: `MapExperience.swift`, `ImmersiveMapRenderer.swift`,
+`MapKitRenderer.swift`. Remaining smoothness work, the ranked fixes and the frame
+targets: [MAP_SMOOTHNESS.md](MAP_SMOOTHNESS.md). Labels keep their own design:
+[DECLUTTER.md](DECLUTTER.md).
+
+---
+
 ## 7. Sequencing
 
 | Phase | Features | Why this order |
 | --- | --- | --- |
-| 1 · Three weeks | A2 range ring · A1 conditions · B4 ride again · A6 route links | Each is small, each is independent, and together the plan screen stops feeling blind. B4 is the cheapest retention win in the list. |
-| 2 · In-ride | B1 voice marks · B3 battery mode · B2 ghost chase | All three change what happens on the bike, share cockpit work, and depend on the ride screen being touched once, not three times. |
+| 1 · Three weeks | A2 range ring · A1 conditions · B4 ride again · A6 route links · D2 in-car handoff | Each is small, each is independent, and together the plan screen stops feeling blind. B4 is the cheapest retention win in the list, and D2 gets the route onto a car screen without waiting for Apple. |
+| 2 · In-ride | B1 voice marks · B3 battery mode · B2 ghost chase · D4 map experience | All three change what happens on the bike, share cockpit work, and depend on the ride screen being touched once, not three times. |
 | 3 · Insight | C1 corner report · C2 monthly poster · C3 service history | Needs phase 2's ride data in place; corner report is the differentiator and should not be rushed. |
-| 4 · Big shapes | A3 touring · C4 segments · A4 loop deck · A5 import · D1 shortcuts | Larger or more speculative; the earlier phases make them cheaper (route identity, links, attempts). |
+| 4 · Big shapes | A3 touring · C4 segments · A4 loop deck · A5 import · D1 shortcuts · D3 companion | Larger or more speculative; the earlier phases make them cheaper (route identity, links, attempts). |
 
 Dependencies worth calling out:
 
@@ -577,8 +727,9 @@ Not features, but they decide whether the features feel finished.
 - **Settings surface.** Conditions, ghost, corner report, service reminders and
   Focus each add a toggle. One "Ride behaviour" section, grouped, not five new
   screens.
-- **Privacy copy.** WeatherKit, location exports and shared links all move data
-  off-device in ways the About screen should explain in one paragraph each.
+- **Privacy copy.** The weather provider, location exports and shared links all
+  move data off-device in ways the About screen should explain in one paragraph
+  each.
 - **Accessibility.** New cards and the deck must survive Dynamic Type AX3; the
   deck is a good place to prove the `.system(size:)` cleanup landed.
 - **Tests.** Planner invariants (range ring monotonicity, link round-trip,
@@ -589,8 +740,9 @@ Not features, but they decide whether the features feel finished.
 
 ## 9. Decisions needed
 
-1. **WeatherKit** — confirm the entitlement and that the account can use it;
-   if not, fall back to a "sun and civil twilight only" v1.
+1. **Weather provider** — confirm Open-Meteo as the default (no key, no
+   entitlement) with MET Norway as fallback, and decide who tunes the warning
+   thresholds per region.
 2. **Ghost default** — muted splits or full delta on first use? I would ship
    splits-only and let riders opt in.
 3. **Corner report gating** — opt-in per ride, or on by default with speeds
@@ -610,3 +762,9 @@ Not features, but they decide whether the features feel finished.
 | Time-budget knob | Excluded this round; `TwistyLoopSettings.maximumDurationSeconds` stays derived from length. |
 | Tank-bag cue sheet / PDF | Excluded; the route link covers the sharing need for now. |
 | iCloud sync | Excluded; the on-device promise stays literal. Backup remains the audit's open item. |
+
+### Parked, not dropped
+
+| Item | Status |
+| --- | --- |
+| Director mode (`RideDirectorReplayView`, `ReplayDirector`, `DirectorOverlays` — ~1,400 lines) | **Parked.** Debug-flag only and plays `DebugScreens.sampleRide()`, so no rider can reach it. Leave the files alone; do not spend 1.0 time finishing it, and do not re-litigate it before 1.1. The cheap version of the same instinct is the monthly poster (C2); the fun version is ghost chase (B2). |

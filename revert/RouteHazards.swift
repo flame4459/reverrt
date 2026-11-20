@@ -35,8 +35,8 @@ nonisolated struct HazardDensity: Sendable {
             case .signal: counts.signal += 1
             case .school: counts.school += 1
             case .railCrossing: counts.rail += 1
-            case .speedCamera, .redLightCamera: counts.camera += 1
-            case .roundabout: break
+            case .speedCamera, .redLightCamera, .alertCamera: counts.camera += 1
+            case .roundabout, .userMark: break
             }
             cells[key] = counts
         }

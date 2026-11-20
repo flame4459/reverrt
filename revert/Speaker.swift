@@ -91,6 +91,11 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
     /// The last sentence handed to the synthesiser. Tests and the debug
     /// export read this; nothing in the UI depends on it.
     @ObservationIgnored private(set) var lastSpokenFallback: String?
+    /// Recent sentences, newest last. Tests count callouts here; the debug
+    /// export can read it too.
+    @ObservationIgnored private(set) var spokenHistory: [String] = []
+
+    func clearSpokenHistory() { spokenHistory.removeAll() }
 
     func say(_ prompt: VoicePrompt, kind: Kind = .alert, pack: InstalledVoicePack? = nil) {
         // A single mute for the cockpit overrides both voice channels; the
@@ -105,6 +110,8 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
         }
 
         lastSpokenFallback = prompt.fallback
+        spokenHistory.append(prompt.fallback)
+        if spokenHistory.count > 20 { spokenHistory.removeFirst(spokenHistory.count - 20) }
         let selected = pack ?? VoicePackLibrary.shared.selectedPack
         let items = resolve(prompt, pack: selected)
         guard !items.isEmpty else { return }
@@ -120,10 +127,19 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
     }
 
     private func activateSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .voicePrompt,
-                                 options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-        try? session.setActive(true)
+        // Session activation can block while the system re-routes audio, so it
+        // runs on AudioSessionWork's serial queue rather than the main thread.
+        // AVSpeechSynthesizer still activates the session itself if a prompt
+        // starts before this lands.
+        AudioSessionWork.perform {
+            let session = AVAudioSession.sharedInstance()
+            // Keep the Bluetooth options HelmetAudio relies on, otherwise every
+            // prompt re-routes audio (and later helmet cues) to the phone speaker.
+            try? session.setCategory(.playback, mode: .voicePrompt,
+                                     options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers,
+                                               .allowBluetoothA2DP, .allowBluetoothHFP])
+            try? session.setActive(true)
+        }
     }
 
     /// Expands a prompt into playable items. Clips the pack has are played;
@@ -179,6 +195,13 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
         }
     }
 
+    /// Barge-in: a new press cancels the sentence currently being spoken.
+    /// Navigation prompts remain a separate channel and are not muted.
+    func stop() {
+        stopCurrent()
+        finishQueue()
+    }
+
     private func stopCurrent() {
         if synth.isSpeaking {
             synth.stopSpeaking(at: .immediate)
@@ -200,7 +223,10 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
             if #available(iOS 27.0, *) {
                 _ = try? await AVAudioSession.sharedInstance().deactivate(options: .notifyOthersOnDeactivation)
             } else {
-                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                AudioSessionWork.perform {
+                    try? AVAudioSession.sharedInstance().setActive(false,
+                                                                  options: .notifyOthersOnDeactivation)
+                }
             }
         }
     }
@@ -221,8 +247,14 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
            }) {
             resolved = requested
         } else {
-            resolved = voices.first(where: { $0.quality == .premium })
+            // Tom is the house voice. An explicit picker choice still wins;
+            // otherwise prefer the calm, downloaded Enhanced Tom before any
+            // compact default. This is a name preference, not a guarantee
+            // that Tom is installed.
+            resolved = voices.first(where: { $0.name.localizedCaseInsensitiveContains("Tom") && $0.quality == .enhanced })
+                ?? allVoices.first(where: { $0.name.localizedCaseInsensitiveContains("Tom") })
                 ?? voices.first(where: { $0.quality == .enhanced })
+                ?? voices.first(where: { $0.quality == .premium })
                 ?? voices.first
                 ?? AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
         }

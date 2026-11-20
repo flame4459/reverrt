@@ -2,13 +2,78 @@
 
 Notable changes to **Revert**, newest first. Dates are ISO-8601.
 
-This is a pre-1.0 community project and nothing has been submitted to the App
-Store, so "Unreleased" means "what is on `main` today". The long-form design
+This is a personal, pre-release community project and nothing has been submitted
+to the App Store. The version in the app's About screen is 1.0; sections below
+record what shipped under it. The long-form design
 notes behind the UI work live in [PHASE0](PHASE0_BASELINE.md) →
 [PHASE5](PHASE5_FINAL_POLISH.md), and the feature debate lives in
 [FEATURE_OUTLINE.md](FEATURE_OUTLINE.md).
 
-## [Unreleased] — 2026-11-15
+## [1.1] — 2026-11-20
+
+### Added
+
+**Ace, the on-device companion.** A spoken ride companion that answers distance,
+fuel, weather/sunset, hazard, ride, bike and home questions, makes the occasional
+dry remark and checks in sparingly. One cockpit chip cycles
+**On → Asked only → Off** (long press for Off) and the handlebar remote mirrors
+it; Settings carries the same control, the address term and a memory reset. Off
+stops the microphone and leaves navigation prompts untouched. "Hey Ace" is the
+always-waiting wake word (on by default, switchable), long-press Y on the remote
+is hold-to-talk, and a connected headset such as a Cardo is preferred for output.
+Canned and templated lines work offline; free-form conversation is
+availability-gated and falls back silently.
+
+**ImmersiveMap renderer.** The ride screen now defaults to a Swift + Metal
+PMTiles renderer, with `MKMapView` and the SwiftUI `Map` selectable as fallbacks.
+The camera is driven by `RideCameraEngine` and a display link, the route is an
+in-place ribbon with pace shading, and the viewport is inset above the cockpit so
+the puck stays visible. A bundled `overview.pmtiles` is used when present,
+otherwise the hosted archive is streamed.
+
+**Drone chase replay.** Every ride detail gets a full-screen replay: the camera
+sits high and behind the recorded track and turns with the ride's heading, while
+the pixel rider switches between straight, lean-left, lean-right and tuck frames
+from the recorded lean and speed. Starts at 8×, can be paused, scrubbed or slowed
+to 1×/4×/16×. The map, sprite choice and telemetry all come from the local track.
+
+**Director Mode.** An auto-edited film of the ride: corners ranked by lean, speed
+and braking, up to five non-overlapping highlights, then an establishing shot, a
+chase / orbit / trackside / fly-by / hero-low shot for each moment, and an outro,
+with the apex held and a real speed ramp on exit.
+
+**Car handoff.** Hand a route to **Organic Maps**, or export the GPX for the car
+screen. Handoff files are listed in the app and pruned 24 hours after they are
+last used.
+
+**Also new:** tyre-pressure fields per bike, a ride profile, the lane strip and
+Waze-style turn wording (under 20° straight, 20–45° keep/slight, 45–150° turn,
+150–165° sharp, beyond that U-turn; same-road-name best continuation suppresses
+the instruction), speed-banded prompt timing in metres regardless of the unit
+setting, and a recent-destinations list with a proper empty state.
+
+### Changed
+
+- **Car landscape** replaced the bottom sheet with a full-screen map and a
+  floating Google-style HUD: manoeuvre card top-left, ETA bottom-left, speed
+  beside the controls, thumb rail at the trailing edge.
+- **Voice picker** surfaces Tom (Enhanced) as the house voice, with a quality
+  badge and a download hint.
+- Location accuracy off now shows a "Precise location is off" warning instead of
+  silently degrading guidance.
+
+### Tests
+
+- 21 new test files: alert timing, background work, backup, calendar edge cases,
+  camera engine, car handoff, companion capability, companion question matrix,
+  companion wake word, director, feature models, hazard direction and more.
+
+### Docs and tooling
+
+- `PRIVACY.md`, `CONTRIBUTING.md`, `MAP_SMOOTHNESS.md`, `DECLUTTER.md`,
+  `REFINEMENTS.md`, plus `.swiftlint.yml` and `.swiftformat`.
+
+## [1.0] — 2026-11-16
 
 ### Added
 

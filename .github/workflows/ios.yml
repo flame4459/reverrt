@@ -1,9 +1,9 @@
 name: iOS build and tests
 
-# Note: the app's deployment target is iOS 26, so this needs a runner whose
-# Xcode ships the iOS 26 SDK (Xcode 26+). On a plain macos-latest image that is
-# not guaranteed — point `runs-on` at an image or self-hosted runner that has
-# it, or keep this workflow manual-only until it does.
+# Note: the app deploys to iOS 18.0 but builds against the iOS 26 SDK
+# (`SWIFT_DEFAULT_ACTOR_ISOLATION`, SwiftUI APIs), so this needs a runner whose
+# Xcode ships that SDK (Xcode 26+). On a plain macos-latest image it may not be
+# guaranteed — point `runs-on` at an image or self-hosted runner that has it.
 on:
   push:
     branches: [main]
@@ -29,6 +29,15 @@ jobs:
         run: |
           xcodebuild -version
           xcrun simctl list runtimes
+
+      - name: Docs links
+        run: ./Scripts/check-links.sh
+
+      - name: File length budget
+        run: |
+          LIMIT=3000
+          find revert RevertWidgets RevertTests -name '*.swift' -exec wc -l {} + \
+            | awk -v limit="$LIMIT" '$1 > limit && $2 != "total" { print; bad = 1 } END { exit bad ? 1 : 0 }'
 
       - name: Pick an available iPhone simulator
         id: sim

@@ -24,6 +24,15 @@ struct NavBanner: View {
         return min(max(meters / 300, 0), 1)
     }
 
+    /// Waze-style lane reveal: the strip appears at highway range, then on
+    /// shorter approach on slower roads. The instruction still arrives on the
+    /// speed-band schedule; the drawing just waits until it is useful.
+    private var laneGuidance: LaneGuidance? {
+        guard nav.joined, !nav.arrived, let lanes = nav.step?.laneGuidance else { return nil }
+        let reveal = LaneGuidance.revealDistance(forSpeed: nav.currentSpeedMps)
+        return nav.stepDistance <= reveal ? lanes : nil
+    }
+
     private var alertTint: Color {
         if nav.offRoute || nav.rerouting { return MapUI.orange }
         if nav.arrived { return MapUI.emerald }
@@ -60,12 +69,13 @@ struct NavBanner: View {
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.68)
-                if nav.joined, let lanes = nav.step?.laneGuidance {
+                if let lanes = laneGuidance {
                     LaneStrip(guidance: lanes)
                 }
                 if let next = nextLine {
                     Text(next)
                         .font(.scaledSystem(size: 11, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(MapUI.secondaryInk)
                         .lineLimit(1)
                 }
@@ -89,6 +99,7 @@ struct NavBanner: View {
                          ? "\(navDistance(nav.remaining)) left"
                          : "\(navDistance(nav.remaining)) loop")
                         .font(.scaledSystem(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
                         .foregroundStyle(alertTint.opacity(0.85))
                         .lineLimit(1)
                 }
@@ -238,7 +249,7 @@ struct NavBanner: View {
 
 /// Lane strip: one arrow per lane, left to right, with the ones that serve the
 /// coming manoeuvre lit. Hidden when OSM has no `turn:lanes` for the approach.
-private struct LaneStrip: View {
+struct LaneStrip: View {
     let guidance: LaneGuidance
 
     var body: some View {

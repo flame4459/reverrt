@@ -170,34 +170,41 @@ nonisolated struct RangeSummary {
     }
 
     let rangeKm: Double
+    let usableKm: Double
     let comfortableKm: Double
+    let tankFraction: Double
     let routeKm: Double
     let verdict: Verdict
     let note: String
 }
 
 nonisolated enum RangePolicy {
-    static func summary(for bike: Bike?, routeLengthMeters: Double) -> RangeSummary {
+    static func summary(for bike: Bike?, routeLengthMeters: Double,
+                        tankFraction: Double? = nil) -> RangeSummary {
         let range = max(bike?.fuelRangeKm ?? 260, 1)
-        let comfortable = range * 0.9
+        let storedFraction = UserDefaults.standard.object(forKey: "fuel.tankFraction") as? Double ?? 0.8
+        let fraction = min(max(tankFraction ?? storedFraction, 0.1), 1)
+        let usable = max(range * fraction, 1)
+        let comfortable = usable * 0.9
         let routeKm = routeLengthMeters / 1_000
         let verdict: RangeSummary.Verdict
         let note: String
         if routeKm <= 0 {
             verdict = .unknown
-            note = "Choose a route to compare with the bike's range."
+            note = "Choose a route to compare with the \(Int(fraction * 100))% tank."
         } else if routeKm <= comfortable {
             verdict = .fits
-            note = "Fits inside 90% of the tank range."
-        } else if routeKm <= range {
+            note = "Fits inside 90% of the usable \(Int(fraction * 100))% tank."
+        } else if routeKm <= usable {
             verdict = .tight
             note = "Within range, but little reserve. Plan fuel."
         } else {
             verdict = .exceeds
             note = "Longer than the estimated range. Fuel stop needed."
         }
-        return RangeSummary(rangeKm: range, comfortableKm: comfortable,
-                            routeKm: routeKm, verdict: verdict, note: note)
+        return RangeSummary(rangeKm: range, usableKm: usable, comfortableKm: comfortable,
+                            tankFraction: fraction, routeKm: routeKm,
+                            verdict: verdict, note: note)
     }
 }
 
@@ -206,6 +213,7 @@ nonisolated enum RangePolicy {
 nonisolated enum RouteLink {
     static let host = "route"
     static let version = 1
+    static let maxEncodedLength = 14_000
 
     nonisolated struct LinkPoint: Codable, Sendable {
         let lat: Double
@@ -259,6 +267,7 @@ nonisolated enum RouteLink {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+        guard encoded.count <= maxEncodedLength else { return nil }
         var components = URLComponents()
         components.scheme = "revert"
         components.host = host
@@ -312,6 +321,12 @@ nonisolated struct UserHazard: Codable, Identifiable, Hashable, Sendable {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: lat, longitude: lon)
     }
+
+    /// Rider marks enter the same corridor alert engine as OSM hazards.
+    var asHazard: Hazard {
+        Hazard(id: -max(Int64(createdAt.timeIntervalSince1970 * 1_000), 1),
+               kind: .userMark, lat: lat, lon: lon)
+    }
 }
 
 @MainActor
@@ -322,17 +337,39 @@ final class UserMarksStore {
     private(set) var hazards: [UserHazard] = []
     private(set) var avoidedRoads: [String] = []
 
+    var routeHazards: [Hazard] { hazards.map(\.asHazard) }
+
     init() {
         reload()
         reloadAvoided()
     }
 
+    /// Rider marks are advisory, not permanent: after 90 days a pothole has
+    /// usually been filled or the road resurfaced, so it stops warning.
+    static let markLifetime: TimeInterval = 90 * 86_400
+    /// Two reports of the same kind within this distance are one hazard.
+    private static let duplicateRadius = 25.0
+
     func addHazard(kind: String, coordinate: CLLocationCoordinate2D, road: String?) {
         let mark = UserHazard(id: UUID(), kind: kind, lat: coordinate.latitude,
                               lon: coordinate.longitude, createdAt: Date(), road: road)
+        // Pressing the button twice, or two riders reporting the same pothole,
+        // used to produce two alerts for one hazard.
+        hazards.removeAll { existing in
+            existing.kind == kind && Self.meters(existing.coordinate, coordinate) <= Self.duplicateRadius
+        }
         hazards.insert(mark, at: 0)
         if hazards.count > 100 { hazards.removeLast(hazards.count - 100) }
         save()
+    }
+
+    static func isExpired(_ mark: UserHazard, now: Date = Date()) -> Bool {
+        now.timeIntervalSince(mark.createdAt) > markLifetime
+    }
+
+    private static func meters(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        CLLocation(latitude: a.latitude, longitude: a.longitude)
+            .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
     }
 
     func delete(_ hazard: UserHazard) {
@@ -365,7 +402,8 @@ final class UserMarksStore {
             hazards = []
             return
         }
-        hazards = decoded
+        hazards = decoded.filter { !Self.isExpired($0) }
+        if hazards.count != decoded.count { save() }
     }
 
     private func save() {
@@ -514,13 +552,46 @@ nonisolated struct CornerReport {
 
 // MARK: - Segments (C4)
 
-nonisolated struct SegmentCandidate: Identifiable {
+nonisolated struct SegmentCandidate: Identifiable, Sendable {
     let id: Int
     let name: String
     let coordinates: [CLLocationCoordinate2D]
     let lengthMeters: Double
     let cornerCount: Int
     let bestSpeed: Double
+}
+
+@Model
+final class SegmentRecord {
+    var id: UUID = UUID()
+    var rideID: UUID = UUID()
+    var rideIDString: String = ""
+    var name: String = ""
+    var lengthMeters: Double = 0
+    var cornerCount: Int = 0
+    var bestSpeed: Double = 0
+    var coordinatesData: Data = Data()
+    var createdAt: Date = Date()
+
+    init(rideID: UUID = UUID(), rideIDString: String, candidate: SegmentCandidate, createdAt: Date = Date()) {
+        self.id = UUID()
+        self.rideID = rideID
+        self.rideIDString = rideIDString
+        self.name = candidate.name
+        self.lengthMeters = candidate.lengthMeters
+        self.cornerCount = candidate.cornerCount
+        self.bestSpeed = candidate.bestSpeed
+        self.coordinatesData = (try? JSONEncoder().encode(candidate.coordinates.map { [$0.latitude, $0.longitude] })) ?? Data()
+        self.createdAt = createdAt
+    }
+
+    var coordinates: [CLLocationCoordinate2D] {
+        guard let pairs = try? JSONDecoder().decode([[Double]].self, from: coordinatesData) else { return [] }
+        return pairs.compactMap { pair in
+            guard pair.count == 2 else { return nil }
+            return CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1])
+        }
+    }
 }
 
 nonisolated enum SegmentDetector {
@@ -591,7 +662,8 @@ enum RouteReplanner {
     /// Snaps an imported track to roads by routing through it in ~15 km legs.
     /// The original track is never uploaded; MapKit receives only the sampled
     /// waypoints, exactly like a normal A→B search.
-    static func replan(track: [CLLocationCoordinate2D], name: String) async -> PlannedRoute? {
+    static func replan(track: [CLLocationCoordinate2D], name: String,
+                       onProgress: @MainActor (Int, Int) -> Void = { _, _ in }) async -> PlannedRoute? {
         guard track.count > 1 else { return nil }
         var waypoints: [CLLocationCoordinate2D] = [track[0]]
         var anchor = track[0]
@@ -616,6 +688,8 @@ enum RouteReplanner {
 
         var routes: [MKRoute] = []
         for index in 1..<waypoints.count {
+            guard !Task.isCancelled else { return nil }
+            onProgress(index - 1, max(waypoints.count - 1, 1))
             let request = MKDirections.Request()
             request.source = MKMapItem.revert(location: CLLocation(latitude: waypoints[index - 1].latitude,
                                                                    longitude: waypoints[index - 1].longitude))
@@ -625,14 +699,31 @@ enum RouteReplanner {
             VehiclePreferences.apply(to: request)
             request.requestsAlternateRoutes = false
             guard let response = try? await MKDirections(request: request).calculate(),
+                  !Task.isCancelled,
                   let first = response.routes.first else {
                 return nil
             }
             routes.append(first)
+            onProgress(index, max(waypoints.count - 1, 1))
         }
         var route = PlannedRoute(mapRoutes: routes, waypoints: waypoints,
                                  kind: .directions, surface: .paved)
         route.displayName = name
         return route
+    }
+}
+
+// MARK: - Day GPX export (A3)
+
+extension SavedRoute {
+    /// A day’s saved route as a GPX file for another device or planner.
+    var gpxExportURL: URL? {
+        guard points.count > 1 else { return nil }
+        let start = createdAt
+        let ridePoints = points.enumerated().map { index, point in
+            RidePoint(lat: point.lat, lon: point.lon, alt: 0, speed: 0,
+                      time: start.addingTimeInterval(Double(index)), lean: nil)
+        }
+        return GPX.writeTempFile(points: ridePoints, startDate: start)
     }
 }

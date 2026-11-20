@@ -17,6 +17,69 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>GPS Exchange Format</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.topografix.gpx</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.topografix.gpx</string>
+			<key>UTTypeDescription</key>
+			<string>GPS Exchange Format</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>gpx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/gpx+xml</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>roavic</string>
+		<string>roavicapp</string>
+		<string>roavic-app</string>
+		<string>streiv</string>
+		<string>gpxnavigation</string>
+
+		<string>roavicnavigation</string>
+		<string>roavicnav</string>
+		<string>gpx-to-maps</string>
+		<string>gpxtomaps</string>
+		<string>gpx2maps</string>
+		<string>gpxmaps</string>
+		<string>gpx-navigation</string>
+		<string>gpxfile</string>
+		<string>gpx-file</string>
+		<string>importroute</string>
+		<string>streivapp</string>
+		<string>roavicgpx</string>
+		<string>om</string>
+		<string>organicmaps</string></array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save your Revert monthly poster to Photos.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -50,6 +113,10 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Revert uses on-device speech recognition for hands-free ride controls. Audio never leaves the phone.</string>
 	<key>UIFileSharingEnabled</key>
-	<false/>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 </dict>
 </plist>

@@ -133,7 +133,7 @@ struct OnboardingView: View {
                         .buttonStyle(RevertPrimaryButtonStyle())
                         .accessibilityIdentifier(AccessibilityID.Onboarding.primary)
 
-                        Button("Not now") {
+                        Button("Skip for now") {
                             RevertHaptics.tap()
                             onFinish()
                         }

@@ -15,8 +15,12 @@ struct HistoryView: View {
     @State private var importing = false
     @State private var importError: String?
     @State private var importProgress: String?
+    @State private var importTask: Task<Void, Never>?
     @State private var ridePendingDelete: Ride?
     @State private var query = ""
+    @State private var selecting = false
+    @State private var selected = Set<PersistentIdentifier>()
+    @State private var confirmingBulkDelete = false
 
     private var filteredRides: [Ride] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -44,6 +48,15 @@ struct HistoryView: View {
                         identifier: AccessibilityID.History.title
                     ) {
                         HStack(spacing: 8) {
+                            if !rides.isEmpty {
+                                PulseCircleButton(
+                                    systemImage: selecting ? "checkmark.circle.fill" : "checkmark.circle",
+                                    label: selecting ? "Done selecting" : "Select rides"
+                                ) {
+                                    selecting.toggle()
+                                    selected.removeAll()
+                                }
+                            }
                             PulseCircleButton(
                                 systemImage: "square.and.arrow.down",
                                 label: "Import GPX",
@@ -89,6 +102,9 @@ struct HistoryView: View {
                                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
                                 .foregroundStyle(MapUI.ink)
                             Spacer(minLength: 0)
+                            Button("Cancel") { importTask?.cancel() }
+                                .font(.system(.subheadline, design: .rounded).weight(.bold))
+                                .foregroundStyle(MapUI.coral)
                         }
                         .padding(12)
                         .background(MapUI.surfaceHigh.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -156,28 +172,66 @@ struct HistoryView: View {
 
                             ForEach(filteredRides) { ride in
                                 HStack(spacing: 8) {
-                                    NavigationLink {
-                                        RideDetailView(ride: ride)
-                                    } label: {
-                                        RideHistoryRow(ride: ride, maxDistance: maxFilteredDistance)
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Menu {
-                                        Button(role: .destructive) {
-                                            ridePendingDelete = ride
+                                    if selecting {
+                                        Button {
+                                            toggleSelection(ride)
                                         } label: {
-                                            Label("Delete ride", systemImage: "trash")
+                                            HStack(spacing: 10) {
+                                                Image(systemName: selected.contains(ride.id)
+                                                      ? "checkmark.circle.fill" : "circle")
+                                                    .font(.scaledSystem(size: 18, weight: .semibold))
+                                                    .foregroundStyle(selected.contains(ride.id)
+                                                                     ? MapUI.cyan : MapUI.textTertiary)
+                                                RideHistoryRow(ride: ride, maxDistance: maxFilteredDistance)
+                                            }
                                         }
-                                    } label: {
-                                        Image(systemName: "ellipsis")
-                                            .font(.scaledSystem(size: 13, weight: .bold))
-                                            .foregroundStyle(MapUI.textTertiary)
-                                            .frame(width: 32, height: 40)
-                                            .contentShape(Rectangle())
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("\(selected.contains(ride.id) ? "Deselect" : "Select") ride \(ride.bikeDisplayName)")
+                                    } else {
+                                        NavigationLink {
+                                            RideDetailView(ride: ride)
+                                        } label: {
+                                            RideHistoryRow(ride: ride, maxDistance: maxFilteredDistance)
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        Menu {
+                                            Button(role: .destructive) {
+                                                ridePendingDelete = ride
+                                            } label: {
+                                                Label("Delete ride", systemImage: "trash")
+                                            }
+                                        } label: {
+                                            Image(systemName: "ellipsis")
+                                                .font(.scaledSystem(size: 13, weight: .bold))
+                                                .foregroundStyle(MapUI.textTertiary)
+                                                .frame(width: 32, height: 40)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .accessibilityLabel("Ride actions")
                                     }
-                                    .accessibilityLabel("Ride actions")
                                 }
+                            }
+                        }
+
+                        if selecting {
+                            HStack(spacing: 10) {
+                                Text("\(selected.count) selected")
+                                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                    .foregroundStyle(MapUI.ink)
+                                Spacer(minLength: 0)
+                                Button("Delete", role: .destructive) {
+                                    confirmingBulkDelete = true
+                                }
+                                .font(.system(.subheadline, design: .rounded).weight(.bold))
+                                .disabled(selected.isEmpty)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(MapUI.surfaceHigh, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(MapUI.line, lineWidth: 0.8)
                             }
                         }
                     }
@@ -202,6 +256,12 @@ struct HistoryView: View {
             } message: {
                 Text(importError ?? "")
             }
+            .alert("Delete selected rides?", isPresented: $confirmingBulkDelete) {
+                Button("Delete \(selected.count)", role: .destructive) { deleteSelected() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The selected tracks will be removed from History. This cannot be undone.")
+            }
             .alert("Delete this ride?", isPresented: Binding(
                 get: { ridePendingDelete != nil },
                 set: { if !$0 { ridePendingDelete = nil } }
@@ -215,6 +275,25 @@ struct HistoryView: View {
                 Text("The track will be removed from History. This cannot be undone.")
             }
         }
+    }
+
+    private func toggleSelection(_ ride: Ride) {
+        if selected.contains(ride.id) {
+            selected.remove(ride.id)
+        } else {
+            selected.insert(ride.id)
+        }
+        RevertHaptics.tap()
+    }
+
+    private func deleteSelected() {
+        for ride in rides where selected.contains(ride.id) {
+            context.delete(ride)
+        }
+        try? context.save()
+        selected.removeAll()
+        selecting = false
+        RevertHaptics.success()
     }
 
     private func deleteRide(_ ride: Ride) {
@@ -231,9 +310,21 @@ struct HistoryView: View {
             importProgress = urls.count == 1
                 ? "Importing \(urls[0].lastPathComponent)…"
                 : "Importing \(urls.count) files…"
-            Task { @MainActor in
+            importTask?.cancel()
+            importTask = Task { @MainActor in
                 var failed: [String] = []
+                var inserted: [Ride] = []
+                var duplicates = 0
                 for (index, url) in urls.enumerated() {
+                    if Task.isCancelled {
+                        // A cancelled import must not leave half a day's rides
+                        // behind with no explanation.
+                        for ride in inserted { context.delete(ride) }
+                        try? context.save()
+                        importProgress = nil
+                        RevertHaptics.tap()
+                        return
+                    }
                     importProgress = "Reading \(index + 1) of \(urls.count)…"
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -245,17 +336,34 @@ struct HistoryView: View {
                     }.value
 
                     if let track {
-                        context.insert(track.makeRide())
+                        let ride = track.makeRide()
+                        // Re-importing the same file used to add a second copy.
+                        let duplicate = rides.contains { existing in
+                            abs(existing.startDate.timeIntervalSince(ride.startDate)) < 2
+                                && abs(existing.distanceMeters - ride.distanceMeters)
+                                    < max(ride.distanceMeters * 0.01, 50)
+                        }
+                        if duplicate {
+                            duplicates += 1
+                        } else {
+                            context.insert(ride)
+                            inserted.append(ride)
+                        }
                     } else {
                         failed.append(url.lastPathComponent)
                     }
                 }
                 try? context.save()
                 importProgress = nil
+                if Task.isCancelled { return }
+                var notes: [String] = []
+                if duplicates > 0 { notes.append("\(duplicates) already in History") }
                 if !failed.isEmpty {
                     RevertDiagnostics.log("GPX import failed for \(failed.count) file(s)")
-                    importError = "Couldn't read: " + failed.joined(separator: ", ")
+                    notes.append("couldn't read " + failed.joined(separator: ", "))
                 }
+                if !notes.isEmpty { importError = notes.joined(separator: "; ") }
+                importTask = nil
             }
         }
     }
@@ -456,6 +564,8 @@ struct RideDetailView: View {
     @State private var gpxURL: URL?
     @State private var showingPoster = false
     @State private var showingRivals = false
+    @State private var showingChaseReplay = false
+    @State private var showingDirectorReplay = false
     @Environment(NavigationManager.self) private var nav
     @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
 
@@ -637,6 +747,12 @@ struct RideDetailView: View {
         .sheet(isPresented: $showingPoster) {
             StoryPosterStudio(ride: ride, points: points, turns: turns)
         }
+        .fullScreenCover(isPresented: $showingChaseReplay) {
+            RideChaseReplayView(ride: ride)
+        }
+        .fullScreenCover(isPresented: $showingDirectorReplay) {
+            RideDirectorReplayView(ride: ride)
+        }
         .sheet(isPresented: $showingRivals) {
             RouteLeaderboardView(
                 title: ride.routeName ?? "This loop",
@@ -737,6 +853,24 @@ struct RideDetailView: View {
                 )
                 .tint(MapUI.cyan)
                 .disabled(points.isEmpty)
+
+                Button {
+                    RevertHaptics.tap()
+                    showingDirectorReplay = true
+                } label: {
+                    Label("Director film", systemImage: "film.fill")
+                }
+                .buttonStyle(RevertPrimaryButtonStyle(minHeight: 48))
+                .disabled(points.count < 2)
+
+                Button {
+                    RevertHaptics.tap()
+                    showingChaseReplay = true
+                } label: {
+                    Label("Free chase", systemImage: "video.fill")
+                }
+                .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
+                .disabled(points.count < 2)
             }
         }
     }

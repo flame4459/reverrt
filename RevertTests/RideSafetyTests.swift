@@ -422,9 +422,14 @@ struct RideSafetyTests {
         nav.handle(Self.accuracyFix(on: route, at: 200))
         #expect(!nav.offRoute)
 
-        // 60 m to the side of the line: say so now rather than leaving the
-        // last good "70 m to the turn" on screen.
-        nav.handle(Self.accuracyFix(on: route, at: 210, lateral: 60))
+        // 55 m is inside the GPS-bias band that used to flap in and out of
+        // "off route" every fix, so it must be tolerated.
+        nav.handle(Self.accuracyFix(on: route, at: 205, lateral: 55))
+        #expect(!nav.offRoute)
+
+        // 90 m is genuinely off: say so now rather than leaving the last good
+        // "70 m to the turn" on screen.
+        nav.handle(Self.accuracyFix(on: route, at: 210, lateral: 90))
         #expect(nav.offRoute)
         #expect(abs(nav.routeProgress - 200) < 1)
         nav.stop()

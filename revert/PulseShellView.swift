@@ -33,6 +33,10 @@ struct PulseShellView: View {
     @State private var pendingRideStart = false
     @State private var cockpitReturnTab: PulseTab = .home
     @State private var recoveredRide: Ride?
+    @State private var showingBackup = false
+    #if DEBUG
+    @State private var debugHandoff = CommandLine.arguments.contains("-debugCarHandoff")
+    #endif
 
     var body: some View {
         content
@@ -47,6 +51,15 @@ struct PulseShellView: View {
             .sheet(item: $sheet) { destination in
                 sheetView(for: destination)
             }
+            #if DEBUG
+            .sheet(isPresented: $debugHandoff) {
+                // Prefer the route the rider actually planned or started; the
+                // sample exists only so the sheet can be opened with no route.
+                CarHandoffSheet(route: CarHandoffRoute(
+                    route: nav.route ?? DebugScreens.samplePlannedRoute()
+                ))
+            }
+            #endif
             .fullScreenCover(isPresented: $showingRide) {
                 RideView(onExit: {
                     showingRide = false
@@ -84,12 +97,12 @@ struct PulseShellView: View {
                     guard let ride = recoveredRide else { return }
                     context.insert(ride)
                     if (try? context.save()) != nil {
-                        RideJournal.shared.finish()
+                        RideJournal.shared.finishRecovery()
                     }
                     recoveredRide = nil
                 }
                 Button("Discard", role: .destructive) {
-                    RideJournal.shared.finish()
+                    RideJournal.shared.finishRecovery()
                     recoveredRide = nil
                 }
                 Button("Later", role: .cancel) { recoveredRide = nil }
@@ -99,7 +112,28 @@ struct PulseShellView: View {
             .onReceive(NotificationCenter.default.publisher(for: .revertOpenIntent)) { _ in
                 handleIntents()
             }
-            .onAppear(perform: onAppear)
+            .onReceive(NotificationCenter.default.publisher(for: .revertOpenBackup)) { _ in
+                RevertDiagnostics.log("backup.sheet opened from notification")
+                showingBackup = true
+            }
+            .onAppear {
+                onAppear()
+                if UserDefaults.standard.bool(forKey: "backup.openRequested") {
+                    UserDefaults.standard.set(false, forKey: "backup.openRequested")
+                    RevertDiagnostics.log("backup.sheet opened from cold start")
+                    showingBackup = true
+                }
+            }
+            .sheet(isPresented: $showingBackup) {
+                NavigationStack {
+                    BackupView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Done") { showingBackup = false }
+                            }
+                        }
+                }
+            }
     }
 
     @ViewBuilder
@@ -202,7 +236,7 @@ struct PulseShellView: View {
             if let ride = RideJournal.shared.recoveredRide(), ride.points.count > 1 {
                 recoveredRide = ride
             } else {
-                RideJournal.shared.finish()
+                RideJournal.shared.finishRecovery()
             }
         }
         handleIntents()
@@ -360,6 +394,11 @@ struct PulseShellView: View {
         if UserDefaults.standard.bool(forKey: "intent.openGarage") {
             UserDefaults.standard.set(false, forKey: "intent.openGarage")
             tab = .garage
+            return
+        }
+        if UserDefaults.standard.bool(forKey: "intent.openHistory") {
+            UserDefaults.standard.set(false, forKey: "intent.openHistory")
+            tab = .history
             return
         }
         if UserDefaults.standard.bool(forKey: "intent.openPlan") {

@@ -3,6 +3,13 @@ import SwiftUI
 struct AboutView: View {
     @State private var confirmingClear = false
 
+    private static let repository = "https://github.com/flame4459/reverrt"
+    static let privacyURL = URL(string: "\(repository)/blob/main/PRIVACY.md")!
+    static let termsURL = URL(string: "\(repository)/blob/main/TERMS.md")!
+    static let issuesURL = URL(string: "\(repository)/issues")!
+    static let contributingURL = URL(string: "\(repository)/blob/main/CONTRIBUTING.md")!
+    static let immersiveMapURL = URL(string: "https://github.com/artembobkin/ImmersiveMap")!
+
     private var versionText: String {
         "\(RevertDiagnostics.appVersion) (\(RevertDiagnostics.appBuild))"
     }
@@ -39,6 +46,23 @@ struct AboutView: View {
                         .font(.system(.subheadline, design: .rounded))
                         .foregroundStyle(MapUI.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Link(destination: Self.privacyURL) {
+                        HStack {
+                            Label("Privacy policy", systemImage: "hand.raised")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.scaledSystem(size: 10, weight: .bold))
+                        }
+                    }
+                    Link(destination: Self.termsURL) {
+                        HStack {
+                            Label("Terms of use", systemImage: "doc.text")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.scaledSystem(size: 10, weight: .bold))
+                        }
+                    }
                 }
 
                 SettingsCard(
@@ -62,6 +86,18 @@ struct AboutView: View {
                                 .font(.scaledSystem(size: 10, weight: .bold))
                         }
                     }
+                    Link(destination: Self.immersiveMapURL) {
+                        HStack {
+                            Label("ImmersiveMap (MIT)", systemImage: "square.stack.3d.up")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.scaledSystem(size: 10, weight: .bold))
+                        }
+                    }
+                    Text("OpenStreetMap data is © OpenStreetMap contributors, available under the ODbL. Revert's own source is under the licence in the repository.")
+                        .font(.caption2)
+                        .foregroundStyle(MapUI.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 SettingsCard(
@@ -85,6 +121,29 @@ struct AboutView: View {
                         Label("Clear diagnostics", systemImage: "trash")
                     }
                     .disabled(RevertDiagnostics.text().isEmpty)
+                }
+
+                SettingsCard(
+                    title: "Support",
+                    icon: "questionmark.bubble",
+                    footer: "Bug reports and route ideas are welcome. Attach the diagnostics file if a route or download failed."
+                ) {
+                    Link(destination: Self.issuesURL) {
+                        HStack {
+                            Label("Open an issue", systemImage: "exclamationmark.bubble")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.scaledSystem(size: 10, weight: .bold))
+                        }
+                    }
+                    Link(destination: Self.contributingURL) {
+                        HStack {
+                            Label("How to build and test", systemImage: "hammer")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.scaledSystem(size: 10, weight: .bold))
+                        }
+                    }
                 }
 
                 SettingsCard(
@@ -116,7 +175,7 @@ struct AboutView: View {
         }
         .pulseBackground()
         .scrollIndicators(.hidden)
-        .navigationTitle("About Revert")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .tint(MapUI.cyan)
         .confirmationDialog("Clear diagnostics?", isPresented: $confirmingClear, titleVisibility: .visible) {

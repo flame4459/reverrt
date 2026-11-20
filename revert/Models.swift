@@ -240,6 +240,42 @@ nonisolated enum Units {
     static var distanceUnit: String { isMetric ? "km" : "mi" }
     static var elevationUnit: String { isMetric ? "m" : "ft" }
     static var twistUnit: String { isMetric ? "°/km" : "°/mi" }
+    static var volumeUnit: String {
+        if isMetric { return "L" }
+        return Locale.autoupdatingCurrent.measurementSystem == .uk ? "imp gal" : "gal"
+    }
+    static var pressureUnit: String { isMetric ? "bar" : "psi" }
+
+    private static var volumeFactor: Double {
+        if isMetric { return 1 }
+        return Locale.autoupdatingCurrent.measurementSystem == .uk ? 0.219969 : 0.264172
+    }
+
+    static func volumeValue(_ liters: Double) -> Double { liters * volumeFactor }
+    static func volumeToLiters(_ displayValue: Double) -> Double { displayValue / volumeFactor }
+    static func volumeText(_ liters: Double) -> String {
+        String(format: "%.1f %@", volumeValue(liters), volumeUnit)
+    }
+
+    static func pressureValue(_ psi: Double) -> Double {
+        isMetric ? psi * 0.0689476 : psi
+    }
+    static func pressureToPsi(_ displayValue: Double) -> Double {
+        isMetric ? displayValue / 0.0689476 : displayValue
+    }
+    static func pressureText(_ psi: Double) -> String {
+        String(format: "%.1f %@", pressureValue(psi), pressureUnit)
+    }
+
+    static var temperatureUnit: String { isMetric ? "°C" : "°F" }
+
+    static func temperatureValue(_ celsius: Double) -> Double {
+        isMetric ? celsius : celsius * 9 / 5 + 32
+    }
+
+    static func temperatureText(_ celsius: Double) -> String {
+        "\(RevertFormat.number(temperatureValue(celsius), decimals: 0)) \(temperatureUnit)"
+    }
 
     /// Twist density is stored per kilometre; convert the display value for
     /// imperial riders without changing the underlying score.

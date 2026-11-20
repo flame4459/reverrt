@@ -55,6 +55,14 @@ nonisolated struct RideStats: Sendable, Equatable {
 
             stats.elevationGainMeters += elevationGain(altitude: point.alt, reference: &altitudeRef)
         }
+        // The live recorder defines moving as "everything that was not stopped",
+        // so rejected segments (signal gaps, teleports) still count as moving.
+        // Deriving it the same way here keeps a recovered ride's numbers equal
+        // to the ones the cockpit showed.
+        if let first = points.first, let last = points.last, points.count > 1 {
+            let span = max(last.time.timeIntervalSince(first.time), 0)
+            stats.movingSeconds = max(span - stats.stoppedSeconds, 0)
+        }
         return stats
     }
 

@@ -92,6 +92,27 @@ nonisolated enum ElevationService {
             if let data = try? JSONEncoder().encode(payload) {
                 try? data.write(to: url, options: .atomic)
             }
+            pruneDiskCache(in: dir)
+        }
+    }
+
+    /// Profiles are small but they accumulate for every loop ever planned. Keep
+    /// the newest 200 files and, beyond that, drop anything older than a month.
+    nonisolated private static func pruneDiskCache(in directory: URL) {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+        ) else { return }
+        let entries = urls.compactMap { url -> (URL, Date)? in
+            guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            else { return nil }
+            return (url, date)
+        }
+        guard entries.count > 200 else { return }
+        // Oldest first; delete everything past the newest 200.
+        for (url, _) in entries.sorted(by: { $0.1 < $1.1 }).dropLast(200) {
+            try? fm.removeItem(at: url)
         }
     }
 

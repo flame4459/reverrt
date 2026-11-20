@@ -24,6 +24,9 @@ enum HazardStore {
           node["highway"="traffic_signals"]\(bbox);
           node["highway"="speed_camera"]\(bbox);
           node["enforcement"]\(bbox);
+          nwr["surveillance:type"="ALPR"]\(bbox);
+          nwr["man_made"="surveillance"]["surveillance"="ALPR"]\(bbox);
+          nwr["man_made"="surveillance"]["brand"~"Flock",i]\(bbox);
           node["railway"="level_crossing"]\(bbox);
           nwr["amenity"="school"]\(bbox);
           nwr["junction"="roundabout"]\(bbox);
@@ -55,6 +58,9 @@ enum HazardStore {
           node["highway"="traffic_signals"]\(bbox);
           node["highway"="speed_camera"]\(bbox);
           node["enforcement"]\(bbox);
+          nwr["surveillance:type"="ALPR"]\(bbox);
+          nwr["man_made"="surveillance"]["surveillance"="ALPR"]\(bbox);
+          nwr["man_made"="surveillance"]["brand"~"Flock",i]\(bbox);
           node["railway"="level_crossing"]\(bbox);
           nwr["amenity"="school"]\(bbox);
           nwr["junction"="roundabout"]\(bbox);
@@ -105,11 +111,22 @@ enum HazardStore {
             guard let tags = el.tags, let kind = kind(for: tags) else { return nil }
             guard let lat = el.lat ?? el.center?.lat, let lon = el.lon ?? el.center?.lon else { return nil }
             let uid: Int64 = el.type == "node" ? el.id : (el.type == "way" ? -el.id : -(el.id + 1_000_000_000_000))
-            return Hazard(id: uid, kind: kind, lat: lat, lon: lon)
+            let direction = tags["direction"].flatMap { Int($0) }
+                ?? tags["camera:direction"].flatMap { Int($0) }
+            return Hazard(id: uid, kind: kind, lat: lat, lon: lon, direction: direction)
         }
     }
 
     nonisolated static func kind(for tags: [String: String]) -> HazardKind? {
+        // License-plate readers (Flock and friends). OSM tags them as
+        // surveillance, sometimes with the brand; they are not enforcement
+        // speed cameras and get their own kind and toggle.
+        let surveillance = tags["surveillance:type"] ?? tags["surveillance"]
+        let brand = tags["brand"]?.lowercased()
+        if surveillance?.uppercased() == "ALPR"
+            || (brand?.contains("flock") == true && tags["man_made"] == "surveillance") {
+            return .alertCamera
+        }
         if tags["highway"] == "stop" { return .stop }
         if tags["highway"] == "traffic_signals" { return .signal }
         if tags["highway"] == "speed_camera" { return .speedCamera }

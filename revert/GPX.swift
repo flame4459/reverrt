@@ -20,7 +20,11 @@ enum GPX {
         lines.append("  <trk>\n    <name>\(escape(title))</name>\n    <trkseg>\n")
         for p in points {
             let ele = String(format: "%.1f", p.alt)
-            var line = "      <trkpt lat=\"\(p.lat)\" lon=\"\(p.lon)\"><ele>\(ele)</ele><time>\(f.string(from: p.time))</time>"
+            // Six decimals is ~0.1 m; anything beyond that is float noise and
+            // it multiplies across every point in every exported ride.
+            let lat = (p.lat * 1_000_000).rounded() / 1_000_000
+            let lon = (p.lon * 1_000_000).rounded() / 1_000_000
+            var line = "      <trkpt lat=\"\(lat)\" lon=\"\(lon)\"><ele>\(ele)</ele><time>\(f.string(from: p.time))</time>"
             if let lean = p.lean, lean.isFinite {
                 line += "<extensions><revert:lean>\(String(format: "%.1f", lean))</revert:lean></extensions>"
             }
@@ -164,8 +168,17 @@ nonisolated final class GPXParser: NSObject, XMLParserDelegate {
                 qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
         text = ""
         if elementName == "trkpt" || elementName == "rtept",
-           let lat = Double(attributeDict["lat"] ?? ""), let lon = Double(attributeDict["lon"] ?? "") {
-            current = Pt(lat: lat, lon: lon)
+           let lat = Double(attributeDict["lat"] ?? ""),
+           let lon = Double(attributeDict["lon"] ?? "") {
+            // A coordinate bomb (lat 200, lon 999) used to produce a "ride"
+            // thousands of kilometres long. Reject it at the parser, where the
+            // rest of the import already trusts the numbers.
+            let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            if CLLocationCoordinate2DIsValid(coordinate) {
+                current = Pt(lat: lat, lon: lon)
+            } else {
+                current = nil
+            }
         }
     }
 

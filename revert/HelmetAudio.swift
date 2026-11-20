@@ -31,8 +31,10 @@ final class HelmetAudio {
         startGeneration += 1
         let generation = startGeneration
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .voicePrompt,
-                                 options: [.duckOthers, .allowBluetoothA2DP, .allowBluetoothHFP])
+        AudioSessionWork.perform {
+            try? session.setCategory(.playback, mode: .voicePrompt,
+                                     options: [.duckOthers, .allowBluetoothA2DP, .allowBluetoothHFP])
+        }
 
         engine.attach(environment)
         engine.attach(player)
@@ -64,7 +66,9 @@ final class HelmetAudio {
             if #available(iOS 27.0, *) {
                 _ = try? await session.activate(options: [])
             } else {
-                try? session.setActive(true)
+                AudioSessionWork.perform {
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                }
             }
             guard generation == self.startGeneration, !self.started else {
                 self.starting = false

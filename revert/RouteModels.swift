@@ -365,6 +365,10 @@ nonisolated struct PlannedRoute: Identifiable {
         self.kind = kind
         self.points = combinedPoints
         self.cumulative = cumulative
+        // A directions route is one pass, however many MapKit legs it took.
+        // Leaving the 3-lap default here made the ETA triple and the rider
+        // hear "Lap 2 of 3" at the destination.
+        self.laps = kind.isLoop ? 3 : 1
         self.coordinates = combinedPoints.map(\.coordinate)
         self.steps = stepSpecs.map { spec in
             let at = cumulative.indices.min {
@@ -529,9 +533,11 @@ nonisolated struct PlannedRoute: Identifiable {
 
         func classify(_ angle: Double) -> NavStep.Turn {
             let magnitude = abs(angle)
+            // Waze's junction rule: under 45° is a keep/slight movement,
+            // over it is a turn; only a near-reversal becomes a U-turn.
             if magnitude < 20 { return .straight }
-            if magnitude < 50 { return angle > 0 ? .slightRight : .slightLeft }
-            if magnitude < 130 { return angle > 0 ? .right : .left }
+            if magnitude < 45 { return angle > 0 ? .slightRight : .slightLeft }
+            if magnitude < 150 { return angle > 0 ? .right : .left }
             if magnitude < 165 { return angle > 0 ? .sharpRight : .sharpLeft }
             return .uTurn
         }
@@ -574,7 +580,14 @@ nonisolated struct PlannedRoute: Identifiable {
                 while angle > 180 { angle -= 360 }
                 while angle <= -180 { angle += 360 }
                 let kind = classify(angle)
-                let renamed = name(points[corner - 1].road) != name(points[corner].road)
+                let incomingName = name(points[corner - 1].road)
+                let outgoingName = name(points[corner].road)
+                let renamed = incomingName != outgoingName
+                // A gentle movement that keeps the same primary road name is
+                // the best continuation: Waze stays silent for it.
+                if abs(angle) < 45, incomingName != nil, incomingName == outgoingName {
+                    continue
+                }
                 if kind == .straight && !renamed { continue }
                 turn = kind
             }

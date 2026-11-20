@@ -23,6 +23,7 @@ struct SurfaceAlert: Equatable {
 nonisolated struct RideRouteContext {
     let route: PlannedRoute
     let progress: Double      // meters along the route where the rider is
+    var lap: Int = 1          // 1-based; a new lap re-arms the device alerts
 }
 
 @Observable
@@ -42,11 +43,19 @@ final class AlertManager {
     @ObservationIgnored private var lastKindAlert: [HazardKind: Date] = [:]
     @ObservationIgnored private var overSince: Date?
     @ObservationIgnored private var lastOverAlert = Date.distantPast
+    @ObservationIgnored private var lastHazardSpeak = Date.distantPast
     @ObservationIgnored private var lastRoadID: Int64?
     @ObservationIgnored private var surfaceAlertedAt: [Int64: Date] = [:]
     @ObservationIgnored private var announcedDevices = Set<Int64>()
     @ObservationIgnored private var lastDeviceRouteID: UUID?
+    @ObservationIgnored private var lastDeviceLap = 1
     @ObservationIgnored private var routeHazards: [Hazard] = []
+    @ObservationIgnored private var cachedHazards: [Hazard] = []
+    @ObservationIgnored private var hazardCacheAt = Date.distantPast
+    @ObservationIgnored private var hazardCacheCoordinate: CLLocationCoordinate2D?
+    @ObservationIgnored private var cachedRoads: [Road] = []
+    @ObservationIgnored private var roadCacheAt = Date.distantPast
+    @ObservationIgnored private var roadCacheCoordinate: CLLocationCoordinate2D?
     @ObservationIgnored private var routeHazardsLoaded = false
     @ObservationIgnored private var routeHazardsRouteID: UUID?
 
@@ -61,6 +70,13 @@ final class AlertManager {
         routeHazards = hazards ?? []
         routeHazardsLoaded = hazards != nil
         routeHazardsRouteID = routeID
+    }
+
+    /// Add a rider mark to an already loaded route without throwing away the
+    /// OSM corridor result.
+    func addRouteHazard(_ hazard: Hazard, for routeID: UUID) {
+        guard routeHazardsRouteID == routeID else { return }
+        routeHazards.append(hazard)
     }
 
     func clearRouteHazards() {
@@ -106,6 +122,12 @@ final class AlertManager {
             lastDeviceRouteID = routeID
             activeAlert = nil
         }
+        if let lap = routeContext?.lap, lap != lastDeviceLap {
+            // Every device on the loop deserves its warning on each pass.
+            announcedDevices.removeAll()
+            lastDeviceLap = lap
+            activeAlert = nil
+        }
 
         // Road matching, speed limits and surface warnings are speed-independent:
         // they must keep updating while stopped at a light.
@@ -144,7 +166,11 @@ final class AlertManager {
         if let alert = activeAlert {
             if let match = RouteCorridor.project(
                 latitude: alert.hazard.lat, longitude: alert.hazard.lon,
-                route: context.route, near: context.progress, ahead: 80, maxLateral: 45
+                // The device can be announced from up to ~400 m out, so the
+                // refresh window has to cover the distance it was announced at
+                // or the banner is cleared on the very next fix.
+                route: context.route, near: context.progress,
+                ahead: max(alert.distance, 80) + 50, maxLateral: 45
             ) {
                 let ahead = match.along - context.progress
                 if ahead < 8 {
@@ -165,18 +191,24 @@ final class AlertManager {
         let speedMph = loc.speed * 2.23694
         let hazardThreshold = Double(UserDefaults.standard.object(forKey: "alert.hazardSpeedThreshold") as? Int ?? 0)
         let reactionTime = UserDefaults.standard.object(forKey: "alert.reactionTime") as? Double ?? 1.5
-        let rawLookahead = loc.speed * reactionTime
-            + (loc.speed * loc.speed) / (2 * 4.5)
-            + loc.speed * 5.0
 
         let hazards: [Hazard]
         if routeHazardsRouteID == context.route.id, routeHazardsLoaded, !routeHazards.isEmpty {
             hazards = routeHazards
         } else {
             // Either the corridor query has not answered, failed, or answered
-            // with nothing. Tiles are always a valid second opinion: the same
-            // corridor projection filters them before anything is announced.
-            hazards = HazardStore.items(near: loc.coordinate)
+            // with nothing. Reuse the tile fallback for a few seconds: with
+            // 6,000 cached hazards this loop is the single hottest path in the
+            // alert engine, and the set barely changes over 50 metres.
+            let moved = hazardCacheCoordinate.map {
+                CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: loc) > 50
+            } ?? true
+            if moved || now.timeIntervalSince(hazardCacheAt) > 5 {
+                cachedHazards = HazardStore.items(near: loc.coordinate)
+                hazardCacheAt = now
+                hazardCacheCoordinate = loc.coordinate
+            }
+            hazards = cachedHazards
         }
 
         var best: (hazard: Hazard, ahead: Double, match: RouteCorridorMatch, lookahead: Double)?
@@ -187,7 +219,7 @@ final class AlertManager {
             if abs(h.lat - loc.coordinate.latitude) > 0.01
                 || abs(h.lon - loc.coordinate.longitude) > 0.015 { continue }
 
-            let lookahead = min(max(rawLookahead, 150), min(kind.maxLookahead, 400))
+            let lookahead = Self.alertDistance(speed: loc.speed, kind: kind, reactionTime: reactionTime)
             let lateralLimit = kind.lateralTolerance
             guard let match = RouteCorridor.project(
                 latitude: h.lat, longitude: h.lon,
@@ -199,6 +231,14 @@ final class AlertManager {
 
             let ahead = match.along - context.progress
             guard ahead >= 8, ahead <= lookahead else { continue }
+
+            // A camera tagged for the opposite carriageway can sit 10 m to the
+            // side and still project onto this route. Its bearing tells us it
+            // is not watching this direction of travel.
+            if h.facesAway(from: loc.course >= 0 ? loc.course : nil) {
+                RideDebug.shared.skip(h, reason: "facing-away", ahead: ahead)
+                continue
+            }
 
             // Settings are only consulted once a device is genuinely on the
             // corridor, so a withheld alert can name the reason it was withheld.
@@ -225,6 +265,11 @@ final class AlertManager {
         }
 
         guard let best else { return }
+        // Dense urban blocks can put a light and a stop sign within a few
+        // seconds. One audible hazard at a time; the next fix will still see
+        // it after the gap and announce it if it is genuinely close.
+        guard now.timeIntervalSince(lastHazardSpeak) >= 3 else { return }
+        lastHazardSpeak = now
         announcedDevices.insert(best.hazard.id)
         lastKindAlert[best.hazard.kind] = now
         activeAlert = ActiveAlert(hazard: best.hazard, distance: best.ahead, since: now)
@@ -244,6 +289,25 @@ final class AlertManager {
         )
     }
 
+    /// Waze-style warning distances, in metres: short in town, long on a fast
+    /// road, scaled by the kind so a school gets less notice than a camera.
+    /// The rider's reaction time still adds on top, so slowing it down in
+    /// Settings lengthens every warning rather than being ignored.
+    nonisolated static func alertDistance(speed: Double, kind: HazardKind,
+                                          reactionTime: Double) -> Double {
+        let band: Double
+        switch speed {
+        case ..<7: band = 150        // under ~16 mph
+        case ..<14: band = 220       // under ~31 mph
+        case ..<22: band = 320       // under ~49 mph
+        default: band = 420          // motorway pace
+        }
+        let reaction = speed * reactionTime
+        let braking = (speed * speed) / (2 * 4.5)
+        let scaled = max(band, reaction + braking) * kind.warningFactor
+        return min(max(scaled, 120), kind.maxLookahead)
+    }
+
     // MARK: Road: curves, speed limit, surface
     private func handleRoad(_ loc: CLLocation, _ now: Date) {
         let curvesOn = AlertSettings.enabled("alert.curves")
@@ -260,8 +324,17 @@ final class AlertManager {
             }
         }
 
-        // Always match to the road (needed for limits and surface); only detect curves when none is showing
-        let roads = RoadStore.items(near: loc.coordinate)
+        // Always match to the road (needed for limits and surface); only detect curves when none is showing.
+        // The nearest 7,000 roads do not need to be fetched and matched on every fix.
+        let moved = roadCacheCoordinate.map {
+            CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: loc) > 30
+        } ?? true
+        if moved || now.timeIntervalSince(roadCacheAt) > 2 {
+            cachedRoads = RoadStore.items(near: loc.coordinate)
+            roadCacheAt = now
+            roadCacheCoordinate = loc.coordinate
+        }
+        let roads = cachedRoads
         if let w = curveEngine.evaluate(loc, roads: roads, detectCurves: curvesOn && curveAlert == nil) {
             curveAlert = w
             haptic()

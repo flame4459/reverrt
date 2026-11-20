@@ -7,6 +7,10 @@ import CoreLocation
 /// iOS terminates it, or a save fails, the journal survives and can be turned
 /// back into a `Ride` on the next launch. It is deleted only after the ride is
 /// safely in SwiftData or the rider explicitly discards it.
+///
+/// A ride that is never saved is archived as `pending-<stamp>.jsonl` instead of
+/// being deleted by the next start, and `recoveredRide()` will offer the newest
+/// usable journal — active or archived — on the next launch.
 final class RideJournal: @unchecked Sendable {
     static let shared = RideJournal()
 
@@ -18,6 +22,12 @@ final class RideJournal: @unchecked Sendable {
     private let lock = NSLock()
     private var handle: FileHandle?
     private var startDate: Date?
+    /// The file `recoveredRide()` handed out, so the recovery prompt deletes
+    /// exactly that ride when the rider saves or discards it.
+    private var recoveredURL: URL?
+
+    /// How many unsaved rides are kept before the oldest is dropped.
+    private let maximumArchivedRides = 3
 
     private var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -28,31 +38,58 @@ final class RideJournal: @unchecked Sendable {
         directory.appendingPathComponent("active_ride.jsonl")
     }
 
+    /// Archived journals, newest first.
+    private func archivedURLs() -> [URL] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return urls
+            .filter { $0.lastPathComponent.hasPrefix("pending-") && $0.pathExtension == "jsonl" }
+            .sorted { left, right in
+                let a = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a > b
+            }
+    }
+
+    private func hasContent(_ url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber else { return false }
+        return size.intValue > 32
+    }
+
     private init() {}
 
     var hasPendingRide: Bool {
         lock.withLock {
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                  let size = attributes[.size] as? NSNumber else { return false }
-            return size.intValue > 32
+            if hasContent(fileURL) { return true }
+            return archivedURLs().contains(where: hasContent)
         }
     }
 
     func begin(startDate: Date) {
         lock.withLock {
-            closeLocked(remove: true)
+            archiveExistingLocked()
             self.startDate = startDate
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                FileManager.default.createFile(atPath: fileURL.path, contents: nil)
-                handle = try FileHandle(forWritingTo: fileURL)
+                guard FileManager.default.createFile(atPath: fileURL.path, contents: nil) else {
+                    handle = nil
+                    RevertDiagnostics.log("journal.begin: could not create \(fileURL.lastPathComponent)")
+                    return
+                }
+                let handle = try FileHandle(forWritingTo: fileURL)
+                self.handle = handle
                 let header = Header(startDate: startDate, version: 1)
                 if let data = try? JSONEncoder().encode(header) {
-                    handle?.write(data)
-                    handle?.write(Data([0x0A]))
+                    try handle.write(contentsOf: data)
+                    try handle.write(contentsOf: Data([0x0A]))
                 }
             } catch {
                 handle = nil
+                RevertDiagnostics.log("journal.begin failed: \(error.localizedDescription)")
             }
         }
     }
@@ -61,14 +98,21 @@ final class RideJournal: @unchecked Sendable {
         guard !points.isEmpty else { return }
         lock.withLock {
             guard let handle, let data = try? JSONEncoder().encode(points) else { return }
-            handle.write(data)
-            handle.write(Data([0x0A]))
-            try? handle.synchronize()
+            do {
+                try handle.write(contentsOf: data)
+                try handle.write(contentsOf: Data([0x0A]))
+                try handle.synchronize()
+            } catch {
+                // A journal that cannot be written must never take the ride
+                // down with it: stop journaling and let recording continue.
+                self.handle = nil
+                RevertDiagnostics.log("journal.append failed: \(error.localizedDescription)")
+            }
         }
     }
 
-    /// Deletes the in-progress journal. Call only after the ride is saved or
-    /// explicitly discarded.
+    /// Deletes the in-progress journal. Call only after the current ride is
+    /// saved or explicitly discarded.
     func finish() {
         lock.withLock {
             closeLocked(remove: true)
@@ -76,29 +120,77 @@ final class RideJournal: @unchecked Sendable {
         }
     }
 
+    /// Deletes the journal handed out by `recoveredRide()`, plus an unusable
+    /// active journal left over from a launch that could not recover it.
+    func finishRecovery() {
+        lock.withLock {
+            if let recoveredURL {
+                try? FileManager.default.removeItem(at: recoveredURL)
+            }
+            recoveredURL = nil
+            startDate = nil
+            if handle == nil {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+    }
+
     /// Reconstructs a ride from a journal left behind by a crash or a failed
-    /// save. Returns nil when there is no usable journal.
+    /// save. Prefers the active journal, then the newest archived one. Returns
+    /// nil when there is no usable journal.
     func recoveredRide() -> Ride? {
         lock.withLock {
-            guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return nil }
-            let lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
-            guard !lines.isEmpty else { return nil }
-
-            var headerStart: Date?
-            var points: [RidePoint] = []
-            for (index, line) in lines.enumerated() {
-                if index == 0, let header = try? JSONDecoder().decode(Header.self, from: Data(line)) {
-                    headerStart = header.startDate
-                    continue
-                }
-                if let batch = try? JSONDecoder().decode([RidePoint].self, from: Data(line)) {
-                    points.append(contentsOf: batch)
-                }
+            recoveredURL = nil
+            for url in [fileURL] + archivedURLs() {
+                guard let data = try? Data(contentsOf: url), !data.isEmpty,
+                      let ride = Self.decode(data), ride.points.count > 1 else { continue }
+                recoveredURL = url
+                return ride
             }
-            guard points.count > 1 else { return nil }
-            let start = headerStart ?? points.first?.time ?? Date()
-            let end = points.last?.time ?? start
-            return Self.makeRide(points: points, start: start, end: end)
+            return nil
+        }
+    }
+
+    private static func decode(_ data: Data) -> Ride? {
+        let lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+        guard !lines.isEmpty else { return nil }
+
+        var headerStart: Date?
+        var points: [RidePoint] = []
+        for (index, line) in lines.enumerated() {
+            if index == 0, let header = try? JSONDecoder().decode(Header.self, from: Data(line)) {
+                headerStart = header.startDate
+                continue
+            }
+            if let batch = try? JSONDecoder().decode([RidePoint].self, from: Data(line)) {
+                points.append(contentsOf: batch)
+            }
+        }
+        guard points.count > 1 else { return nil }
+        let start = headerStart ?? points.first?.time ?? Date()
+        let end = points.last?.time ?? start
+        return makeRide(points: points, start: start, end: end)
+    }
+
+    /// Moves a journal that was never saved out of the way before a new ride
+    /// starts. Deleting it here is how an unsaved ride used to disappear.
+    private func archiveExistingLocked() {
+        try? handle?.close()
+        handle = nil
+        guard hasContent(fileURL) else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+        let destination = directory.appendingPathComponent("pending-\(Int(Date().timeIntervalSince1970)).jsonl")
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: destination)
+        } catch {
+            RevertDiagnostics.log("journal.begin: could not archive unsaved ride: \(error.localizedDescription)")
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+        for stale in archivedURLs().dropFirst(maximumArchivedRides) {
+            try? FileManager.default.removeItem(at: stale)
         }
     }
 

@@ -3,6 +3,11 @@ import UIKit
 
 /// Reference-counted owner for the shared `isIdleTimerDisabled` flag.
 ///
+/// Policy: the screen is held awake only while the rider is riding (cockpit and
+/// countdown) and while an offline download is on screen. Browsing screens —
+/// Home, Plan, History, Settings — never hold it, so a phone left on the tank
+/// bag while planning still locks.
+///
 /// Three screens used to write the global flag directly (ride recording,
 /// offline downloads and route planning). One finishing could re-enable the
 /// lock screen while another was still working. Every owner now acquires and

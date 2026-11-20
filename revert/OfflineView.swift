@@ -280,6 +280,8 @@ struct OfflineView: View {
         message = nil
 
         downloadTask = Task { @MainActor in
+            let token = BackgroundWork.begin("Revert region download")
+            defer { BackgroundWork.end(token) }
             let started = Date()
             // Only the parts that are actually missing get fetched.
             let needsRoads = await Task.detached(priority: .userInitiated) {

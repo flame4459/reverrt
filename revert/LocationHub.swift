@@ -8,12 +8,27 @@ import Observation
 /// running at best accuracy simultaneously. They now subscribe here instead,
 /// so there is one radio, one accuracy policy, and one authoritative speed and
 /// heading.
+///
+/// Invariants:
+/// - `preciseClients` counts leases that need turn-level accuracy. At zero the
+///   manager drops to hundred-metre accuracy; it never drops below one.
+/// - `backgroundClients` counts rides that must keep updating with the screen
+///   off. Always authorisation is requested once, on the first background
+///   lease, and the flag makes a second request impossible.
+/// - Every lease release is idempotent and floors its counter at zero, so a
+///   double release (suspend followed by stop) cannot strand the radio on.
+/// - Subscribers are UUID-addressed; removing an unknown id is a no-op.
+/// - While `isSimulating`, real fixes are ignored and the location manager is
+///   stopped, so the simulator cannot fight synthetic input.
 @MainActor
 @Observable
 final class LocationHub: NSObject, CLLocationManagerDelegate {
     static let shared = LocationHub()
 
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    /// True when iOS is giving an approximate fix. Guidance degrades badly, so
+    /// the cockpit says so before the rider depends on it.
+    private(set) var isReducedAccuracy = false
     @ObservationIgnored private(set) var lastLocation: CLLocation?
     /// When the route simulator is driving the app, real fixes are ignored and
     /// synthetic ones are published through the same subscriber path.
@@ -34,6 +49,7 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = 25
         authorizationStatus = manager.authorizationStatus
+        isReducedAccuracy = manager.accuracyAuthorization == .reducedAccuracy
         // Permission is requested by onboarding or by the first action that
         // actually needs a fix. Prompting from a singleton init meant the
         // system alert appeared before the rider had any context.
@@ -163,8 +179,14 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
             manager.stopUpdatingLocation()
             return
         }
-        manager.desiredAccuracy = preciseClients > 0 ? kCLLocationAccuracyBest : kCLLocationAccuracyHundredMeters
-        manager.distanceFilter = preciseClients > 0 ? 5 : 25
+        // Navigating is the one moment where a metre of lag is visible: the
+        // camera is following this position, so ask for navigation-grade fixes
+        // and the smallest filter iOS will honour. Background/coarse clients
+        // keep the cheaper settings.
+        manager.desiredAccuracy = preciseClients > 0
+            ? kCLLocationAccuracyBestForNavigation
+            : kCLLocationAccuracyHundredMeters
+        manager.distanceFilter = preciseClients > 0 ? 1 : 25
         let wantsBackground = backgroundClients > 0 && authorizationStatus == .authorizedAlways
         manager.allowsBackgroundLocationUpdates = wantsBackground
         manager.showsBackgroundLocationIndicator = wantsBackground
@@ -180,6 +202,7 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
+        isReducedAccuracy = manager.accuracyAuthorization == .reducedAccuracy
         for handler in authorizationSubscribers.values {
             handler(authorizationStatus)
         }

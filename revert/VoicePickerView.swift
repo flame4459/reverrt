@@ -43,7 +43,7 @@ struct VoicePickerView: View {
         }
         .pulseBackground()
         .scrollIndicators(.hidden)
-        .navigationTitle("Narrator voice")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .tint(MapUI.accent)
         .onAppear(perform: loadVoices)
@@ -200,15 +200,26 @@ struct VoicePickerView: View {
         SettingsCard(
             title: "System voices",
             icon: "waveform",
-            footer: "Enhanced voices can be downloaded in iPhone Settings. The system voice is also used for street names when a pack is selected."
+            footer: "Tom (Enhanced) is the recommended house voice. Download it in iPhone Settings → Accessibility → Spoken Content → Voices; the system voice is also used for street names when a pack is selected."
         ) {
-            systemRow("System default", detail: "Best installed voice")
+            systemRow("System default", detail: defaultVoiceDetail)
 
             ForEach(availableVoices) { voice in
                 Rectangle().fill(MapUI.line).frame(height: 0.8)
-                systemRow(voice.name, detail: voice.language)
+                systemRow(voice.name, detail: "\(voice.language) · \(voice.qualityLabel)")
             }
         }
+    }
+
+    private var defaultVoiceDetail: String {
+        let currentLang = Locale.current.language.languageCode?.identifier ?? "en"
+        let candidates = cachedVoices.filter { $0.language.starts(with: currentLang) }
+        if let tom = candidates.first(where: {
+            $0.name.localizedCaseInsensitiveContains("Tom") && $0.quality == .enhanced
+        }) {
+            return "Best installed voice · \(tom.name) Enhanced"
+        }
+        return "Best installed voice"
     }
 
     private func systemRow(_ name: String, detail: String) -> some View {
@@ -243,11 +254,21 @@ struct VoicePickerView: View {
         let id: String
         let name: String
         let language: String
+        let qualityLabel: String
     }
 
     private var availableVoices: [VoiceItem] {
         cachedVoices.map {
-            VoiceItem(id: $0.identifier, name: $0.name, language: $0.language)
+            VoiceItem(id: $0.identifier, name: $0.name, language: $0.language,
+                      qualityLabel: Self.qualityLabel(for: $0))
+        }
+    }
+
+    private static func qualityLabel(for voice: AVSpeechSynthesisVoice) -> String {
+        switch voice.quality {
+        case .premium: "Premium"
+        case .enhanced: "Enhanced"
+        default: "Compact"
         }
     }
 
@@ -257,9 +278,23 @@ struct VoicePickerView: View {
         let all = AVSpeechSynthesisVoice.speechVoices()
         let matching = all.filter { $0.language.starts(with: currentLang) }
         let candidates = matching.isEmpty ? all.filter { $0.language.starts(with: "en") } : matching
-        var seen = Set<String>()
-        cachedVoices = candidates.filter { seen.insert($0.name).inserted }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Keep the highest-quality copy of a name (Tom Compact vs Tom
+        // Enhanced) so the picker can honestly say which tier is installed.
+        var best: [String: AVSpeechSynthesisVoice] = [:]
+        for voice in candidates {
+            let key = voice.name.lowercased()
+            if let existing = best[key] {
+                if voice.quality.rawValue > existing.quality.rawValue {
+                    best[key] = voice
+                }
+            } else {
+                best[key] = voice
+            }
+        }
+        cachedVoices = best.values.sorted {
+            if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
     }
 }
 

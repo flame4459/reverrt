@@ -19,6 +19,8 @@ struct PlanView: View {
     @State private var roadText = ""
     /// Search for the start: a road name, an address or a place.
     @State private var searchQuery = ""
+    @State private var searchDebounce: Task<Void, Never>?
+    @AppStorage("recent.destinations") private var recentDestinationsData = ""
     @FocusState private var searchFocused: Bool
     @State private var pinLabel: String?
     @State private var searchError: String?
@@ -39,6 +41,7 @@ struct PlanView: View {
     @State private var showingLoopDeck = false
     @State private var savedRouteQuery = ""
     @State private var renamingRoute: SavedRoute?
+    @State private var carHandoffSaved: SavedRoute?
     @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
     @Query(sort: \Ride.startDate, order: .reverse) private var savedRides: [Ride]
     @Query(sort: \Bike.createdAt, order: .reverse) private var garageVehicles: [Bike]
@@ -254,6 +257,11 @@ struct PlanView: View {
             )
         }
         .sheet(isPresented: $showingLoopDeck) { loopDeckSheet }
+        .sheet(item: $carHandoffSaved) { saved in
+            if let route = saved.plannedRoute() {
+                CarHandoffSheet(route: CarHandoffRoute(route: route))
+            }
+        }
         .confirmationDialog("Car or bike today?",
                             isPresented: $showingVehicleChoice,
                             titleVisibility: .visible,
@@ -337,7 +345,8 @@ struct PlanView: View {
             Map(position: $camera) {
                 UserAnnotation()
                 if let origin = loopOrigin, let vehicle = primaryVehicle, !isCarPlan {
-                    MapCircle(center: origin, radius: max(vehicle.fuelRangeKm, 1) * 900)
+                    MapCircle(center: origin,
+                              radius: RangePolicy.summary(for: vehicle, routeLengthMeters: 0).comfortableKm * 1_000)
                         .foregroundStyle(MapUI.cyan.opacity(0.035))
                         .stroke(MapUI.cyan.opacity(0.32), lineWidth: 1)
                 }
@@ -556,7 +565,7 @@ struct PlanView: View {
     private func flashPin(at coordinate: CLLocationCoordinate2D) {
         let strike = PlanPinStrike(coordinate: coordinate)
         pinStrike = strike
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        RevertHaptics.tap()
 
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.1))
@@ -592,7 +601,19 @@ struct PlanView: View {
                         // Committing a result writes the label back into the
                         // field, and that must not repopulate the list.
                         guard searchFocused else { return }
-                        roadSearch.update(query: query, region: searchRegion)
+                        searchDebounce?.cancel()
+                        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard trimmed.count >= 2 else {
+                            roadSearch.clear()
+                            return
+                        }
+                        searchDebounce = Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 150_000_000)
+                            guard !Task.isCancelled else { return }
+                            MapPerformance.search {
+                                roadSearch.update(query: trimmed, region: searchRegion)
+                            }
+                        }
                     }
 
                 if searchingPlace {
@@ -619,20 +640,80 @@ struct PlanView: View {
                     .stroke(searchFocused ? MapUI.cyan.opacity(0.55) : MapUI.lineStrong, lineWidth: 0.8)
             }
 
+            if searchFocused, !matchingRecents.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(matchingRecents) { recent in
+                        Button {
+                            commitSearchResult(recent.coordinate, label: recent.title)
+                        } label: {
+                            HStack(spacing: 9) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .foregroundStyle(MapUI.textTertiary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(recent.title)
+                                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                        .foregroundStyle(MapUI.ink)
+                                    Text("Recent destination")
+                                        .font(.scaledSystem(size: 9, design: .rounded))
+                                        .foregroundStyle(MapUI.textTertiary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .background(MapUI.surfaceHigh.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(MapUI.line, lineWidth: 0.7))
+                .padding(.top, 2)
+            }
+
             if searchFocused, !roadSearch.suggestions.isEmpty {
                 AddressSuggestionList(suggestions: roadSearch.suggestions) { suggestion in
                     chooseSearchResult(suggestion)
                 }
                 .padding(.top, 2)
+            } else if searchFocused,
+                      searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2,
+                      !searchingPlace {
+                HStack(spacing: 7) {
+                    if roadSearch.isSearching {
+                        ProgressView().controlSize(.mini).tint(MapUI.cyan)
+                        Text("Searching…")
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                        Text("No matching places. Try a town or a full street name.")
+                    }
+                }
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(MapUI.textTertiary)
+                .padding(.top, 2)
+                .accessibilityElement(children: .combine)
             }
 
             if let searchError {
-                Text(searchError)
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(MapUI.coral)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(searchError)
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(MapUI.coral)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Try again") { resolveSearchText() }
+                        .font(.system(.caption, design: .rounded).weight(.bold))
+                        .foregroundStyle(MapUI.cyan)
+                }
             }
         }
+    }
+
+    private var matchingRecents: [RecentDestination] {
+        guard let data = recentDestinationsData.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([RecentDestination].self, from: data) else { return [] }
+        let needle = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return [] }
+        return decoded.filter { $0.title.localizedCaseInsensitiveContains(needle) }.prefix(3).map { $0 }
     }
 
     private var searchRegion: MKCoordinateRegion? {
@@ -1277,7 +1358,7 @@ struct PlanView: View {
             }
             Spacer(minLength: 4)
             Text(range.verdict == .unknown
-                 ? "\(Units.distanceText(range.rangeKm * 1_000, decimals: 0).uppercased()) RANGE"
+                 ? "\(Units.distanceText(range.usableKm * 1_000, decimals: 0).uppercased()) RANGE"
                  : "RANGE \(range.verdict.rawValue.uppercased())")
                 .font(.scaledSystem(size: 8, weight: .heavy, design: .rounded))
                 .tracking(0.7)
@@ -1471,6 +1552,8 @@ struct PlanView: View {
 
                 SaveRouteButton(route: route, roads: planner.roads, compact: true)
 
+                CarHandoffButton(route: CarHandoffRoute(route: route), compact: true)
+
                 if !route.elevationProfile.isEmpty {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack(alignment: .firstTextBaseline) {
@@ -1638,6 +1721,12 @@ struct PlanView: View {
                     } label: {
                         Label("Rename", systemImage: "pencil")
                     }
+                    Button {
+                        RevertHaptics.tap()
+                        carHandoffSaved = saved
+                    } label: {
+                        Label("Send to car screen", systemImage: "car.side.fill")
+                    }
                     Button("Delete", role: .destructive) {
                         context.delete(saved)
                         try? context.save()
@@ -1650,6 +1739,12 @@ struct PlanView: View {
                         renamingRoute = saved
                     } label: {
                         Label("Rename route", systemImage: "pencil")
+                    }
+                    Button {
+                        RevertHaptics.tap()
+                        carHandoffSaved = saved
+                    } label: {
+                        Label("Send to car screen", systemImage: "car.side.fill")
                     }
                     Button(role: .destructive) {
                         context.delete(saved)
@@ -1816,6 +1911,10 @@ struct PlanView: View {
         RouteTaste.shared.recordStarted(route.usedRoadNames)
         nav.start(route, roads: pending.roads, vehicleKind: kind)
         pendingVehicleRoute = nil
+        // The cockpit offers the car-screen handoff once, right after the
+        // bike-or-car choice, where the rider is already deciding how they
+        // will be riding.
+        UserDefaults.standard.set(true, forKey: "intent.handoffPrompt")
         tab = 0
         dismiss()
         onStartNavigation?()
@@ -2002,6 +2101,8 @@ private struct RoutePreviewView: View {
                         }
                         .buttonStyle(RevertSecondaryButtonStyle())
                     }
+
+                    CarHandoffButton(route: CarHandoffRoute(route: route))
 
                     Button {
                         RevertHaptics.rigid()

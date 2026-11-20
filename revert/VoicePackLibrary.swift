@@ -152,6 +152,8 @@ final class VoicePackLibrary {
         states[pack.id] = .downloading
         Task { [weak self] in
             guard let self else { return }
+            let token = BackgroundWork.begin("Revert voice pack")
+            defer { Task { @MainActor in BackgroundWork.end(token) } }
             do {
                 let (data, response) = try await session.data(from: pack.downloadURL)
                 if let http = response as? HTTPURLResponse, http.statusCode != 200 {

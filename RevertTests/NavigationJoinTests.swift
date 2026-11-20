@@ -24,16 +24,31 @@ struct NavigationJoinTests {
         #expect(nav.joined)
     }
 
-    @Test func timedLoopStillWaitsForItsStartLine() {
+    @Test func loopCanBeJoinedFromAnywhereAlongIt() {
         let nav = NavigationManager()
         defer { nav.stop() }
         nav.start(route(kind: .loop), roads: [])
-        // 400 m from the start: a loop must not join early, or the clock
-        // would begin at the house instead of the start line.
-        nav.handle(CLLocation(latitude: 40.0 + 0.004, longitude: -73.0))
-        #expect(!nav.joined)
-        // At the line it joins.
+        // 600 m along the loop, well past the start line: the rider began
+        // mid-route and must still get guidance.
+        nav.handle(CLLocation(latitude: 40.0 + 0.006, longitude: -73.0))
+        #expect(nav.joined)
+    }
+
+    @Test func loopJoinsAtItsStartLine() {
+        let nav = NavigationManager()
+        defer { nav.stop() }
+        nav.start(route(kind: .loop), roads: [])
         nav.handle(CLLocation(latitude: 40.0 + 0.0002, longitude: -73.0))
         #expect(nav.joined)
+    }
+
+    @Test func loopRefusesAFixNowhereNearIt() {
+        let nav = NavigationManager()
+        defer { nav.stop() }
+        nav.start(route(kind: .loop), roads: [])
+        // Three kilometres beside the loop: not a join, just a rider who has
+        // not reached it yet.
+        nav.handle(CLLocation(latitude: 40.03, longitude: -73.03))
+        #expect(!nav.joined)
     }
 }

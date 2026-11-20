@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import MapKit
 import SwiftData
 import CoreLocation
@@ -12,7 +13,7 @@ struct UserMarksFeatureView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 RevertInfoNote(
-                    text: "In the cockpit say “mark hazard” to drop a note at the current position, or “avoid this road” to keep it out of future planning. Marks stay on this iPhone.",
+                    text: "In the cockpit say “mark hazard” to drop a mark at the current position; the corridor alert engine will announce rider marks on later rides. Say “avoid this road” to keep it out of future planning. Marks stay on this iPhone.",
                     systemImage: "mic.fill",
                     tint: Pulse.accent
                 )
@@ -85,6 +86,11 @@ struct GhostFeatureView: View {
     let rides: [Ride]
     @AppStorage("ride.ghostEnabled") private var ghostEnabled = false
 
+    private var matchingRuns: Int {
+        guard let key = rides.first?.routeKey, !key.isEmpty else { return 0 }
+        return rides.filter { $0.routeKey == key }.count
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -100,6 +106,17 @@ struct GhostFeatureView: View {
                 }
                 .tint(Pulse.accent)
                 .pulseCard()
+
+                if ghostEnabled {
+                    let count = matchingRuns
+                    RevertInfoNote(
+                        text: count == 0
+                            ? "No completed ride matches the latest route fingerprint yet. Record this route once first."
+                            : "\(count) previous run\(count == 1 ? "" : "s") match the latest route fingerprint.",
+                        systemImage: count == 0 ? "exclamationmark.triangle" : "checkmark.circle",
+                        tint: count == 0 ? Pulse.warning : Pulse.emerald
+                    )
+                }
 
                 if rides.isEmpty {
                     RevertInfoNote(text: "Record a ride first. The ghost uses a previous ride with the same route fingerprint.",
@@ -362,6 +379,7 @@ struct MonthlyFeatureView: View {
     @State private var month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
     @State private var posterURL: URL?
     @State private var rendering = false
+    @State private var savedToPhotos = false
 
     private var recap: MonthlyRecap { MonthlyRecap(month: month, rides: rides) }
 
@@ -382,12 +400,14 @@ struct MonthlyFeatureView: View {
                         .foregroundStyle(Pulse.ink)
                     Spacer()
                     Button {
+                        guard canAdvance else { return }
                         month = Calendar.current.date(byAdding: .month, value: 1, to: month) ?? month
                     } label: {
                         Image(systemName: "chevron.right")
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Pulse.accent)
+                    .foregroundStyle(canAdvance ? Pulse.accent : Pulse.muted.opacity(0.4))
+                    .disabled(!canAdvance)
                 }
 
                 MonthlyPoster(recap: recap)
@@ -397,6 +417,14 @@ struct MonthlyFeatureView: View {
                         Label("Share poster image", systemImage: "photo.artframe")
                     }
                     .buttonStyle(RevertPrimaryButtonStyle(minHeight: 46))
+
+                    Button {
+                        savePosterToPhotos()
+                    } label: {
+                        Label(savedToPhotos ? "Saved to Photos" : "Save to Photos", systemImage: savedToPhotos ? "checkmark" : "photo.badge.plus")
+                    }
+                    .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
+                    .disabled(savedToPhotos)
                 } else {
                     Button {
                         renderPoster()
@@ -425,7 +453,21 @@ struct MonthlyFeatureView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: month) { _, _ in
             posterURL = nil
+            savedToPhotos = false
         }
+    }
+
+    private var canAdvance: Bool {
+        let current = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+        return month < current
+    }
+
+    private func savePosterToPhotos() {
+        guard let posterURL, let data = try? Data(contentsOf: posterURL),
+              let image = UIImage(data: data) else { return }
+        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+        savedToPhotos = true
+        RevertHaptics.success()
     }
 
     private func renderPoster() {
@@ -574,6 +616,7 @@ struct SetupNotesDetailView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SetupNote.createdAt, order: .reverse) private var notes: [SetupNote]
     @State private var showingAdd = false
+    @State private var editingNote: SetupNote?
 
     private var bikeNotes: [SetupNote] {
         notes.filter { $0.bikeID == bike.id }
@@ -618,7 +661,7 @@ struct SetupNotesDetailView: View {
                             Text(note.title)
                                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
                                 .foregroundStyle(Pulse.ink)
-                            Text("\(note.createdAt.formatted(date: .abbreviated, time: .omitted)) · F \(RevertFormat.number(note.frontPressure, decimals: 1)) / R \(RevertFormat.number(note.rearPressure, decimals: 1)) psi")
+                            Text("\(note.createdAt.formatted(date: .abbreviated, time: .omitted)) · F \(Units.pressureText(note.frontPressure)) / R \(Units.pressureText(note.rearPressure))")
                                 .font(.scaledSystem(size: 9.5, design: .rounded))
                                 .foregroundStyle(Pulse.muted)
                             if !note.notes.isEmpty {
@@ -632,6 +675,11 @@ struct SetupNotesDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .contextMenu {
+                            Button {
+                                editingNote = note
+                            } label: {
+                                Label("Edit note", systemImage: "pencil")
+                            }
                             Button(role: .destructive) {
                                 context.delete(note)
                                 try? context.save()
@@ -651,16 +699,39 @@ struct SetupNotesDetailView: View {
         .sheet(isPresented: $showingAdd) {
             SetupNoteEditorView(bikeID: bike.id)
         }
+        .sheet(item: $editingNote) { note in
+            SetupNoteEditorView(bikeID: bike.id, note: note)
+        }
     }
 }
 
 struct SetupNoteEditorView: View {
     let bikeID: UUID?
+    var note: SetupNote? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var title = ""
     @State private var front = 32.0
     @State private var rear = 36.0
+
+    init(bikeID: UUID?, note: SetupNote? = nil) {
+        self.bikeID = bikeID
+        self.note = note
+        _title = State(initialValue: note?.title ?? "")
+        _front = State(initialValue: note?.frontPressure ?? 32)
+        _rear = State(initialValue: note?.rearPressure ?? 36)
+        _notes = State(initialValue: note?.notes ?? "")
+    }
+
+    private var frontDisplay: Binding<Double> {
+        Binding(get: { Units.pressureValue(front) },
+                set: { front = Units.pressureToPsi($0) })
+    }
+
+    private var rearDisplay: Binding<Double> {
+        Binding(get: { Units.pressureValue(rear) },
+                set: { rear = Units.pressureToPsi($0) })
+    }
     @State private var notes = ""
 
     var body: some View {
@@ -669,16 +740,16 @@ struct SetupNoteEditorView: View {
                 Section("Setup") {
                     TextField("Title (e.g. Soft rear, 3 clicks)", text: $title)
                     HStack {
-                        Text("Front psi")
+                        Text("Front \(Units.pressureUnit)")
                         Spacer()
-                        TextField("32", value: $front, format: .number.precision(.fractionLength(0...1)))
+                        TextField("32", value: frontDisplay, format: .number.precision(.fractionLength(0...1)))
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
                     HStack {
-                        Text("Rear psi")
+                        Text("Rear \(Units.pressureUnit)")
                         Spacer()
-                        TextField("36", value: $rear, format: .number.precision(.fractionLength(0...1)))
+                        TextField("36", value: rearDisplay, format: .number.precision(.fractionLength(0...1)))
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
@@ -687,16 +758,25 @@ struct SetupNoteEditorView: View {
             }
             .scrollContentBackground(.hidden)
             .pulseBackground()
-            .navigationTitle("Setup note")
+            .navigationTitle(note == nil ? "Setup note" : "Edit setup note")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let note = SetupNote(bikeID: bikeID,
-                                             title: title.trimmingCharacters(in: .whitespaces).isEmpty ? "Setup" : title,
-                                             frontPressure: front, rearPressure: rear, notes: notes)
-                        context.insert(note)
+                        let trimmed = title.trimmingCharacters(in: .whitespaces)
+                        if let note {
+                            note.title = trimmed.isEmpty ? note.title : trimmed
+                            note.frontPressure = front
+                            note.rearPressure = rear
+                            note.notes = notes
+                        } else {
+                            let newNote = SetupNote(bikeID: bikeID,
+                                                    title: trimmed.isEmpty ? "Setup" : trimmed,
+                                                    frontPressure: front, rearPressure: rear,
+                                                    notes: notes)
+                            context.insert(newNote)
+                        }
                         try? context.save()
                         dismiss()
                     }
@@ -754,16 +834,44 @@ struct SegmentFeatureView: View {
 
 struct SegmentDetailView: View {
     let ride: Ride
-    @State private var segments: [SegmentCandidate] = []
+    @Environment(\.modelContext) private var context
+    @Query(sort: \SegmentRecord.createdAt, order: .reverse) private var records: [SegmentRecord]
+    @State private var loading = true
+    @State private var didCompute = false
+
+    private var rideKey: String {
+        "\(ride.startDate.timeIntervalSince1970)-\(ride.routeKey ?? "ride")"
+    }
+
+    private var rideRecords: [SegmentRecord] {
+        records.filter { $0.rideIDString == rideKey }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                if segments.isEmpty {
+                if loading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Finding twisty stretches…")
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(Pulse.muted)
+                    }
+                    .padding(.vertical, 10)
+                } else if rideRecords.isEmpty {
                     RevertInfoNote(text: "No twisty stretch was found in this ride.",
                                    systemImage: "scissors", tint: Pulse.accent)
                 } else {
-                    ForEach(segments) { segment in
+                    if let first = rideRecords.first, first.coordinates.count > 1 {
+                        Map {
+                            MapPolyline(coordinates: first.coordinates)
+                                .stroke(Pulse.accent.opacity(0.7), lineWidth: 4)
+                        }
+                        .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
+                        .frame(height: 190)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    ForEach(rideRecords) { segment in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(segment.name)
                                 .font(.system(.headline, design: .rounded).weight(.semibold))
@@ -776,7 +884,7 @@ struct SegmentDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Pulse.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    Text("Local-only first pass: segments are detected from your track and not uploaded or shared.")
+                    Text("Segments are saved with the ride on this iPhone; they are never uploaded or shared.")
                         .font(.scaledSystem(size: 9.5, design: .rounded))
                         .foregroundStyle(Pulse.muted)
                 }
@@ -787,7 +895,22 @@ struct SegmentDetailView: View {
         .pulseBackground()
         .navigationTitle("Segments")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { segments = SegmentDetector.detect(points: ride.points) }
+        .task { await loadSegments() }
+    }
+
+    private func loadSegments() async {
+        guard !didCompute else { loading = false; return }
+        didCompute = true
+        if !rideRecords.isEmpty { loading = false; return }
+        let points = ride.points
+        let found = await Task.detached(priority: .userInitiated) {
+            SegmentDetector.detect(points: points)
+        }.value
+        for candidate in found {
+            context.insert(SegmentRecord(rideIDString: rideKey, candidate: candidate))
+        }
+        try? context.save()
+        loading = false
     }
 }
 

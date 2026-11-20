@@ -51,7 +51,7 @@ struct LoopFallbackTests {
 
     @Test func sharedConnectorIsOfferedInsteadOfAnError() {
         let roads = lollipop(stickMeters: 1_200, loopRadius: 400)
-        let routes = RouteBuilder.loops(
+        let result = RouteBuilder.loopsResult(
             roads: roads,
             start: start,
             length: 4_900,
@@ -62,12 +62,12 @@ struct LoopFallbackTests {
             preferences: .empty,
             hazards: []
         )
-        #expect(!routes.isEmpty)
-        #expect(routes.contains { $0.retraced > 0.24 },
+        #expect(!result.routes.isEmpty)
+        #expect(result.routes.contains { $0.retraced > 0.24 },
                 "the fallback should keep the shared stick rather than fail")
-        #expect(RouteBuilder.lastNotice?.contains("best route") == true
-                    || RouteBuilder.lastNotice?.contains("longest loop") == true,
-                "the rider should be told the result is a fallback, got: \(RouteBuilder.lastNotice ?? "nil")")
+        #expect(result.notice?.contains("best route") == true
+                    || result.notice?.contains("longest loop") == true,
+                "the rider should be told the result is a fallback, got: \(result.notice ?? "nil")")
     }
 
     @Test func impossibleDistanceStillProducesTheLongestLoop() {

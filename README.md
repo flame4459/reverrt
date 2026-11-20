@@ -18,12 +18,13 @@ are `Revert`; the person on the bike is still a *rider*.
 
 | | |
 | --- | --- |
-| Xcode | 26.0 or newer (developed on 27.2) — the deployment target is iOS 17.4 |
+| Xcode | 26.0 or newer (built against the iOS 26 SDK) — the deployment target is iOS 18.0 |
 | macOS | whatever Xcode 26+ requires |
-| Device / simulator | iPhone running iOS 17.4+, or an iOS 17.4+ simulator runtime |
-| Dependencies | none — no SPM packages, no CocoaPods, no generated code to fetch |
+| Device / simulator | iPhone running iOS 18.0+, or an iOS 18.0+ simulator runtime |
+| Dependencies | one SPM package (ImmersiveMap, MIT) — resolved by Xcode on first open |
 
-There are no API keys or `.env` files to fill in. Clone, open, run.
+There are no API keys or `.env` files to fill in. Clone, open, run. Build and test
+details are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Run it in the simulator
 
@@ -88,6 +89,39 @@ a live ride card (next maneuver, distance, ETA) and a "Start a loop" launcher.
 That is the surface riders actually get today. The dashboard ride card needs the
 small activity family, which is iOS 18+; on iOS 17 the Live Activity is the
 lock-screen / Dynamic Island card. See [CARPLAY.md](CARPLAY.md).
+
+### Companion
+
+**Ace** is the on-device spoken companion. He answers distance, fuel,
+weather/sunset, hazard, ride, bike and home questions; makes the odd dry remark;
+and checks in sparingly. **On → Asked only → Off** is one cockpit chip (long
+press for Off), the handlebar remote cycles it with a long press, and Settings has
+the same control plus the address term and a memory reset. Off stops the
+microphone and leaves navigation prompts untouched.
+
+The house voice is Tom (Enhanced) when installed, with a quality badge and a
+download hint in the voice picker. Tier 0/1 lines are canned and templated and
+work offline. Tier 2 Foundation Models only handles free-form conversation, is
+availability-gated, and falls back silently. While riding, **“Hey Ace”** is the
+always-waiting wake word (on by default, switchable); long-press Y on the remote
+is hold-to-talk. A connected Bluetooth headset such as a Cardo is preferred for
+the microphone automatically, with the iPhone mic as fallback.
+
+The car-screen handoff was verified in the simulator through the first-open detection popup and a well-formed track-only GPX export with the standard GPX UTI. Organic Maps is the target app in the simulator, so the final share and CarPlay rendering require a physical phone/head unit.
+
+While the entitlement is pending there is also a **car-screen handoff**:
+**Send to car screen** on a plan card or saved route writes either a track-only
+GPX for Roavic/OffTrail/Organic Maps or a track-plus-densified-route GPX for
+Kurviger/Scenic, then opens the share sheet. Revert keeps navigating and remains
+the only voice; a first-open popup checks whether Roavic can be detected on the iPhone and
+explains that it is required for the car screen. Detection is best-effort:
+iOS does not expose an installed-app list, so Revert probes known Roavic URL
+schemes; if that returns nothing the rider can confirm “I have Roavic” and it is
+remembered. The first-run sheet explains that Roavic's mute is a rider step. A
+one-time reminder records that it was done. The exporter preserves curve
+vertices, caps gaps at 50 m and the file at ~20k points, and writes synthetic
+times. The implementation is `CarHandoff.swift`; the real head-unit spike is
+still the next step.
 
 ## Network services
 
@@ -159,8 +193,9 @@ screenshot-heavy audit pass that is allowed to fail in CI.
 **Imperial**. Automatic follows the iPhone region: US and UK use miles, mph and
 feet; most other regions use kilometres, km/h and metres. The choice is saved on
 the phone and applies to every distance, speed, elevation, voice prompt and
-widget. The planner’s map dock has a quick metric/imperial toggle, and the
-cockpit menu can switch all three modes mid-ride without leaving the map.
+widget, plus fuel volume and tyre pressure. The planner’s map dock has a quick
+metric/imperial toggle, and the cockpit menu can switch all three modes mid-ride
+without leaving the map.
 
 An existing metric/imperial choice from earlier builds is migrated once, so a
 rider who previously turned metric on or off keeps that choice instead of
@@ -172,32 +207,71 @@ region default.
 The **Ride Lab** card on the Home screen opens the first integrated pass of the
 sixteen-outline features:
 
-- **Planning:** sun/light conditions and finish-in-the-dark warnings; the range
-  ring (90% comfortable range); multi-day trips with one card per day; a saved
-  loop deck; GPX import plus an optional MapKit re-plan; serverless route links;
-  and an offline preflight that packs roads/hazards around the start.
-- **In the ride:** “mark hazard” and “avoid this road” voice marks (plus the
-  same actions in the ride menu); a ghost chase against your fastest previous
-  run on the same route; and long-ride battery mode that dims the cockpit after
-  ten seconds at speed. Focus mode hides the map dock but leaves a visible exit.
+- **Planning:** sun/light conditions and finish-in-the-dark warnings; a range
+  ring and verdict based on the **current tank level**; editable multi-day trips
+  with reorder, day editing and day route/GPX sharing; a saved loop deck; GPX
+  import plus a cancellable, progress-reporting MapKit re-plan; serverless route
+  links with a size guard and QR; and an offline preflight that packs the route
+  corridor, not just the start.
+- **In the ride:** “mark hazard” and “avoid this road” voice marks; marks are
+  now fed into the corridor alert engine. Ghost chase against your fastest
+  previous run with an explicit no-match message; long-ride battery mode. Focus
+  mode hides the map dock but leaves a visible exit.
 - **After the ride:** ride the exact track again from History, a corner report
   with entry/apex/exit speed and lean, a monthly recap poster that can be
-  rendered to a PNG, setup/tyre notes per bike, and local segment detection.
+  rendered to a PNG or saved to Photos, editable setup/tyre notes per bike, and
+  persisted segments detected off the main thread.
 - **Platform:** a “Start my usual loop” Siri shortcut picks the saved loop with
   the most completed rides. The existing Dashboard widget and Live Activity are
   unchanged.
 
-The Lab is reachable from the Home screen’s **Ride Lab** quick action; the
-planner shows the sunset/range strip under the map, the range ring (on a
-motorcycle) and a **Deck** button above the route cards, and History/ride detail
-expose the after-ride reports directly.
+The Lab is reachable from the Home screen’s **Ride Lab** quick action and from
+**Settings → Ride Lab**; the planner shows the sunset/range strip under the map,
+the range ring (on a motorcycle) and a **Deck** button above the route cards, and
+History/ride detail expose the after-ride reports directly.
 
-First-pass limits, deliberately visible in the UI: WeatherKit needs an Apple
-Developer entitlement, so Conditions uses on-device sun times only; trips store
-the day’s saved route rather than auto-generating a tour; segments are
-local-only; rider marks are stored/displayed but not yet fed into the traffic
-alert engine; and Focus is a cockpit-chrome mode rather than an iOS Focus
-filter.
+First-pass limits, deliberately visible in the UI: the planner’s Conditions card
+is labelled **(light)** and uses sun times; the companion has its own keyless
+Open-Meteo weather reader. Trips store the day’s saved route rather than
+auto-generating a tour, and Focus is a cockpit-chrome mode rather than an iOS
+Focus filter.
+
+### Drone chase replay
+
+Every ride detail has a **Drone chase replay** button. The full-screen replay
+puts the camera high and behind the recorded track, turning with the ride’s
+heading, while the supplied red/white pixel rider switches between straight, lean-left,
+lean-right and tuck frames from the recorded lean and speed. The frames were
+cropped from the supplied sprite sheet; there is no ground shadow and no
+lettering. Playback starts at 8× and can be paused, scrubbed or slowed to
+1×/4×/16×. The map, sprite choice and telemetry all come from the local track;
+nothing is uploaded.
+
+### Director Mode
+
+**Director film** is an auto-edited cut of the ride. The director ranks corners
+by lean, speed and braking, picks up to five non-overlapping highlights, and
+builds an establishing shot, a chase / orbit / trackside / fly-by / hero-low
+shot for each moment, then an outro. Corner shots hold the apex for a moment and
+then accelerate out, so every highlight gets a real speed ramp.
+
+The rider sits in a stable lower-third film frame while the camera rigs move
+under it, so annotations cannot clip against the camera; the supplied red/white
+sprite set is used, with the eight-direction atlas wired for extra views as they
+arrive. The camera has a damped follow, looks 38 m along the route and frames the
+whole route bounds for the opening and finish. A short lower-third caption
+(shot type and corner) fades in after each cut. The HUD hides after a few seconds
+(tap to bring it back), and the controls include a map/satellite switch. Audio is
+opt-in. The film has a
+score trace, corner markers on the timeline, chapter jumps, a local-best ghost
+with a delta chip, an opt-in synthesized engine/wind soundtrack, and screen-record
+export through ReplayKit (save/share from the system preview). The overlay adds
+letterboxing, grain, speed lines and a vignette without putting a shadow or a
+label on the rider.
+
+The first pass uses the three supplied rider views for the eight direction slots
+and ReplayKit rather than an offline 4K frame renderer; both are isolated so
+they can be upgraded without changing the director.
 
 ## Debugging a ride
 
@@ -224,6 +298,36 @@ diagnostics count summary for quick grepping.
 The files stay in `Application Support/RideDebug` on the phone; the debug screen
 can share one, delete one, or turn recording off. This is the only place Revert
 writes coordinates to disk. The newest 40 are kept.
+
+## Lanes and turn wording
+
+Turn classification now follows the Waze junction rule: under 20° is straight, under 45° is a keep/slight movement, 45–150° is a turn, 150–165° is sharp, and beyond that is a U-turn. Gentle movements that keep the same primary road name are treated as best continuation and do not generate an instruction.
+
+Lane data comes from OSM `turn:lanes` and is spoken as “In [distance], use the left/right [two] lanes to turn…” The lane strip is revealed at highway range (1,600 m above 25 m/s), 800 m at medium speed and 400 m in town, in both the portrait banner and the car landscape card. It is not shown at the final no-distance prompt.
+
+## Turn prompt timing
+
+Turn and exit prompts now use Waze-style speed bands, in metres independent of the unit setting:
+
+| Speed | First approach prompt |
+| --- | --- |
+| 0–70 km/h (0–43.5 mph) | 305 m / 1,000 ft |
+| 70–90 km/h (43.5–55.9 mph) | 805 m / 0.5 mi |
+| 90–150 km/h (55.9–93.2 mph) | 3,218 m / 2 mi |
+| 150+ km/h (93.2+ mph) | 4,828 m / 3 mi |
+
+The second prompt is at half the approach distance, and the final no-distance prompt scales with speed (35–150 m) rather than firing at a fixed 25 m. A highway exit therefore gets a two-mile warning at 80 mph and a three-mile warning above 150 km/h.
+
+## Map renderer
+
+Car landscape now uses a floating **Google-style HUD**: the map is full-screen, the maneuver card sits top-left, ETA bottom-left, speed beside the controls, and a thumb rail at the trailing edge. There is no bottom sheet covering the map.
+
+The ride screen now defaults to **ImmersiveMap** — a Swift + Metal PMTiles
+renderer — with **MKMapView** and the SwiftUI Map selectable as fallbacks. The
+camera is driven by `RideCameraEngine` and a display link, the route is an
+in-place overlay ribbon with pace shading, and the map viewport is inset above
+the cockpit panel so the puck stays visible. A bundled `region.pmtiles` is used
+when present; otherwise the hosted archive is streamed.
 
 ## Layout
 

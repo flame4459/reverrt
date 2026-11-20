@@ -39,6 +39,8 @@ final class RideRecorder {
     private var pausedTotal: TimeInterval = 0
     private var frozenDuration: TimeInterval?
     private var lastLocation: CLLocation?
+    /// When the last usable fix arrived, so the cockpit can say it has lost GPS.
+    private(set) var lastFixAt: Date?
     /// True when any fix in the current recording came from the route
     /// simulator. Simulated rides are debug data, not journal rides.
     private(set) var wasSimulated = false
@@ -85,6 +87,7 @@ final class RideRecorder {
         frozenDuration = nil
         pauseStart = nil
         lastLocation = nil
+        lastFixAt = nil
         wasSimulated = false
         altitudeRef = nil
         stationarySince = nil
@@ -239,12 +242,19 @@ final class RideRecorder {
     /// Feeds a fix through the same path the GPS subscription uses. Internal so
     /// tests can drive scripted sequences without Core Location.
     func ingest(_ loc: CLLocation) {
-        guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 20 else { return }
-        if hub.isSimulating { wasSimulated = true }
-        currentSpeedMps = max(loc.speed, 0)
-        onLocation?(loc)
+        guard loc.horizontalAccuracy > 0 else { return }
+        // The alert engine and the HUD only need a rough fix, and under tree
+        // cover a 30-50 m fix is all there is. The ride itself still wants a
+        // good one, so distance only accrues below the tighter gate.
+        if loc.horizontalAccuracy <= 50 {
+            if hub.isSimulating { wasSimulated = true }
+            currentSpeedMps = max(loc.speed, 0)
+            onLocation?(loc)
+        }
 
+        guard loc.horizontalAccuracy <= 20 else { return }
         guard isRecording else { return }
+        lastFixAt = Date()
 
         if isPaused {
             // A pit stop, fuel stop or traffic jam should pause the clock, but
@@ -277,12 +287,17 @@ final class RideRecorder {
         maxSpeedMps = max(maxSpeedMps, currentSpeedMps)
         maxLeanAngle = max(maxLeanAngle, abs(currentLean))
 
-        if loc.verticalAccuracy > 0, loc.verticalAccuracy <= 15 {
+        // Only a fix with usable vertical accuracy may contribute climb; the
+        // stored altitude follows the same rule so the saved ride recomputes
+        // the same number the cockpit showed.
+        let altitudeIsTrusted = loc.verticalAccuracy > 0 && loc.verticalAccuracy <= 15
+        if altitudeIsTrusted {
             elevationGain += RideStats.elevationGain(altitude: loc.altitude, reference: &altitudeRef)
         }
 
         let point = RidePoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude,
-                              alt: loc.altitude, speed: currentSpeedMps, time: loc.timestamp,
+                              alt: altitudeIsTrusted ? loc.altitude : 0,
+                              speed: currentSpeedMps, time: loc.timestamp,
                               lean: currentLean)
         points.append(point)
         journalBuffer.append(point)

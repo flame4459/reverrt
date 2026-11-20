@@ -168,9 +168,29 @@ nonisolated enum DebugReports {
 
     private static func prune() {
         let entries = files()
-        guard entries.count > maxReports else { return }
-        for entry in entries.suffix(from: maxReports) {
-            try? FileManager.default.removeItem(at: entry.url)
+        if entries.count > maxReports {
+            for entry in entries.suffix(from: maxReports) {
+                try? FileManager.default.removeItem(at: entry.url)
+            }
+        }
+        pruneCompiled()
+    }
+
+    /// Exports (the shared archive) used to accumulate forever while the
+    /// reports they were built from were capped.
+    private static func pruneCompiled() {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: compiledDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return }
+        let sorted = urls.sorted { left, right in
+            let a = (try? left.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            let b = (try? right.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            return a > b
+        }
+        for url in sorted.dropFirst(maxReports) {
+            try? fm.removeItem(at: url)
         }
     }
 }

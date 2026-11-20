@@ -51,6 +51,15 @@ nonisolated struct LaneGuidance: Hashable, Codable, Sendable {
         lanes.indices.map { recommended.contains($0) }
     }
 
+    /// When to draw the lane strip. The spoken prompt still follows the
+    /// speed-band table; the drawing waits until the rider is close enough to
+    /// use it, roughly 1 km on a highway and 400 m in town.
+    static func revealDistance(forSpeed speed: Double) -> Double {
+        if speed > 25 { return 1_600 }
+        if speed > 15 { return 800 }
+        return 400
+    }
+
     // MARK: Parsing
 
     static func parse(turnLanes raw: String, turn: NavStep.Turn) -> LaneGuidance? {
@@ -86,7 +95,7 @@ nonisolated struct LaneGuidance: Hashable, Codable, Sendable {
         case "reverse", "uturn", "u_turn": .uTurn
         case "merge_to_left", "mergeleft": .mergeLeft
         case "merge_to_right", "mergeright": .mergeRight
-        case "none": .none
+        case "none": Direction.none
         default: nil
         }
     }

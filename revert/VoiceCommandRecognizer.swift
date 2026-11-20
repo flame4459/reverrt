@@ -1,5 +1,6 @@
 import Foundation
 import Speech
+import AVFAudio
 import AVFoundation
 import Observation
 
@@ -30,12 +31,26 @@ final class VoiceCommandRecognizer {
     var authorizationDenied = false
 
     @ObservationIgnored var onCommand: ((Command) -> Void)?
+    /// Free-form speech that was not a cockpit command. The companion answers
+    /// it only when its own state allows listening.
+    @ObservationIgnored var onUtterance: ((String) -> Void)?
     @ObservationIgnored private let recognizer = SFSpeechRecognizer(locale: Locale.current)
+
+    /// True only when both speech and microphone access are already granted.
+    /// Auto-starting the listener used to fire the system prompts the moment a
+    /// ride began, putting two blocking dialogs over the cockpit on the first
+    /// ride. The prompts now belong to the mic button, not the ride.
+    static var permissionGranted: Bool {
+        SFSpeechRecognizer.authorizationStatus() == .authorized
+            && AVAudioApplication.shared.recordPermission == .granted
+    }
     @ObservationIgnored private let audioEngine = AVAudioEngine()
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
     @ObservationIgnored private var lastCommandAt = Date.distantPast
     @ObservationIgnored private var lastCommand: Command?
+    @ObservationIgnored private var lastUtteranceAt = Date.distantPast
+    @ObservationIgnored private var lastUtterance = ""
     /// True while the rider wants the microphone armed. Kept separate from
     /// `isListening` so an on-device recognition timeout can restart the tap
     /// instead of silently ending hands-free control mid-ride.
@@ -45,7 +60,7 @@ final class VoiceCommandRecognizer {
     @ObservationIgnored private var listeningSince: Date?
     @ObservationIgnored private var generation = 0
 
-    func start() {
+    func start(requestingPermission: Bool = false) {
         guard !isListening else { return }
         wantsListening = true
         restartCount = 0
@@ -57,6 +72,16 @@ final class VoiceCommandRecognizer {
         guard recognizer.supportsOnDeviceRecognition else {
             wantsListening = false
             statusMessage = "This iPhone has no on-device speech model for \(Locale.current.language.languageCode?.identifier ?? "this language"). Download it in Settings → Accessibility → Voice Control."
+            return
+        }
+        let status = SFSpeechRecognizer.authorizationStatus()
+        RevertDiagnostics.log("voice.start status=\(status.rawValue) requestingPermission=\(requestingPermission)")
+        // An automatic start (beginning a ride) must never raise the system
+        // prompt. Only the mic button may ask, so the first ride is not buried
+        // under a permission dialog.
+        guard requestingPermission || status == .authorized else {
+            wantsListening = false
+            statusMessage = "Tap the microphone to enable voice commands."
             return
         }
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
@@ -92,7 +117,10 @@ final class VoiceCommandRecognizer {
                 _ = try? await AVAudioSession.sharedInstance().deactivate(options: .notifyOthersOnDeactivation)
             }
         } else {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            AudioSessionWork.perform {
+                try? AVAudioSession.sharedInstance().setActive(false,
+                                                              options: .notifyOthersOnDeactivation)
+            }
         }
     }
 
@@ -136,18 +164,34 @@ final class VoiceCommandRecognizer {
     }
 
     private func begin() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .measurement,
-                                    options: [.duckOthers, .allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
-            if #available(iOS 27.0, *) {
-                Task { @MainActor in
-                    _ = try? await session.activate(options: [])
-                }
-            } else {
-                try session.setActive(true)
+        // Category and activation can block while the system re-routes audio;
+        // run them off the main thread but await, so the tap is installed on a
+        // configured session. Same order as before: category, input, active.
+        Task { @MainActor in
+            await AudioSessionWork.performAndWait {
+                try? AVAudioSession.sharedInstance().setCategory(
+                    .playAndRecord, mode: .measurement,
+                    options: [.duckOthers, .allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
             }
+            // Cardo and similar headsets expose an HFP input. Prefer it when
+            // the rider has not opted out; otherwise the system chooses.
+            AudioRouteMonitor.shared.refresh()
+            let session = AVAudioSession.sharedInstance()
+            if AudioRouteMonitor.shared.prefersBluetoothMic,
+               let helmetInput = AudioRouteMonitor.shared.bluetoothInput {
+                try? session.setPreferredInput(helmetInput)
+            } else if let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+                try? session.setPreferredInput(builtIn)
+            }
+            await AudioSessionWork.performAndWait {
+                try? AVAudioSession.sharedInstance().setActive(true)
+            }
+            self.beginMicrophone()
+        }
+    }
 
+    private func beginMicrophone() {
+        do {
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
             request.requiresOnDeviceRecognition = true
@@ -218,7 +262,15 @@ final class VoiceCommandRecognizer {
             ("avoid this road", .avoidRoad), ("avoid road", .avoidRoad),
             ("avoid this street", .avoidRoad)
         ]
-        guard let match = matches.first(where: { normalized.hasSuffix(" \($0.0) ") }) else { return }
+        guard let match = matches.first(where: { normalized.hasSuffix(" \($0.0) ") }) else {
+            let cleaned = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { return }
+            guard now.timeIntervalSince(lastUtteranceAt) > 1.5 || cleaned != lastUtterance else { return }
+            lastUtteranceAt = now
+            lastUtterance = cleaned
+            onUtterance?(text)
+            return
+        }
         guard now.timeIntervalSince(lastCommandAt) > 1.5 || lastCommand != match.1 else { return }
         lastCommandAt = now
         lastCommand = match.1

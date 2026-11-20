@@ -12,7 +12,10 @@ struct SettingsView: View {
     @AppStorage("alert.rail") private var rail = true
     @AppStorage("alert.school") private var school = true
     @AppStorage("alert.roundabout") private var roundabout = true
-    @AppStorage("alert.cameras") private var cameras = true
+    @AppStorage("alert.speedCameras") private var speedCameras = true
+    @AppStorage("alert.redLightCameras") private var redLightCameras = true
+    @AppStorage("alert.plateCameras") private var plateCameras = true
+    @AppStorage("alert.profile") private var rideProfile = RideProfile.full.rawValue
     @AppStorage("alert.curves") private var curves = true
     @AppStorage("alert.curveAccel") private var curveAccel = 3.5
     @AppStorage("alert.overLimit") private var overLimit = true
@@ -31,6 +34,8 @@ struct SettingsView: View {
     @AppStorage("remote.enabled") private var remoteEnabled = true
     @AppStorage("fuel.tankFraction") private var tankFraction = 0.8
     @State private var voicePacks = VoicePackLibrary.shared
+    @State private var showingFeatureLab = false
+    @State private var confirmingReset = false
 
     var body: some View {
         NavigationStack {
@@ -59,6 +64,38 @@ struct SettingsView: View {
                         footer: "Every screen recolours immediately. Your choice is saved on this iPhone."
                     ) {
                         ColorSchemePicker()
+                    }
+
+                    SettingsCard(
+                        title: "Ride Lab",
+                        icon: "flask.fill",
+                        footer: "Conditions, touring, route links, voice marks, ghost chase, reports, setup notes and the feature experiments."
+                    ) {
+                        Button {
+                            RevertHaptics.tap()
+                            showingFeatureLab = true
+                        } label: {
+                            Label("Open Ride Lab", systemImage: "flask.fill")
+                        }
+                        .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
+                    }
+
+                    SettingsCard(
+                        title: "Companion",
+                        icon: "waveform",
+                        footer: "Ace answers questions and keeps you company on-device. Off stops listening and never mutes navigation."
+                    ) {
+                        NavigationLink {
+                            CompanionSettingsView()
+                        } label: {
+                            HStack {
+                                Label("Companion settings", systemImage: "waveform")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.scaledSystem(size: 10, weight: .bold))
+                                    .foregroundStyle(MapUI.textTertiary)
+                            }
+                        }
                     }
 
                     RevertSectionLabel(title: "Ride & units")
@@ -261,12 +298,32 @@ struct SettingsView: View {
                         icon: "exclamationmark.triangle",
                         footer: "Stop-sign and traffic-light distance uses your speed, reaction time, and estimated braking distance."
                     ) {
+                        RevertMenuPicker(
+                            title: "Ride profile",
+                            systemImage: "slider.horizontal.3",
+                            options: RideProfile.allCases
+                                .filter { $0 != .custom }
+                                .map { ($0.title, $0.rawValue) },
+                            selection: $rideProfile
+                        )
+                        .onChange(of: rideProfile) { _, raw in
+                            guard let profile = RideProfile(rawValue: raw) else { return }
+                            profile.apply()
+                        }
+                        RevertInfoNote(
+                            text: RideProfile(rawValue: rideProfile)?.detail
+                                ?? RideProfile.custom.detail,
+                            systemImage: "slider.horizontal.3"
+                        )
+
                         Toggle("Haptic feedback", isOn: $haptics)
                         Toggle("Stop signs", isOn: $stop)
                         Toggle("Traffic lights", isOn: $signal)
-                        Toggle("Speed and red-light cameras", isOn: $cameras)
+                        Toggle("Speed cameras", isOn: $speedCameras)
+                        Toggle("Red-light cameras", isOn: $redLightCameras)
+                        Toggle("License plate readers", isOn: $plateCameras)
                         RevertInfoNote(
-                            text: "Camera alerts may be restricted where you ride. Check local laws.",
+                            text: "Plate readers are Flock-style ALPR cameras mapped in OpenStreetMap. Camera alerts may be restricted where you ride; check local laws.",
                             systemImage: "info.circle",
                             tint: MapUI.textTertiary
                         )
@@ -377,6 +434,18 @@ struct SettingsView: View {
                         }
                         Divider()
                         NavigationLink {
+                            BackupView()
+                        } label: {
+                            HStack {
+                                Label("Backup & restore", systemImage: "externaldrive.badge.icloud")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.scaledSystem(size: 10, weight: .bold))
+                                    .foregroundStyle(MapUI.textTertiary)
+                            }
+                        }
+                        Divider()
+                        NavigationLink {
                             OfflineView()
                         } label: {
                             HStack {
@@ -411,6 +480,13 @@ struct SettingsView: View {
                                     .foregroundStyle(MapUI.textTertiary)
                             }
                         }
+                        Divider()
+                        Button(role: .destructive) {
+                            confirmingReset = true
+                        } label: {
+                            Label("Reset preferences", systemImage: "arrow.counterclockwise")
+                        }
+                        .accessibilityHint("Restores the default units, camera, alerts and voice choices. Rides, places and the garage are kept.")
                     }
                 }
                 .padding(.horizontal, 16)
@@ -421,6 +497,15 @@ struct SettingsView: View {
             .scrollIndicators(.hidden)
             .toolbar(.hidden, for: .navigationBar)
             .tint(MapUI.accent)
+        }
+        .sheet(isPresented: $showingFeatureLab) {
+            FeatureHubView()
+        }
+        .alert("Reset preferences?", isPresented: $confirmingReset) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) { resetPreferences() }
+        } message: {
+            Text("Units, camera, alerts, voice and companion choices return to their defaults. Rides, saved places and the garage are kept.")
         }
     }
 
@@ -485,3 +570,19 @@ struct SettingsCard<Content: View>: View {
         .revertCard()
     }
 }
+
+
+    /// Clears behavioural preferences but never touches rides, places, the
+    /// garage or onboarding. Keys are grouped by prefix so a new preference in
+    /// one of these areas resets with the rest.
+    private func resetPreferences() {
+        let prefixes = ["ride.", "alert.", "units.", "voice.", "navigation.",
+                        "helmet.", "remote.", "companion.", "weather.", "map.",
+                        "vehicle.", "conditions."]
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys
+        where prefixes.contains(where: { key.hasPrefix($0) }) {
+            defaults.removeObject(forKey: key)
+        }
+        RevertHaptics.success()
+    }

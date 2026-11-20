@@ -119,7 +119,7 @@ struct RouteAlgorithmTests {
     @Test func loopSearchHitsDistanceAndProducesEta() {
         let roads = gridRoads()
         let center = CLLocationCoordinate2D(latitude: 37.0, longitude: -122.0)
-        let routes = RouteBuilder.loops(
+        let result = RouteBuilder.loopsResult(
             roads: roads,
             start: center,
             length: 6_000,
@@ -130,8 +130,8 @@ struct RouteAlgorithmTests {
             preferences: .empty,
             hazards: []
         )
-        #expect(!routes.isEmpty)
-        for route in routes {
+        #expect(!result.routes.isEmpty)
+        for route in result.routes {
             let error = abs(route.length / 6_000 - 1)
             #expect(error < 0.20, "loop was \(route.length) m for a 6 km request")
             #expect(route.expectedTravelTime != nil)
@@ -184,7 +184,7 @@ struct RouteAlgorithmTests {
 
     @Test func leanCorridorsReportNoJunctions() {
         let roads = corridorGrid(includeResidential: false)
-        let routes = RouteBuilder.loops(
+        let result = RouteBuilder.loopsResult(
             roads: roads,
             start: CLLocationCoordinate2D(latitude: 40.735, longitude: -73.687),
             length: 6_000,
@@ -198,8 +198,8 @@ struct RouteAlgorithmTests {
         // Three parallel corridors never meet, so there is no circuit to find.
         // The through-node fallback now gets past the junction check, so the
         // useful diagnostic is "no closed circuit", not "no junctions".
-        #expect(routes.isEmpty)
-        #expect(RouteBuilder.lastFailure != nil)
+        #expect(result.routes.isEmpty)
+        #expect(result.failure != nil)
     }
 
     @Test func residentialGridConnectsLeanCorridors() {
@@ -286,7 +286,7 @@ struct RouteAlgorithmTests {
             longitude: center.longitude
         )
         let roads = ringRoad(center: ringCenter, radiusMeters: 2_000)
-        let routes = RouteBuilder.loops(
+        let result = RouteBuilder.loopsResult(
             roads: roads,
             start: center,
             length: 12_000,
@@ -297,10 +297,10 @@ struct RouteAlgorithmTests {
             preferences: .empty,
             hazards: []
         )
-        #expect(!routes.isEmpty,
-                "a 2 km ring 2.6 km from the pin should still plan: \(RouteBuilder.lastFailure ?? "nil")")
-        #expect(RouteBuilder.lastNotice?.contains("moved") == true)
-        for route in routes {
+        #expect(!result.routes.isEmpty,
+                "a 2 km ring 2.6 km from the pin should still plan: \(result.failure ?? "nil")")
+        #expect(result.notice?.contains("moved") == true)
+        for route in result.routes {
             #expect(route.length > 8_000)
             #expect(!route.steps.contains { $0.turn == .uTurn })
         }
@@ -327,7 +327,7 @@ struct RouteAlgorithmTests {
             preferences: .empty,
             hazards: []
         )
-        #expect(!routes.isEmpty, "a ring without junctions should still plan: \(RouteBuilder.lastFailure ?? "nil")")
+        #expect(!routes.isEmpty, "a ring without junctions should still plan")
         for route in routes {
             #expect(route.length > 6_000)
         }
@@ -355,7 +355,7 @@ struct RouteAlgorithmTests {
             preferences: .empty,
             hazards: []
         )
-        #expect(!routes.isEmpty, "an arterial grid 2.4 km from the pin should plan: \(RouteBuilder.lastFailure ?? "nil")")
+        #expect(!routes.isEmpty, "an arterial grid 2.4 km from the pin should plan")
         for route in routes {
             #expect(abs(route.length / (10 * 1_609.344) - 1) < 0.35)
             #expect(!route.steps.contains { $0.turn == .uTurn })
@@ -396,7 +396,7 @@ struct RouteAlgorithmTests {
         let distance = RouteBuilder.distanceToNearestRoad(in: [road], from: center)
         #expect(abs(distance - 8_000) < 50)
 
-        let routes = RouteBuilder.loops(
+        let result = RouteBuilder.loopsResult(
             roads: [road],
             start: center,
             length: 6_000,
@@ -407,8 +407,8 @@ struct RouteAlgorithmTests {
             preferences: .empty,
             hazards: []
         )
-        #expect(routes.isEmpty)
-        #expect(RouteBuilder.lastFailure?.contains("nearest mapped road") == true)
+        #expect(result.routes.isEmpty)
+        #expect(result.failure?.contains("nearest mapped road") == true)
     }
 
     // MARK: Fixtures

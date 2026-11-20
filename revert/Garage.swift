@@ -498,6 +498,11 @@ struct BikeEditorView: View {
     @State private var odometerKm = 0.0
     @State private var fuelRangeKm = 260.0
     @State private var tankLiters = 15.0
+
+    private var tankDisplay: Binding<Double> {
+        Binding(get: { Units.volumeValue(tankLiters) },
+                set: { tankLiters = Units.volumeToLiters($0) })
+    }
     @State private var serviceIntervalKm = 6_000.0
     @State private var lastServiceKm = 0.0
     @State private var notes = ""
@@ -563,7 +568,7 @@ struct BikeEditorView: View {
                         HStack {
                             Text("Tank")
                             Spacer()
-                            TextField("L", value: $tankLiters, format: .number.precision(.fractionLength(0...1)))
+                            TextField(Units.volumeUnit, value: tankDisplay, format: .number.precision(.fractionLength(0...1)))
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
                             Text("L").foregroundStyle(.secondary)
@@ -672,6 +677,7 @@ struct BikeEditorView: View {
 }
 
 struct BikeDetailView: View {
+    @Query(sort: \SetupNote.createdAt, order: .reverse) private var setupNotes: [SetupNote]
     @Bindable var bike: Bike
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -707,7 +713,7 @@ struct BikeDetailView: View {
                         Label(Units.distanceText(bike.odometerKm * 1_000, decimals: 0), systemImage: "gauge.with.dots.needle.67percent")
                         Label(bike.isCar
                               ? "\(Units.distanceText(bike.fuelRangeKm * 1_000, decimals: 0)) range"
-                              : "\(Units.distanceText(bike.fuelRangeKm * 1_000, decimals: 0)) range  •  \(RevertFormat.number(bike.tankLiters, decimals: 1)) L tank",
+                              : "\(Units.distanceText(bike.fuelRangeKm * 1_000, decimals: 0)) range  •  \(Units.volumeText(bike.tankLiters)) tank",
                               systemImage: bike.isCar ? "bolt.car.fill" : "fuelpump.fill")
                         Label(bike.isServiceDue ? "Service due" : "Next service in \(Units.distanceText(bike.distanceToServiceKm * 1_000, decimals: 0))",
                               systemImage: bike.isServiceDue ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
@@ -847,6 +853,9 @@ struct BikeDetailView: View {
         }
         .alert("Delete this vehicle?", isPresented: $confirmingDelete) {
             Button("Delete vehicle", role: .destructive) {
+                for note in setupNotes where note.bikeID == bike.id {
+                    context.delete(note)
+                }
                 context.delete(bike)
                 try? context.save()
                 dismiss()

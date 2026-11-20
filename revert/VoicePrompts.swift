@@ -188,6 +188,7 @@ enum Narrator {
         switch kind {
         case .speedCamera: clip = .approachSpeedCamera
         case .redLightCamera: clip = .approachRedLightCamera
+        case .userMark: clip = nil
         default: clip = nil
         }
         guard let clip else { return VoicePrompt(text: fallback) }

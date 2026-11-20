@@ -41,13 +41,17 @@ struct FeatureTests {
 
     @Test func rangePolicyClassifiesLoops() {
         let bike = Bike(name: "Test", fuelRangeKm: 300)
-        let fits = RangePolicy.summary(for: bike, routeLengthMeters: 100_000)
+        let fits = RangePolicy.summary(for: bike, routeLengthMeters: 100_000, tankFraction: 0.8)
         #expect(fits.verdict == .fits)
-        #expect(fits.comfortableKm == 270)
-        let tight = RangePolicy.summary(for: bike, routeLengthMeters: 290_000)
+        #expect(fits.usableKm == 240)
+        #expect(fits.comfortableKm == 216)
+        let tight = RangePolicy.summary(for: bike, routeLengthMeters: 230_000, tankFraction: 0.8)
         #expect(tight.verdict == .tight)
-        let exceeds = RangePolicy.summary(for: bike, routeLengthMeters: 400_000)
+        let exceeds = RangePolicy.summary(for: bike, routeLengthMeters: 290_000, tankFraction: 0.8)
         #expect(exceeds.verdict == .exceeds)
+        let halfTank = RangePolicy.summary(for: bike, routeLengthMeters: 120_000, tankFraction: 0.5)
+        #expect(halfTank.verdict == .fits)
+        #expect(halfTank.usableKm == 150)
     }
 
     @Test func sunTimesAreOrdered() throws {
@@ -82,5 +86,31 @@ struct FeatureTests {
         #expect(recap.distanceMeters == 35_000)
         #expect(recap.climbMeters == 400)
         #expect(recap.longestRide === rideB)
+    }
+}
+
+@MainActor
+struct RefinementTests {
+    @Test func riderMarkBecomesAlertHazard() {
+        let mark = UserHazard(id: UUID(), kind: "Rider mark",
+                              lat: 37.77, lon: -122.42,
+                              createdAt: Date(), road: "Market St")
+        let hazard = mark.asHazard
+        #expect(hazard.kind == .userMark)
+        #expect(hazard.id < 0)
+        #expect(abs(hazard.lat - 37.77) < 0.0001)
+    }
+
+    @Test func volumeAndPressureFollowUnitPreference() {
+        let previous = Units.preference
+        defer { Units.setPreference(previous) }
+        Units.setPreference(.metric)
+        #expect(Units.volumeUnit == "L")
+        #expect(abs(Units.volumeValue(10) - 10) < 0.001)
+        #expect(abs(Units.pressureValue(32) - 2.206) < 0.01)
+        Units.setPreference(.imperial)
+        #expect(Units.volumeUnit != "L")
+        #expect(Units.pressureUnit == "psi")
+        #expect(abs(Units.pressureValue(32) - 32) < 0.001)
     }
 }

@@ -212,6 +212,7 @@ nonisolated enum RouteHazardLoader {
             switch hazard.kind {
             case .school: lateral = 45
             case .roundabout: lateral = 30
+            case .userMark: lateral = 22
             default: lateral = 14
             }
             return RouteCorridor.project(
