@@ -117,7 +117,10 @@ struct RideView: View {
         if nav.route != nil { return nav.vehicleKind.isCar }
         return primaryVehicle?.isCar == true
     }
-    private var carLandscape: Bool { isCar && verticalSizeClass == .compact }
+    /// The full-screen landscape HUD is for any vehicle. Bikes used to get the
+    /// portrait cockpit squeezed sideways, which shrank the map and made the
+    /// horizontal experience different from the car's.
+    private var carLandscape: Bool { verticalSizeClass == .compact }
 
     /// The garage vehicle matching the route's chosen kind. With no matching
     /// car/bike this returns nil; the cockpit still follows `nav.vehicleKind`
@@ -390,26 +393,34 @@ struct RideView: View {
         #endif
         .onChange(of: cameraMode) { _, _ in applyCameraMode() }
         .onChange(of: nav.cameraPose) { _, pose in
-            guard cameraIsCockpit, let pose else {
+            // Every mode must feed the driver: the custom renderers read its
+            // frame, and the old `cameraIsCockpit` guard meant north-up never
+            // got one — the map stayed where it was and the rider rode out of
+            // frame.
+            guard let pose else {
                 matchedPuck = nil
                 return
             }
+            let northUp = !cameraMode.usesPose
+            // North up is a "where am I" view: keep the rider centred rather
+            // than leading the road ahead.
+            let centered = northUp || !cameraMode.usesLookAhead
             if reduceMotion {
                 camera = cameraMode.camera(for: pose)
-                cameraDriver.present(staticFrame: stillFrame(for: pose, northUp: !cameraIsCockpit))
+                cameraDriver.present(staticFrame: stillFrame(for: pose, northUp: northUp))
             } else {
                 cameraDriver.update(route: nav.route,
                                     progress: nav.routeProgress,
                                     speed: pose.speed,
                                     maneuverMeters: nav.stepDistance,
                                     fallbackHeading: pose.heading,
-                                    centered: !cameraMode.usesLookAhead,
+                                    centered: centered,
                                     mode: cameraMode)
             }
             updateMatchedPuck(pose)
         }
         .onChange(of: cameraDriver.frame) { _, frame in
-            guard !reduceMotion, cameraIsCockpit, let frame else { return }
+            guard !reduceMotion, let frame else { return }
             camera = .camera(MapCamera(centerCoordinate: frame.coordinate,
                                        distance: frame.distance,
                                        heading: frame.heading,
@@ -2370,7 +2381,7 @@ struct RideView: View {
         guard let route = nav.route,
               route.kind.isTimed,
               nav.joined,
-              nav.routeProgress < 150,
+              nav.routeProgress < 320,
               !recorder.isRecording,
               countdown == nil,
               autoStartedRouteID != route.id else { return }

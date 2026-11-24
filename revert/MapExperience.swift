@@ -151,7 +151,10 @@ nonisolated struct RideCameraEngine: Sendable {
         let ahead = RouteGeometry.coordinate(at: progress + (centered ? 14 : lookAhead + 8),
                                              route: route) ?? center
         let routeHeading = RouteGeometry.bearing(from: center, to: ahead)
-        let targetHeading = routeHeading.isFinite ? routeHeading : fallbackHeading
+        // North up means exactly that: the map does not rotate with the road.
+        let targetHeading = mode.usesPose
+            ? (routeHeading.isFinite ? routeHeading : fallbackHeading)
+            : 0
         let dtCappedForHeading = max(dt, 0.001)
         // The selected mode owns the pose. Before this, cockpit and chase
         // produced identical frames because both were hard-coded here, which is

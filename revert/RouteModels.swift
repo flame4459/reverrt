@@ -96,6 +96,64 @@ nonisolated struct RoutePoint: Codable, Hashable, Sendable {
 nonisolated struct NavStep: Identifiable, Codable {
     enum Turn: String, Codable, Equatable {
         case start, straight, slightLeft, left, sharpLeft, slightRight, right, sharpRight, uTurn, arrive
+
+        /// Classifies the English instruction a router hands us. Every path
+        /// that starts from MapKit prose — directions, reroutes, the approach
+        /// guide — must use this one, or the same sentence becomes a hard left
+        /// on one screen and a gentle left on another.
+        static func parse(_ instruction: String) -> Turn {
+            let text = instruction.lowercased()
+            if text.contains("u-turn") || text.contains("u turn") || text.contains("uturn") {
+                return .uTurn
+            }
+            if text.contains("sharp right") { return .sharpRight }
+            if text.contains("sharp left") { return .sharpLeft }
+            if text.contains("slight right") || text.contains("bear right")
+                || text.contains("keep right") || text.contains("fork right")
+                || text.contains("merge right") { return .slightRight }
+            if text.contains("slight left") || text.contains("bear left")
+                || text.contains("keep left") || text.contains("fork left")
+                || text.contains("merge left") { return .slightLeft }
+            if text.contains("roundabout") || text.contains("rotary") {
+                // MapKit does not say which exit; a gentle right keeps the icon
+                // neutral without promising a hard turn.
+                return .slightRight
+            }
+            if text.contains("turn right") || text.contains("right onto")
+                || text.contains("take the right") || text.contains("exit right") { return .right }
+            if text.contains("turn left") || text.contains("left onto")
+                || text.contains("take the left") || text.contains("exit left") { return .left }
+            if text.contains("ramp") || text.contains("exit") { return .slightRight }
+            return .straight
+        }
+
+        /// SF Symbol for the manoeuvre, shared by the banner and the approach.
+        var symbol: String {
+            switch self {
+            case .start, .straight: "arrow.up"
+            case .slightLeft: "arrow.up.left"
+            case .left: "arrow.turn.up.left"
+            case .sharpLeft: "arrow.turn.down.left"
+            case .slightRight: "arrow.up.right"
+            case .right: "arrow.turn.up.right"
+            case .sharpRight: "arrow.turn.down.right"
+            case .uTurn: "arrow.uturn.left"
+            case .arrive: "flag.checkered"
+            }
+        }
+
+        /// The same manoeuvre ridden the other way round.
+        var flipped: Turn {
+            switch self {
+            case .left: .right
+            case .right: .left
+            case .slightLeft: .slightRight
+            case .slightRight: .slightLeft
+            case .sharpLeft: .sharpRight
+            case .sharpRight: .sharpLeft
+            default: self
+            }
+        }
     }
 
     let id: Int
@@ -418,11 +476,28 @@ nonisolated struct PlannedRoute: Identifiable {
             guard !instruction.isEmpty else { continue }
             distance = min(distance + mapStep.distance, cumulative.last ?? 0)
             let pointIndex = cumulative.indices.min { abs(cumulative[$0] - distance) < abs(cumulative[$1] - distance) } ?? 0
-            steps.append(NavStep(id: steps.count, turn: turn(for: instruction), road: nil,
+            steps.append(NavStep(id: steps.count,
+                                 turn: NavStep.Turn.parse(instruction),
+                                 road: StreetNames.roadName(from: instruction),
                                  at: pointIndex, distance: distance, text: instruction))
         }
 
-        steps.append(NavStep(id: steps.count, turn: .arrive, road: nil, at: cumulative.count - 1, distance: cumulative.last ?? 0))
+        // Loops have always opened with a start step. Directions must too, or
+        // the banner says "Continue" at the line, `currentRoad` has no previous
+        // step and the route-start announcement drops the road name.
+        if let first = steps.first, first.turn == .straight, first.distance < 5 {
+            steps[0] = NavStep(id: 0, turn: .start, road: first.road, at: first.at,
+                               distance: 0, text: first.text)
+        } else {
+            let road = steps.first?.road
+            steps.insert(NavStep(id: 0, turn: .start, road: road, at: 0, distance: 0), at: 0)
+        }
+        steps = steps.enumerated().map { index, step in
+            NavStep(id: index, turn: step.turn, road: step.road, at: step.at,
+                    distance: step.distance, text: step.text)
+        }
+        steps.append(NavStep(id: steps.count, turn: .arrive, road: nil,
+                             at: cumulative.count - 1, distance: cumulative.last ?? 0))
         return steps
     }
 
@@ -430,29 +505,7 @@ nonisolated struct PlannedRoute: Identifiable {
     /// common English forms so the HUD does not show a straight arrow for
     /// "Turn right".
     private static func turn(for instruction: String) -> NavStep.Turn {
-        let text = instruction.lowercased()
-        if text.contains("u-turn") || text.contains("u turn") || text.contains("uturn") {
-            return .uTurn
-        }
-        if text.contains("sharp right") { return .sharpRight }
-        if text.contains("sharp left") { return .sharpLeft }
-        if text.contains("slight right") || text.contains("bear right")
-            || text.contains("keep right") || text.contains("fork right")
-            || text.contains("merge right") { return .slightRight }
-        if text.contains("slight left") || text.contains("bear left")
-            || text.contains("keep left") || text.contains("fork left")
-            || text.contains("merge left") { return .slightLeft }
-        if text.contains("roundabout") || text.contains("rotary") {
-            // MapKit does not tell us which exit; a gentle right keeps the
-            // icon neutral without falsely promising a hard turn.
-            return .slightRight
-        }
-        if text.contains("turn right") || text.contains("right onto")
-            || text.contains("take the right") || text.contains("exit right") { return .right }
-        if text.contains("turn left") || text.contains("left onto")
-            || text.contains("take the left") || text.contains("exit left") { return .left }
-        if text.contains("ramp") || text.contains("exit") { return .slightRight }
-        return .straight
+        NavStep.Turn.parse(instruction)
     }
 
     // MARK: Turn-by-turn

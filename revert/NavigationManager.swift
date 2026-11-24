@@ -108,6 +108,12 @@ final class NavigationManager {
     @ObservationIgnored private var roads: [Road] = []
     @ObservationIgnored private var seg = 0            // index of the route segment the rider is on
     @ObservationIgnored private var along = 0.0        // meters along the route
+    /// Previous raw match, used to see the loop line pass from ~length to ~0.
+    @ObservationIgnored private var lastMatchedAlong: Double?
+    /// Metres ridden since the last counted lap.
+    @ObservationIgnored private var distanceSinceLap = 0.0
+    /// A real loop returns to its start; an open "lap" route does not.
+    @ObservationIgnored private var loopIsClosed = false
     @ObservationIgnored private var stepIdx = 1
     /// Which distance rungs have already been spoken, per step id.
     @ObservationIgnored private var announcedCallouts: [Int: Set<Int>] = [:]
@@ -180,6 +186,14 @@ final class NavigationManager {
             hub.requestAlwaysIfNeeded()
         }
         reset()
+        // After reset(), which clears it: a loop that ends where it began
+        // banks laps at the line; a route that does not close finishes by
+        // reaching its end.
+        if let first = r.points.first, let last = r.points.last {
+            loopIsClosed = r.kind.isTimed
+                && CLLocation(latitude: first.lat, longitude: first.lon)
+                    .distance(from: CLLocation(latitude: last.lat, longitude: last.lon)) < 60
+        }
         stepIdx = r.kind.isPointToPoint ? 0 : min(1, max(r.steps.count - 1, 0))
         remaining = r.length
         step = r.steps.indices.contains(stepIdx) ? r.steps[stepIdx] : nil
@@ -207,6 +221,9 @@ final class NavigationManager {
     private func reset() {
         seg = 0
         along = 0
+        lastMatchedAlong = nil
+        distanceSinceLap = 0
+        loopIsClosed = false
         stepIdx = 0
         announcedCallouts = [:]
         straightAnnounced = []
@@ -296,15 +313,11 @@ final class NavigationManager {
                                         firstWithin: 80)
                 if distanceToStart < 300, let m = nearStart {
                     join(r, m, at: loc, speed: speed)
-                } else if let m = project(loc.coordinate, onto: r,
-                                          from: 0, to: r.points.count - 1,
-                                          firstWithin: 40) {
-                    // A saved loop can be ridden from anywhere along it. This
-                    // used to refuse to join unless you were at the exact
-                    // start, which left a rider who began a mile into the loop
-                    // with no guidance and no way to record.
-                    join(r, m, at: loc, speed: speed)
                 } else {
+                    // Joining anywhere along the loop looked convenient, but a
+                    // saved loop often passes near home: it joined there,
+                    // skipped the approach and started the clock mid-lap. The
+                    // rider gets directions to the start line instead.
                     return
                 }
             } else {
@@ -329,7 +342,20 @@ final class NavigationManager {
         while lo > 0, r.cumulative[seg] - r.cumulative[lo] < 20 { lo -= 1 }
         var hi = seg
         while hi < r.points.count - 2, r.cumulative[hi + 1] - r.cumulative[seg] < 1000 { hi += 1 }
-        guard let m = project(loc.coordinate, onto: r, from: lo, to: hi + 1) else { return }
+        guard var m = project(loc.coordinate, onto: r, from: lo, to: hi + 1) else { return }
+
+        // The line has no segment: the closing point is also the start. Once
+        // the rider is in the second half of a loop, also offer the first few
+        // hundred metres as a candidate, so crossing the line matches `along 0`
+        // instead of the run-out at the end of the loop.
+        if r.kind.isTimed, along > r.length * 0.5 {
+            var wrapHi = 0
+            while wrapHi < r.points.count - 2, r.cumulative[wrapHi + 1] < 200 { wrapHi += 1 }
+            if let wrapped = project(loc.coordinate, onto: r, from: 0, to: wrapHi + 1),
+               wrapped.dist < m.dist - 1 {
+                m = wrapped
+            }
+        }
 
         if m.dist >= Self.offRouteEnter {
             if offSince == nil { offSince = Date() }
@@ -374,11 +400,21 @@ final class NavigationManager {
         // the route's tangent, the banner cannot be trusted — reroute the rider
         // instead of talking them into the wrong turn.
         if speed > 3, loc.course >= 0, loc.courseAccuracy <= 30 {
-            let tangent = heading(on: r, at: along)
+            let tangent = heading(on: r, at: m.along)
             if Geo.angleDiff(loc.course, tangent) > 110 {
                 reversedFixes += 1
             } else {
                 reversedFixes = 0
+            }
+            if reversedFixes >= 2, r.kind.isTimed {
+                reversedFixes = 0
+                RideDebug.shared.event("NAV-REVERSED", [
+                    ("course", "\(Int(loc.course))"),
+                    ("route", "\(Int(tangent))"),
+                    ("along", "\(Int(along))")
+                ])
+                flipRoute(at: loc, speed: speed)
+                return
             }
             if reversedFixes >= 3, !rerouting, Date().timeIntervalSince(lastReroute) > 20 {
                 reversedFixes = 0
@@ -397,16 +433,60 @@ final class NavigationManager {
         seg = m.seg
         along = predictedAlong(from: m.along, previous: along, age: age, speed: speed,
                                speedAccuracy: loc.speedAccuracy, route: r)
-        remaining = max(r.length - along, 0)
+        // A lap is a crossing of the line, not "within 30 m of the end". The
+        // old test fired while the rider was still 30 m short, reset the match
+        // to zero, and the next fix matched the end of the loop again — two
+        // laps in two seconds, then an early finish.
+        if let previous = lastMatchedAlong, m.along > previous {
+            distanceSinceLap += m.along - previous
+        }
+        let crossedLine = (lastMatchedAlong.map {
+            $0 > r.length * 0.6 && m.along < r.length * 0.25
+        } ?? false) && distanceSinceLap > r.length * 0.5
+        lastMatchedAlong = m.along
 
-        // Arrival is a claim about a fix, not a prediction: ending the route on
-        // the strength of dead reckoning would freeze a rider short of the
-        // finish line.
-        if r.length - m.along < 30, m.along > r.length * 0.5 {
+        if crossedLine, r.kind.isTimed, loopIsClosed {
             if lap < totalLaps {
-                // Cross the line, bank the lap and keep the clock running.
-                // `along` restarts at zero so the next fix matches the top of
-                // the circuit instead of the run-out past the line.
+                lastLapDuration = Date().timeIntervalSince(lapStartedAt)
+                lap += 1
+                lapStartedAt = Date()
+                distanceSinceLap = 0
+                seg = m.seg
+                along = m.along
+                stepIdx = 0
+                announcedCallouts = [:]
+                straightAnnounced = []
+                offRoute = false
+                offSince = nil
+                step = r.steps.indices.contains(0) ? r.steps[0] : nil
+                nextStep = r.steps.indices.contains(1) ? r.steps[1] : nil
+                stepDistance = 0
+                RideDebug.shared.event("NAV-LAP", [
+                    ("lap", "\(lap)/\(totalLaps)"),
+                    ("last", "\(Int((lastLapDuration ?? 0).rounded()))"),
+                    ("length", "\(Int(r.length))"),
+                    ("speed", "\(Int(speed))")
+                ])
+                Speaker.shared.say("Lap \(lap) of \(totalLaps)", kind: .navigation)
+            } else {
+                arrived = true
+                remaining = 0
+                step = r.steps.last
+                nextStep = nil
+                stepDistance = 0
+                lastLapDuration = Date().timeIntervalSince(lapStartedAt)
+                RideDebug.shared.event("NAV-ARRIVE", [
+                    ("along", "\(Int(m.along))"),
+                    ("length", "\(Int(r.length))"),
+                    ("lap", "\(lap)/\(totalLaps)"),
+                    ("last", "\(Int((lastLapDuration ?? 0).rounded()))")
+                ])
+                Speaker.shared.say(Narrator.arrival, kind: .navigation)
+                return
+            }
+        } else if r.kind.isTimed, !loopIsClosed,
+                  r.length - m.along < 30, m.along > r.length * 0.5 {
+            if lap < totalLaps {
                 lastLapDuration = Date().timeIntervalSince(lapStartedAt)
                 lap += 1
                 lapStartedAt = Date()
@@ -444,7 +524,25 @@ final class NavigationManager {
             ])
             Speaker.shared.say(Narrator.arrival, kind: .navigation)
             return
+        } else if !r.kind.isTimed, r.length - m.along < 30, m.along > r.length * 0.5 {
+            // Point-to-point still ends by proximity; there is no line to cross.
+            arrived = true
+            remaining = 0
+            step = r.steps.last
+            nextStep = nil
+            stepDistance = 0
+            lastLapDuration = Date().timeIntervalSince(lapStartedAt)
+            RideDebug.shared.event("NAV-ARRIVE", [
+                ("along", "\(Int(m.along))"),
+                ("length", "\(Int(r.length))"),
+                ("lap", "\(lap)/\(totalLaps)"),
+                ("last", "\(Int((lastLapDuration ?? 0).rounded()))")
+            ])
+            Speaker.shared.say(Narrator.arrival, kind: .navigation)
+            return
         }
+
+        remaining = max(r.length - along, 0)
 
         // A maneuver is retired when a fix proves the rider has passed it. The
         // predicted distance may count it down to zero, but prediction must not
@@ -452,7 +550,12 @@ final class NavigationManager {
         let previousStepIdx = stepIdx
         while stepIdx < r.steps.count - 1, r.steps[stepIdx].distance <= m.along + 5 { stepIdx += 1 }
         guard !r.steps.isEmpty else { return }
-        let next = r.steps[min(stepIdx, r.steps.count - 1)]
+        var next = r.steps[min(stepIdx, r.steps.count - 1)]
+        if next.turn == .arrive, lap < totalLaps {
+            // "You have arrived" is wrong until the last lap. Show the line.
+            next = NavStep(id: next.id, turn: .arrive, road: nil, at: next.at,
+                           distance: next.distance, text: "Lap \(lap) of \(totalLaps)")
+        }
         step = next
         nextStep = r.steps.indices.contains(stepIdx + 1) ? r.steps[stepIdx + 1] : nil
         stepDistance = max(next.distance - along, 0)
@@ -614,6 +717,8 @@ final class NavigationManager {
 
     private func speakIfNeeded(_ s: NavStep, speed: Double) {
         guard !s.instruction.isEmpty else { return }
+        // The lap line is not the destination; the lap announcement covers it.
+        if s.turn == .arrive, lap < totalLaps { return }
         var spoken = announcedCallouts[s.id, default: []]
         let rungs = Self.calloutRungs(forSpeed: speed)
 
@@ -733,6 +838,56 @@ final class NavigationManager {
         guard let previous = lastReroutePoint else { return true }
         return CLLocation(latitude: previous.latitude, longitude: previous.longitude)
             .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) > 300
+    }
+
+    /// A timed route can be ridden either way round. When the rider is clearly
+    /// going the opposite direction, guide them along it in the direction they
+    /// are actually travelling instead of counting down a route behind them.
+    private func flipRoute(at loc: CLLocation, speed: Double) {
+        guard let r = route else { return }
+        let reversed = Self.flippedRoute(r)
+        RideDebug.shared.event("NAV-FLIP", [
+            ("from", "\(Int(along))"),
+            ("length", "\(Int(r.length))"),
+            ("speed", "\(Int(speed))")
+        ])
+        Speaker.shared.say("You're going the other way. Guiding you in this direction.",
+                           kind: .navigation)
+        start(reversed, roads: roads, vehicleKind: vehicleKind)
+        if let m = project(loc.coordinate, onto: reversed,
+                           from: 0, to: reversed.points.count - 1) {
+            join(reversed, m, at: loc, speed: speed)
+        }
+    }
+
+    private static func flippedRoute(_ r: PlannedRoute) -> PlannedRoute {
+        let n = r.points.count
+        var copy = PlannedRoute(points: Array(r.points.reversed()), roads: [:],
+                                twistPerKm: r.twistPerKm, retraced: r.retraced,
+                                bearing: r.bearing, displayName: r.displayName,
+                                expectedTravelTime: r.expectedTravelTime, kind: r.kind)
+        copy.laps = r.laps
+
+        var steps: [NavStep] = [
+            NavStep(id: 0, turn: .start, road: r.steps.first?.road, at: 0, distance: 0)
+        ]
+        for step in r.steps where step.turn != .start && step.turn != .arrive {
+            steps.append(NavStep(id: 0,
+                                 turn: step.turn.flipped,
+                                 road: step.road,
+                                 at: max(0, n - 1 - step.at),
+                                 distance: max(0, r.length - step.distance),
+                                 text: step.text))
+        }
+        steps.sort { $0.distance < $1.distance }
+        steps = steps.enumerated().map { index, step in
+            NavStep(id: index, turn: step.turn, road: step.road, at: step.at,
+                    distance: step.distance, text: step.text)
+        }
+        steps.append(NavStep(id: steps.count, turn: .arrive, road: nil,
+                             at: n - 1, distance: copy.length))
+        copy.steps = steps
+        return copy
     }
 
     private func reroute(from loc: CLLocation) {
@@ -971,7 +1126,7 @@ final class NavigationManager {
             out.append(ApproachStep(
                 id: index,
                 instruction: text,
-                symbol: approachSymbol(for: text),
+                symbol: NavStep.Turn.parse(text).symbol,
                 at: cursor
             ))
         }
@@ -1049,6 +1204,7 @@ final class NavigationManager {
         return best
     }
 
+    @available(*, deprecated, message: "Use NavStep.Turn.parse(_:).symbol")
     nonisolated private static func approachSymbol(for instruction: String) -> String {
         let text = instruction.lowercased()
         if text.contains("roundabout") { return "arrow.triangle.turn.up.right.circle" }

@@ -116,7 +116,7 @@ enum Narrator {
 
         // MapKit routes carry prose ("Turn right onto Market Street"); offline
         // routes carry a manoeuvre and a road name.
-        if let text = step.text, !text.isEmpty, step.road == nil {
+        if let text = step.text, !text.isEmpty {
             var parts = parse(text)
             if let distance,
                let clip = VoiceClip.distanceClip(forMeters: distance, metric: Units.isMetric) {

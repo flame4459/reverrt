@@ -24,14 +24,14 @@ struct NavigationJoinTests {
         #expect(nav.joined)
     }
 
-    @Test func loopCanBeJoinedFromAnywhereAlongIt() {
+    @Test func aLoopIsApproachedNotJoinedMidRoute() {
         let nav = NavigationManager()
         defer { nav.stop() }
         nav.start(route(kind: .loop), roads: [])
-        // 600 m along the loop, well past the start line: the rider began
-        // mid-route and must still get guidance.
+        // 600 m along the loop, well past the start line. Joining here was what
+        // skipped the approach to the start and started the clock mid-lap.
         nav.handle(CLLocation(latitude: 40.0 + 0.006, longitude: -73.0))
-        #expect(nav.joined)
+        #expect(!nav.joined)
     }
 
     @Test func loopJoinsAtItsStartLine() {

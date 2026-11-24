@@ -72,7 +72,7 @@ enum HazardKind: String, Codable, CaseIterable {
         default: 14
         }
     }
-    var maxLookahead: Double {
+    nonisolated var maxLookahead: Double {
         switch self {
         case .school: 250
         case .userMark: 350
@@ -83,7 +83,7 @@ enum HazardKind: String, Codable, CaseIterable {
 
     /// Scales the speed-banded warning distance. Cameras want a little more
     /// notice than a stop sign; schools sit back from the road and get it late.
-    var warningFactor: Double {
+    nonisolated var warningFactor: Double {
         switch self {
         case .school: 0.7
         case .roundabout: 0.85

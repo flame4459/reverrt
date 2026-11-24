@@ -55,7 +55,7 @@ nonisolated enum RideCameraMode: String, CaseIterable, Identifiable {
         case .cockpit: min(max(300 + speed * 8.5, 320), 820)
         case .chase: min(max(340 + speed * 6, 360), 760)
         case .classic: min(max(250 + speed * 5, 280), 620)
-        case .northUp: 0
+        case .northUp: min(max(700 + speed * 6, 750), 1_400)
         }
     }
 
