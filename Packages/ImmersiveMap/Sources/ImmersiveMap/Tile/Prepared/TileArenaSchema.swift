@@ -1,0 +1,144 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+/// Semantic identity of one span in a tile's arena image. A slot names what
+/// the bytes are (which layer, which run), not where they sit; offsets and
+/// sizes live in the span table.
+enum TileArenaSlot: Equatable, Sendable {
+    case geometryVertices(TileArenaGeometryLayerID)
+    case geometryIndices(TileArenaGeometryLayerID)
+    case geometryStyles(TileArenaGeometryLayerID)
+    case geometryStyleZoomFades(TileArenaGeometryLayerID)
+    case geometryLineStyles(TileArenaGeometryLayerID)
+    case extrudedVertices
+    case extrudedIndices
+    case extrudedStyles
+    /// The tile's trees (`TreeInstance`), sorted by priority.
+    case treeInstances
+    case glyphRunVertices(run: Int)
+    case poiIconRunVertices(run: Int)
+    case routeShieldRunVertices(run: Int)
+    case roadLabelGlyphVertices
+    case surfaceLabelVertices
+}
+
+/// The geometry layers a tile carries, in schema vocabulary.
+enum TileArenaGeometryLayerID: Equatable, Sendable {
+    case ground
+    case road(RoadStructureKind, RoadPassRole)
+    case bridgeOverlay
+}
+
+/// Glyph-run, POI-icon-run and route-sign-run counts of the text label
+/// set: the only data-dependent part of the slot sequence.
+struct TileArenaTextRunCounts: Equatable, Sendable {
+    let glyphRunCount: Int
+    let poiIconRunCount: Int
+    let routeShieldRunCount: Int
+
+    init(glyphRunCount: Int, poiIconRunCount: Int, routeShieldRunCount: Int = 0) {
+        self.glyphRunCount = glyphRunCount
+        self.poiIconRunCount = poiIconRunCount
+        self.routeShieldRunCount = routeShieldRunCount
+    }
+}
+
+/// The single source of truth for the arena-image traversal: the canonical
+/// slot sequence, and the element stride of every non-index slot.
+///
+/// `TileArenaImageMath.plan` iterates this sequence to lay the arena out,
+/// `MetalTileFactory` iterates it to read the arena back (every span take is
+/// verified against the expected slot, so a reordered reader fails instead of
+/// binding bytes to the wrong destination), and the disk codec validates
+/// untrusted span tables against it. The sequence, the strides, the 256-byte
+/// alignment, and the index narrowing together are the prepared-cache format:
+/// changing any of them means bumping
+/// `PreparedTileDiskCaching.preparedFormatVersion`.
+enum TileArenaSchema {
+    /// The canonical slot sequence: ground, road buckets x phases (in their
+    /// draw orders), bridge overlay, extruded, the trees, the text label
+    /// set (glyph runs, then POI icon runs, then route sign plates), road
+    /// label glyphs, the glyphs of the labels painted on the map.
+    static func slots(text: TileArenaTextRunCounts) -> [TileArenaSlot] {
+        var slots: [TileArenaSlot] = []
+        appendGeometryLayer(.ground, to: &slots)
+        for structureKind in RoadStructureKind.drawOrder {
+            for passRole in RoadPassRole.drawOrder {
+                appendGeometryLayer(.road(structureKind, passRole), to: &slots)
+            }
+        }
+        appendGeometryLayer(.bridgeOverlay, to: &slots)
+
+        slots.append(.extrudedVertices)
+        slots.append(.extrudedIndices)
+        slots.append(.extrudedStyles)
+        slots.append(.treeInstances)
+
+        for run in 0..<text.glyphRunCount {
+            slots.append(.glyphRunVertices(run: run))
+        }
+        for run in 0..<text.poiIconRunCount {
+            slots.append(.poiIconRunVertices(run: run))
+        }
+        for run in 0..<text.routeShieldRunCount {
+            slots.append(.routeShieldRunVertices(run: run))
+        }
+        slots.append(.roadLabelGlyphVertices)
+        slots.append(.surfaceLabelVertices)
+        return slots
+    }
+
+    static func slots(for preparedTile: PreparedTileCPU) -> [TileArenaSlot] {
+        slots(text: runCounts(of: preparedTile.textLabels))
+    }
+
+    static func slots(for image: PreparedTileArenaImage) -> [TileArenaSlot] {
+        slots(text: runCounts(of: image.textLabels))
+    }
+
+    static func runCounts(of set: PreparedTileCPU.TextLabelSet) -> TileArenaTextRunCounts {
+        TileArenaTextRunCounts(glyphRunCount: set.glyphRuns.count,
+                               poiIconRunCount: set.poiIconRuns.count,
+                               routeShieldRunCount: set.routeShieldRuns.count)
+    }
+
+    static func runCounts(of meta: PreparedTileArenaImage.TextLabelSetMeta) -> TileArenaTextRunCounts {
+        TileArenaTextRunCounts(glyphRunCount: meta.glyphRunStyles.count,
+                               poiIconRunCount: meta.poiIconRunStyles.count,
+                               routeShieldRunCount: meta.routeShieldRunStyles.count)
+    }
+
+    /// Element stride of a slot's span, nil for index slots (their stride is
+    /// the index width recorded in the span, uint16 after narrowing or
+    /// uint32).
+    static func elementStride(of slot: TileArenaSlot) -> Int? {
+        switch slot {
+        case .geometryVertices:
+            return MemoryLayout<TileVertexIn>.stride
+        case .extrudedVertices:
+            return MemoryLayout<ExtrudedVertexIn>.stride
+        case .geometryStyles, .extrudedStyles:
+            return MemoryLayout<TilePolygonStyle>.stride
+        case .geometryStyleZoomFades:
+            return MemoryLayout<SIMD2<Float>>.stride
+        case .geometryLineStyles:
+            return MemoryLayout<TileLineStyle>.stride
+        case .treeInstances:
+            return MemoryLayout<TreeInstance>.stride
+        case .glyphRunVertices, .poiIconRunVertices, .routeShieldRunVertices,
+             .roadLabelGlyphVertices, .surfaceLabelVertices:
+            return MemoryLayout<LabelVertex>.stride
+        case .geometryIndices, .extrudedIndices:
+            return nil
+        }
+    }
+
+    private static func appendGeometryLayer(_ layerID: TileArenaGeometryLayerID,
+                                            to slots: inout [TileArenaSlot]) {
+        slots.append(.geometryVertices(layerID))
+        slots.append(.geometryIndices(layerID))
+        slots.append(.geometryStyles(layerID))
+        slots.append(.geometryStyleZoomFades(layerID))
+        slots.append(.geometryLineStyles(layerID))
+    }
+}

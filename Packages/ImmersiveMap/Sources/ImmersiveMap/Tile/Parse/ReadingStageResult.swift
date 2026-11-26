@@ -1,0 +1,126 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+/// What the reading stage accumulates as it walks a tile's layers, and what
+/// the unification stage packs into the tile's streams. The feature readers
+/// append through the methods here and nowhere else, so the invariants
+/// between the buckets (a style is registered under the key its polygons
+/// use, a road polygon carries the sequence number of its arrival) hold in
+/// one place.
+///
+/// The ground and bridge buckets are keyed by style: their draw order is the
+/// style order. The road bucket is ordered explicitly, since roads sort by
+/// structure, layer, pass and class before the style.
+struct ReadingStageResult {
+    /// Ground fills and line ribbons, drawn under everything else.
+    var polygonByStyle: [UInt8: [ParsedPolygon]] = [:]
+    /// Whether the ground fills were flattened into one layer
+    /// (`GroundFlattening`), which the prepared tile records.
+    var groundIsFlattened = false
+    var styles: [UInt8: BakedStyle] = [:]
+    /// The separate-road path's polygons: by style for the flat layer, and
+    /// in arrival order with their sort keys for the phase buckets.
+    var roadPolygonByStyle: [UInt8: [ParsedPolygon]] = [:]
+    var orderedRoadPolygons: [OrderedRoadPolygon] = []
+    var roadStyles: [UInt8: BakedStyle] = [:]
+    /// Bridge decks and the lines on them, drawn over the roads.
+    var bridgePolygonByStyle: [UInt8: [ParsedPolygon]] = [:]
+    var bridgeStyles: [UInt8: BakedStyle] = [:]
+    var extrudedByStyle: [UInt8: [ParsedExtrudedMesh]] = [:]
+    /// The tile keeps its buildings and its trees quarter by quarter
+    /// (`TileParseOptions.keepsQuarters`): their pieces are laid out one
+    /// quarter after another, and where each quarter starts is kept.
+    var keepsQuarters = false
+    /// The fills that grow trees, gathered as the layers are read and
+    /// placed once every layer is in (`TreeFeatureReader`).
+    var treeAreas: [TreeScatter.Area] = []
+    /// The roads of the ground the trees keep off, gathered with them, and
+    /// the fills no tree stands on (`FillStyle.excludesTrees`).
+    var treeRoads: [TreeScatter.Road] = []
+    var treeExcludedFills: [TreeScatter.Footprint] = []
+    /// The trees the data maps at points (`TreePointStyle`), gathered with
+    /// the fills and planted with their trees.
+    var mappedTrees: [TreeScatter.MappedTree] = []
+    /// The tile's trees, sorted by priority (`TreeScatter`), quarter by
+    /// quarter on a tile that keeps quarters.
+    var trees: [TreeInstance] = []
+    /// Where each quarter's trees start in `trees`, and their count last,
+    /// five values, on a tile that keeps quarters (`keepsQuarters`). Empty
+    /// for a tile kept whole.
+    var treeQuarterStarts: [UInt32] = []
+    var textLabels: [ParsedTextLabel] = []
+    /// The texts of the tile's own water-name labels, so the names the
+    /// parser synthesizes at the coarse zooms skip what the tile already
+    /// shows.
+    var waterNameTexts: Set<String> = []
+    var roadTextLabels: [ParsedRoadTextLabel] = []
+    /// Every place along the tile's signed roads where their route signs
+    /// could stand. The tile keeps some of them as labels once every road
+    /// is read (`RouteShieldPlacement`).
+    var routeShieldCandidates: [RouteShieldCandidate] = []
+    var layerTimings: [TileParseLayerTiming] = []
+    private var roadPolygonSequence = 0
+
+    /// Records the style a ground or bridge key draws with, the first time
+    /// the key is seen: every later feature of the key shares it.
+    mutating func registerStyle(_ style: BakedStyle, key: UInt8, placement: LinePlacement) {
+        switch placement {
+        case .ground:
+            if styles[key] == nil {
+                styles[key] = style
+            }
+        case .bridgeOverlay:
+            if bridgeStyles[key] == nil {
+                bridgeStyles[key] = style
+            }
+        }
+    }
+
+    /// The same for a key on the separate-road path.
+    mutating func registerRoadStyle(_ style: BakedStyle, key: UInt8) {
+        if roadStyles[key] == nil {
+            roadStyles[key] = style
+        }
+    }
+
+    /// A polygon of the ground or the bridge overlay, by its placement.
+    mutating func appendGround(_ polygon: ParsedPolygon, key: UInt8, placement: LinePlacement) {
+        switch placement {
+        case .ground:
+            polygonByStyle[key, default: []].append(polygon)
+        case .bridgeOverlay:
+            bridgePolygonByStyle[key, default: []].append(polygon)
+        }
+    }
+
+    /// A polygon of the separate-road path, with the keys it sorts by
+    /// (`OrderedRoadPolygon.sort`). The sequence number is its arrival
+    /// order, the last tie-breaker.
+    mutating func appendRoad(_ polygon: ParsedPolygon,
+                             key: UInt8,
+                             structureKind: RoadStructureKind,
+                             layer: Int,
+                             classPriority: Int,
+                             passRole: RoadPassRole) {
+        roadPolygonByStyle[key, default: []].append(polygon)
+        orderedRoadPolygons.append(OrderedRoadPolygon(polygon: polygon,
+                                                      styleKey: key,
+                                                      structureKind: structureKind,
+                                                      layer: layer,
+                                                      classPriority: classPriority,
+                                                      passRole: passRole,
+                                                      sequence: roadPolygonSequence))
+        roadPolygonSequence += 1
+    }
+
+    /// Drops the style buckets nothing was appended to, so unification sees
+    /// only keys that draw.
+    mutating func removeEmptyBuckets() {
+        polygonByStyle = polygonByStyle.filter { $0.value.isEmpty == false }
+        roadPolygonByStyle = roadPolygonByStyle.filter { $0.value.isEmpty == false }
+        bridgePolygonByStyle = bridgePolygonByStyle.filter { $0.value.isEmpty == false }
+        extrudedByStyle = extrudedByStyle.filter { $0.value.isEmpty == false }
+    }
+}

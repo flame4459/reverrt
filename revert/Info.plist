@@ -2,21 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDisplayName</key>
 	<string>Revert</string>
-	<key>CFBundleName</key>
-	<string>Revert</string>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>revert</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -32,28 +21,17 @@
 			</array>
 		</dict>
 	</array>
-	<key>UTImportedTypeDeclarations</key>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleName</key>
+	<string>Revert</string>
+	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.topografix.gpx</string>
-			<key>UTTypeDescription</key>
-			<string>GPS Exchange Format</string>
-			<key>UTTypeConformsTo</key>
+			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>public.xml</string>
+				<string>revert</string>
 			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>gpx</string>
-				</array>
-				<key>public.mime-type</key>
-				<array>
-					<string>application/gpx+xml</string>
-				</array>
-			</dict>
 		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
@@ -63,7 +41,6 @@
 		<string>roavic-app</string>
 		<string>streiv</string>
 		<string>gpxnavigation</string>
-
 		<string>roavicnavigation</string>
 		<string>roavicnav</string>
 		<string>gpx-to-maps</string>
@@ -77,46 +54,55 @@
 		<string>streivapp</string>
 		<string>roavicgpx</string>
 		<string>om</string>
-		<string>organicmaps</string></array>
+		<string>organicmaps</string>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Revert listens for on-device voice commands like “pause ride” while you are riding. Audio never leaves the phone.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save your Revert monthly poster to Photos.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Revert uses on-device speech recognition for hands-free ride controls. Audio never leaves the phone.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<true/>
-		<key>UISceneConfigurations</key>
-		<dict>
-			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
-			<array>
-				<dict>
-					<key>UISceneClassName</key>
-					<string>CPTemplateApplicationScene</string>
-					<key>UISceneConfigurationName</key>
-					<string>CarPlay</string>
-					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate</string>
-				</dict>
-			</array>
-		</dict>
 	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 		<string>audio</string>
 	</array>
-	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Revert listens for on-device voice commands like “pause ride” while you are riding. Audio never leaves the phone.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Revert uses on-device speech recognition for hands-free ride controls. Audio never leaves the phone.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>GPS Exchange Format</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.topografix.gpx</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>gpx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/gpx+xml</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

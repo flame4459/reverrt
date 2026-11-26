@@ -19,6 +19,13 @@ final class RideJournal: @unchecked Sendable {
         let version: Int
     }
 
+    /// Pause/resume markers travel in the same journal so a recovered ride can
+    /// remove paused time the way the live recorder does.
+    private struct PauseMark: Codable {
+        let pause: Date?
+        let resume: Date?
+    }
+
     private let lock = NSLock()
     private var handle: FileHandle?
     private var startDate: Date?
@@ -111,6 +118,26 @@ final class RideJournal: @unchecked Sendable {
         }
     }
 
+    /// Records a manual or auto pause so recovery can subtract it from the
+    /// wall-clock span. Without this a recovered ride counted every stop.
+    func markPaused(at date: Date = Date()) { writeMarker(PauseMark(pause: date, resume: nil)) }
+
+    func markResumed(at date: Date = Date()) { writeMarker(PauseMark(pause: nil, resume: date)) }
+
+    private func writeMarker(_ mark: PauseMark) {
+        lock.withLock {
+            guard let handle, let data = try? JSONEncoder().encode(mark) else { return }
+            do {
+                try handle.write(contentsOf: data)
+                try handle.write(contentsOf: Data([0x0A]))
+                try handle.synchronize()
+            } catch {
+                self.handle = nil
+                RevertDiagnostics.log("journal.marker failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Deletes the in-progress journal. Call only after the current ride is
     /// saved or explicitly discarded.
     func finish() {
@@ -157,6 +184,8 @@ final class RideJournal: @unchecked Sendable {
 
         var headerStart: Date?
         var points: [RidePoint] = []
+        var pausedSeconds: TimeInterval = 0
+        var pauseStart: Date?
         for (index, line) in lines.enumerated() {
             if index == 0, let header = try? JSONDecoder().decode(Header.self, from: Data(line)) {
                 headerStart = header.startDate
@@ -164,12 +193,23 @@ final class RideJournal: @unchecked Sendable {
             }
             if let batch = try? JSONDecoder().decode([RidePoint].self, from: Data(line)) {
                 points.append(contentsOf: batch)
+            } else if let mark = try? JSONDecoder().decode(PauseMark.self, from: Data(line)) {
+                if let pause = mark.pause {
+                    pauseStart = pause
+                } else if let resume = mark.resume, let pause = pauseStart {
+                    pausedSeconds += max(resume.timeIntervalSince(pause), 0)
+                    pauseStart = nil
+                }
             }
         }
         guard points.count > 1 else { return nil }
         let start = headerStart ?? points.first?.time ?? Date()
         let end = points.last?.time ?? start
-        return makeRide(points: points, start: start, end: end)
+        // A ride that crashed mid-pause counts that pause to the end.
+        if let pauseStart {
+            pausedSeconds += max(end.timeIntervalSince(pauseStart), 0)
+        }
+        return makeRide(points: points, start: start, end: end, pausedSeconds: pausedSeconds)
     }
 
     /// Moves a journal that was never saved out of the way before a new ride
@@ -200,18 +240,20 @@ final class RideJournal: @unchecked Sendable {
         if remove { try? FileManager.default.removeItem(at: fileURL) }
     }
 
-    private static func makeRide(points: [RidePoint], start: Date, end: Date) -> Ride {
+    private static func makeRide(points: [RidePoint], start: Date, end: Date,
+                                 pausedSeconds: TimeInterval) -> Ride {
         // Same arithmetic as the live recorder, so a recovered ride reports the
         // distance the rider actually saw on the cockpit.
         let stats = RideStats.compute(points: points)
+        let duration = max(end.timeIntervalSince(start) - pausedSeconds, 0)
         return Ride(startDate: start, endDate: end,
                     distanceMeters: stats.distanceMeters,
                     maxSpeedMps: stats.maxSpeedMps,
                     elevationGainMeters: stats.elevationGainMeters,
-                    durationSeconds: max(end.timeIntervalSince(start), 0),
+                    durationSeconds: duration,
                     points: points,
                     maxLeanAngleDegrees: stats.maxLeanAngleDegrees,
-                    movingSeconds: stats.movingSeconds,
+                    movingSeconds: max(duration - stats.stoppedSeconds, 0),
                     stoppedSeconds: stats.stoppedSeconds)
     }
 }

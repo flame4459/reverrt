@@ -135,7 +135,7 @@ struct NavBanner: View {
         // An alert keeps a visible "Keep navigating" button; a confirmation
         // dialog presented as a popover drops the cancel role on iOS 27.
         .alert("End navigation?", isPresented: $showingStopConfirmation) {
-            Button("End route", role: .destructive) { nav.stop() }
+            Button("End route", role: .destructive) { nav.endNavigation() }
             Button("Keep navigating", role: .cancel) {}
         }
         .accessibilityElement(children: .contain)

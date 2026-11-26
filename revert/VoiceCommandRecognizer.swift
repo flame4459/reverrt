@@ -112,16 +112,9 @@ final class VoiceCommandRecognizer {
         wantsListening = false
         restartScheduled = false
         teardown()
-        if #available(iOS 27.0, *) {
-            Task { @MainActor in
-                _ = try? await AVAudioSession.sharedInstance().deactivate(options: .notifyOthersOnDeactivation)
-            }
-        } else {
-            AudioSessionWork.perform {
-                try? AVAudioSession.sharedInstance().setActive(false,
-                                                              options: .notifyOthersOnDeactivation)
-            }
-        }
+        Speaker.shared.releaseSession()
+        AudioSessionOwner.shared.recordingStopped()
+        AudioSessionOwner.shared.releaseAfterIdle(delay: 0.2)
     }
 
     private func teardown() {
@@ -164,15 +157,13 @@ final class VoiceCommandRecognizer {
     }
 
     private func begin() {
+        // Take the audio session before any pending speaker teardown can fire.
+        Speaker.shared.holdSession()
         // Category and activation can block while the system re-routes audio;
         // run them off the main thread but await, so the tap is installed on a
         // configured session. Same order as before: category, input, active.
         Task { @MainActor in
-            await AudioSessionWork.performAndWait {
-                try? AVAudioSession.sharedInstance().setCategory(
-                    .playAndRecord, mode: .measurement,
-                    options: [.duckOthers, .allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
-            }
+            await AudioSessionOwner.shared.activateRecordingAndWait()
             // Cardo and similar headsets expose an HFP input. Prefer it when
             // the rider has not opted out; otherwise the system chooses.
             AudioRouteMonitor.shared.refresh()
@@ -182,9 +173,6 @@ final class VoiceCommandRecognizer {
                 try? session.setPreferredInput(helmetInput)
             } else if let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
                 try? session.setPreferredInput(builtIn)
-            }
-            await AudioSessionWork.performAndWait {
-                try? AVAudioSession.sharedInstance().setActive(true)
             }
             self.beginMicrophone()
         }
@@ -200,6 +188,17 @@ final class VoiceCommandRecognizer {
 
             let input = audioEngine.inputNode
             let format = input.outputFormat(forBus: 0)
+            // A failed activation (another app holds the mic, a Bluetooth input
+            // vanished) yields a 0 Hz/0-channel format, and installing a tap
+            // with it raises an exception that cannot be caught.
+            guard format.sampleRate > 0, format.channelCount > 0,
+                  AVAudioSession.sharedInstance().isInputAvailable else {
+                RevertDiagnostics.log("voice start failed: no usable input format")
+                statusMessage = "The microphone is not available right now."
+                isListening = false
+                Speaker.shared.releaseSession()
+                return
+            }
             input.removeTap(onBus: 0)
             // iOS 27's refined tap API throws and uses a refined `error`
             // placeholder for the old NSError out-parameter.
@@ -222,7 +221,9 @@ final class VoiceCommandRecognizer {
                     guard let self, self.generation == generation else { return }
                     if let result {
                         self.transcript = result.bestTranscription.formattedString
-                        self.interpret(self.transcript)
+                        // Answer only complete sentences: interpreting every
+                        // partial spoke a reply to each growing fragment.
+                        if result.isFinal { self.interpret(self.transcript) }
                     }
                     if error != nil || result?.isFinal == true {
                         self.restartAfterRecognitionEnded()

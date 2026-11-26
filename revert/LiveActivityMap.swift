@@ -3,7 +3,8 @@ import CoreLocation
 import MapKit
 import UIKit
 
-/// Draws the map card that the Live Activity shows on the CarPlay Dashboard.
+/// Draws the map card the Live Activity shows on the Watch Smart Stack and on
+/// car dashboards that display iPhone widgets.
 ///
 /// A Live Activity cannot host a live map view, but it can host an image. So the
 /// app renders a heading-up slice of the route around the rider and hands the

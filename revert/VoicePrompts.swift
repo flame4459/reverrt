@@ -118,21 +118,26 @@ enum Narrator {
         // routes carry a manoeuvre and a road name.
         if let text = step.text, !text.isEmpty {
             var parts = parse(text)
-            if let distance,
-               let clip = VoiceClip.distanceClip(forMeters: distance, metric: Units.isMetric) {
-                parts.insert(.optionalClip(clip), at: 0)
+            if let distance {
+                // Accuracy rule: the distance is spoken by TTS at the value the
+                // rider is actually approaching. Recorded clips exist only at a
+                // handful of lengths; using the nearest one turned 55 m into
+                // "200 meters".
+                parts.insert(.text("In \(Units.spokenDistance(distance))"), at: 0)
             }
             return parts.isEmpty ? VoicePrompt(text: fallback)
                                  : VoicePrompt(parts: parts, fallback: fallback)
         }
 
         var parts: [VoicePrompt.Part] = []
-        if let distance,
-           let clip = VoiceClip.distanceClip(forMeters: distance, metric: Units.isMetric) {
-            parts.append(.optionalClip(clip))
+        if let distance {
+            parts.append(.text("In \(Units.spokenDistance(distance))"))
         }
-        if let lanes = step.laneGuidance, distance != nil, !lanes.phrase.isEmpty {
-            parts.append(.text("\(lanes.phrase) to"))
+        if let lanes = step.laneGuidance, !lanes.phrase.isEmpty {
+            // At the final prompt there is no "in X, …" lead to attach to, so
+            // the lane advice becomes its own short sentence. Dropping it here
+            // removed the one cue that matters as the rider commits.
+            parts.append(.text(distance == nil ? "\(lanes.phrase)." : "\(lanes.phrase) to"))
         }
         if let clip = turnClip(step.turn) {
             parts.append(.clip(clip, fallback: turnPhrase(step.turn)))
@@ -178,6 +183,45 @@ enum Narrator {
         case .arrive: "You have arrived"
         }
     }
+
+    /// An approach-to-start manoeuvre. `ApproachStep` carries prose, not a
+    /// `NavStep`, so this keeps the same distance-first, lower-cased wording.
+    static func approach(_ instruction: String, distance: Double) -> VoicePrompt {
+        VoicePrompt(text: "In \(Units.spokenDistance(distance)), \(afterDistance(instruction))")
+    }
+
+    /// The rider is not on the route yet: tell them where the start is.
+    static func startGuidance(distance: Double) -> VoicePrompt {
+        VoicePrompt(text: "Head to the start. \(Units.spokenDistance(distance)) away.")
+    }
+
+    static func lap(_ lap: Int, of total: Int, last: TimeInterval?) -> VoicePrompt {
+        var text = "Lap \(lap) of \(total)."
+        if let last, last.isFinite, last > 10 {
+            text += " \(Units.spokenClock(last)) for the last one."
+        }
+        return VoicePrompt(text: text)
+    }
+
+    static func loopComplete(total: TimeInterval?) -> VoicePrompt {
+        if let total, total.isFinite, total > 10 {
+            return VoicePrompt(text: "Loop complete. \(Units.spokenClock(total)) total.")
+        }
+        return VoicePrompt(text: "Loop complete.")
+    }
+
+    static func sprintFinish(time: TimeInterval?) -> VoicePrompt {
+        if let time, time.isFinite, time > 5 {
+            return VoicePrompt(text: "Finish. \(Units.spokenClock(time)).")
+        }
+        return VoicePrompt(text: "Finish.")
+    }
+
+    static let missedTurn = VoicePrompt(text: "You missed the turn. Finding a new route.")
+    static let offRoute = VoicePrompt(text: "Off route. Finding a way back.")
+    static let backOnRoute = VoicePrompt(text: "Back on route.")
+    static let navigationEnded = VoicePrompt(text: "Navigation ended.")
+    static let routeUpdatedContinue = VoicePrompt(text: "Route updated. Continue.")
 
     // MARK: Alerts
 

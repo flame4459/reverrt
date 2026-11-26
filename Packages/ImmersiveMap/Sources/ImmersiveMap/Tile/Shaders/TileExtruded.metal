@@ -1,0 +1,200 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+#include <metal_stdlib>
+using namespace metal;
+#include "../../Render/Shaders/Shared/RenderUniforms.h"
+#include "../../Render/Shaders/Shared/GroundFog.h"
+
+// Mirror of ExtrudedVertexIn (12 bytes on the CPU side): positions arrive
+// as raw Int16 values in 14.2 fixed point, converted to float by the vertex
+// fetch, and normals as char3Normalized, slightly short of unit length until
+// the normalize below.
+struct VertexIn {
+    float3 position [[attribute(0)]];
+    float3 normal [[attribute(1)]];
+    unsigned char styleIndex [[attribute(2)]];
+    ushort buildingOrdinal [[attribute(3)]];
+};
+
+/// The ground relief (GroundReliefStore): the building rises by its lift,
+/// one per building of the tile at vertex buffer 4, the terrain's metres
+/// under its anchor (BuildingExtrusionRenderSubsystem), the metres less
+/// the frame's datum, times the frame's strength and the world units a
+/// metre spans over the tile, at vertex buffer 5 (BuildingLift), so it stands
+/// level on the slope under it. The lifts are metres so a tile keeps them
+/// across the zooms, whose world units differ, and across the frames,
+/// whose datum moves with the camera and whose strength moves with the
+/// zoom.
+constant bool kExtrudedRelief [[function_constant(0)]];
+
+// What a tile's lifts are drawn with this frame (BuildingExtrusionDrawer,
+// mirrored by BuildingLiftUniform): the world units a metre spans over
+// the tile, the datum in metres, the terrain under the point the camera
+// looks at (GroundReliefCameraLift), and the frame's strength, as the
+// ground's (GroundReliefUniform, GroundRelief.h).
+struct BuildingLift {
+    float unitsPerMetre;
+    float datumMetres;
+    float strength;
+    float padding;
+};
+
+// The world z a building rises by: its lift's metres over the datum at
+// the frame's strength.
+static inline float buildingLiftZ(float lift, BuildingLift uniform) {
+    return (lift - uniform.datumMetres) * uniform.strength * uniform.unitsPerMetre;
+}
+
+// The CPU quantizes positions to quarter tile units; see
+// ExtrudedVertexIn.positionScale.
+constant float kExtrudedPositionInverseScale = 0.25;
+
+// color and the unit normal are unit-range, so they interpolate as half:
+// fewer interpolant registers and double-rate ALU on A-series GPUs. World
+// position stays float for the shadow projection.
+struct VertexOut {
+    float4 position [[position]];
+    float3 worldPosition;
+    half3 worldNormal;
+    half4 color;
+};
+
+/// Mirror of TilePolygonStyle: the stride must match the shared style
+/// buffer.
+struct Style {
+    float4 color;
+};
+
+vertex VertexOut tileExtrudedVertexShader(VertexIn vertexIn [[stage_in]],
+                                          constant Camera& camera [[buffer(1)]],
+                                          constant Style* styles [[buffer(2)]],
+                                          constant float4x4& modelMatrix [[buffer(3)]],
+                                          constant float* buildingLifts [[buffer(4), function_constant(kExtrudedRelief)]],
+                                          constant BuildingLift& lift [[buffer(5), function_constant(kExtrudedRelief)]]) {
+    Style style = styles[vertexIn.styleIndex];
+    float4x4 matrix = camera.matrix;
+
+    float3 localPosition = vertexIn.position * kExtrudedPositionInverseScale;
+    float4 worldPosition = modelMatrix * float4(localPosition, 1.0);
+    if (kExtrudedRelief) {
+        worldPosition.z += buildingLiftZ(buildingLifts[vertexIn.buildingOrdinal], lift);
+    }
+    float4 clipPosition = matrix * worldPosition;
+    float3x3 normalMatrix = float3x3(modelMatrix[0].xyz, modelMatrix[1].xyz, modelMatrix[2].xyz);
+    float3 worldNormal = normalize(normalMatrix * vertexIn.normal);
+
+    VertexOut out;
+    out.position = clipPosition;
+    out.color = half4(style.color);
+    out.worldPosition = worldPosition.xyz;
+    out.worldNormal = half3(worldNormal);
+    return out;
+}
+
+
+// Depth cues without an analytic lighting model (the shading contract stays
+// "flat base color + shadow map"): two subtle tonal terms multiply the base
+// color so that faces separate where flat shading would merge them.
+// - Hemisphere term: roofs keep the base color, walls darken slightly, and
+//   the sun-facing side of a wall is lighter than the far side, so the edge
+//   between two differently oriented walls is always visible and a block
+//   reads as a lit solid: even a wall square to the sun stays a step under
+//   the roof, so the roof edge never dissolves into a lit facade, and one
+//   turned away drops toward the self-shadow the shadow map gives it, so
+//   roof, lit wall, side wall and shaded wall are four distinct tones.
+// - Vertical gradient: walls darken toward the ground, faking the ambient
+//   occlusion of street canyons and visually grounding the buildings
+//   (short buildings also read slightly darker than tall ones).
+// Both are tonal cues, not lighting: they never exceed 1 and compose with
+// the shadow factor and the geometric self-shadow untouched.
+constant half kWallShadeBase = 0.90h;
+constant half kWallShadeSunSwing = 0.07h;
+constant half kBaseDarkening = 0.88h;
+constant half kGradientRampMeters = 30.0h;
+
+// Unit-range tonal math runs in half; heights saturate the 30 m ramp far
+// below half's range, so nothing here needs float.
+static inline half extrudedDepthCueShade(half3 worldNormal,
+                                         half heightMeters,
+                                         half3 lightDirection) {
+    half upness = saturate(worldNormal.z);
+
+    half sunSide = 0.0h;
+    half2 horizontalNormal = worldNormal.xy;
+    half2 horizontalSun = lightDirection.xy;
+    half normalLength = length(horizontalNormal);
+    half sunLength = length(horizontalSun);
+    // Degenerate cases (roof fragments, shadows disabled with the vertical
+    // placeholder sun) fall back to the neutral wall tone.
+    if (normalLength > 1.0e-3h && sunLength > 1.0e-3h) {
+        sunSide = dot(horizontalNormal / normalLength, horizontalSun / sunLength);
+    }
+    half wallShade = kWallShadeBase + kWallShadeSunSwing * sunSide;
+    half orientationShade = mix(wallShade, 1.0h, upness);
+
+    half gradient = mix(kBaseDarkening, 1.0h,
+                        smoothstep(0.0h, kGradientRampMeters, heightMeters));
+    return orientationShade * gradient;
+}
+
+// No analytic lighting model: faces keep their flat base color and darken
+// only where the shadow map says the static sun is occluded. Walls turned
+// away from the sun are occluded by their own building in the map, so they
+// come out shadowed exactly like cast shadows: one consistent system.
+// Building geometry is always drawn opaque with a regular depth test and MSAA,
+// directly into the world pass.
+static inline half4 shadeExtrudedFragment(VertexOut in,
+                                          constant Shadow& shadow,
+                                          constant float& metersToWorldZ,
+                                          depth2d_array<float> shadowMap) {
+    half shadowFactor = half(sampleShadowFactor(shadow, shadowMap,
+                                                in.worldPosition, float3(in.worldNormal)));
+
+    // The meters conversion stays float: metersToWorldZ can be tiny and the
+    // guard ratio overflows half, which the saturating ramp then absorbs.
+    float heightMeters = in.worldPosition.z / max(metersToWorldZ, 1e-9);
+    half depthCueShade = extrudedDepthCueShade(in.worldNormal,
+                                               half(min(heightMeters, 1.0e4)),
+                                               half3(shadow.lightDirection));
+    // The cues fade out with the shadow factor: a self-shadowed or cast-shadowed
+    // face keeps the pure shadow color instead of stacking darkening on
+    // darkening (dark x dark reads unnatural). With shadows disabled the
+    // factor is 1 and the cues apply fully. The factor is applied through
+    // the tinted multiplier, so shadowed faces take on the sky cast the
+    // ground under them takes on: one shadow color across the scene.
+    half appliedCue = mix(1.0h, depthCueShade, shadowFactor);
+    return half4(in.color.rgb * appliedCue * shadowColorMultiplier(shadow, shadowFactor), 1.0h);
+}
+
+fragment half4 tileExtrudedFragmentShader(VertexOut in [[stage_in]],
+                                          constant Shadow& shadow [[buffer(5)]],
+                                          constant float& metersToWorldZ [[buffer(6)]],
+                                          constant GroundFog& groundFog [[buffer(kGroundFogBufferIndex)]],
+                                          depth2d_array<float> shadowMap [[texture(0)]]) {
+    half4 color = shadeExtrudedFragment(in, shadow, metersToWorldZ, shadowMap);
+    color.rgb = applyGroundFog(color.rgb, in.worldPosition, groundFog);
+    return color;
+}
+
+// Depth-only path of the shadow map pass: one window, so one draw per
+// geometry into a plain 2D depth attachment (no instancing, no array slice
+// routing).
+struct ExtrudedShadowVertexOut {
+    float4 position [[position]];
+};
+
+vertex ExtrudedShadowVertexOut tileExtrudedShadowVertexShader(VertexIn vertexIn [[stage_in]],
+                                                              constant ShadowCasterMatrices& casters [[buffer(1)]],
+                                                              constant float4x4& modelMatrix [[buffer(3)]],
+                                                              constant float* buildingLifts [[buffer(4), function_constant(kExtrudedRelief)]],
+                                                              constant BuildingLift& lift [[buffer(5), function_constant(kExtrudedRelief)]]) {
+    float3 localPosition = vertexIn.position * kExtrudedPositionInverseScale;
+    float4 worldPosition = modelMatrix * float4(localPosition, 1.0);
+    if (kExtrudedRelief) {
+        worldPosition.z += buildingLiftZ(buildingLifts[vertexIn.buildingOrdinal], lift);
+    }
+    ExtrudedShadowVertexOut out;
+    out.position = casters.lightProjectionView * worldPosition;
+    return out;
+}

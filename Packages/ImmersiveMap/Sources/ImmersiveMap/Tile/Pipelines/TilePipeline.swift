@@ -1,0 +1,459 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import MetalKit
+
+class TilePipeline {
+    /// Which surface the pipeline draws tiles onto. The flat one projects
+    /// through a model matrix into the plane (Tile.metal); the sphere one
+    /// projects tile-local positions onto the globe through the surface
+    /// morph (TileSphere.metal). Same vertex format, styles and blending.
+    enum Surface {
+        case flat
+        case sphere
+    }
+
+    let pipelineState: MTLRenderPipelineState
+    /// Flat surface only: the fills classes without the line fields (no
+    /// export, no interpolation, no coverage math), blended for the
+    /// translucent layers and unblended for the opaque depth pass.
+    /// `pipelineState` remains the line-fields variant (ribbons, road
+    /// buckets, bridge overlay).
+    let flatFillsPipelineState: MTLRenderPipelineState?
+    let flatOpaquePipelineState: MTLRenderPipelineState?
+    /// Flat surface only: every flat variant again with the ground relief
+    /// (Tile.metal, kTileGroundRelief), the vertex raised by the terrain
+    /// read at vertex texture 0 with its uniform at vertex buffer 9, for
+    /// the tiles whose terrain is in. Keyed by the class the plain variant
+    /// draws.
+    let flatReliefPipelineStates: [FlatClass: MTLRenderPipelineState]
+
+    /// The flat classes, each with its plain pipeline state and its relief
+    /// one.
+    enum FlatClass: Hashable {
+        /// The line-fields pipeline (ribbons, road buckets, bridge overlay).
+        case lines
+        case fills
+        case opaqueFills
+        case roadOpaque
+        case roadBlended
+    }
+    /// Flat surface only: the road ribbons (Tile.metal, kTileRoadRibbons),
+    /// whose geometry is the road and whose depth is the road's rank. The
+    /// opaque ones draw unblended, the rest blend.
+    let flatRoadOpaquePipelineState: MTLRenderPipelineState?
+    let flatRoadBlendedPipelineState: MTLRenderPipelineState?
+    /// Sphere surface only: the resting-sphere fills class, blended (the
+    /// translucent fill layers). Carries no line fields. The morph keeps
+    /// `pipelineState` (tileSphereMorphVertexShader), the only sphere
+    /// variant with the unroll and the fog.
+    let sphereFillsPipelineState: MTLRenderPipelineState?
+    /// The fills class with blending disabled: what the opaque ground
+    /// layers draw with, front-to-back under the depth test.
+    let sphereOpaqueFillsPipelineState: MTLRenderPipelineState?
+    /// The resting-sphere ribbons class: the line ribbons of the ground
+    /// bucket through the line-field coverage, blended, in the phases of
+    /// `SphereRibbonPhase` (TileSphere.metal, kTileSphereRibbonPhase).
+    let sphereRibbonsPipelineState: MTLRenderPipelineState?
+    let sphereRibbonCorePipelineState: MTLRenderPipelineState?
+    let sphereRibbonFeatherPipelineState: MTLRenderPipelineState?
+    /// The morph's class variants: the same layered passes as the resting
+    /// sphere (the unroll never self-intersects toward the camera, so the
+    /// rank depth band applies unchanged), with the unroll and the fog.
+    let sphereMorphFillsPipelineState: MTLRenderPipelineState?
+    let sphereMorphOpaqueFillsPipelineState: MTLRenderPipelineState?
+    let sphereMorphRibbonsPipelineState: MTLRenderPipelineState?
+    let sphereMorphRibbonCorePipelineState: MTLRenderPipelineState?
+    let sphereMorphRibbonFeatherPipelineState: MTLRenderPipelineState?
+
+    /// Which part of a ribbon a sphere ribbons draw paints
+    /// (kTileSphereRibbonPhase in TileSphere.metal): the whole ribbon in
+    /// one blended draw, the core alone (the fragments the line covers by
+    /// half or more, which write the rank depth) or the feather alone (the
+    /// rest, blended after the cores).
+    enum SphereRibbonPhase: Int32 {
+        case whole = 0
+        case core = 1
+        case feather = 2
+    }
+
+    /// - Parameter readsGroundShadowMask: the flat world pass reads the
+    ///   per-pixel ground shadow mask at fragment texture 1; the globe atlas
+    ///   bake keeps the direct cascade sampling path (with a disabled uniform)
+    ///   and only binds the shadow map slot.
+    init(metalDevice: MTLDevice,
+         pixelFormat: MTLPixelFormat,
+         library: MTLLibrary,
+         sampleCount: Int = 1,
+         readsGroundShadowMask: Bool = false,
+         surface: Surface = .flat) {
+        let vertexFunction: MTLFunction?
+        let fragmentFunction: MTLFunction?
+        var spherePureVertexFunctions: [Bool: MTLFunction] = [:]
+        var spherePureFragmentFunctions: [Bool: MTLFunction] = [:]
+        var spherePureRibbonPhaseFragmentFunctions: [SphereRibbonPhase: MTLFunction] = [:]
+        var sphereMorphVertexFunctions: [Bool: MTLFunction] = [:]
+        var sphereMorphFragmentFunctions: [Bool: MTLFunction] = [:]
+        var sphereMorphRibbonPhaseFragmentFunctions: [SphereRibbonPhase: MTLFunction] = [:]
+        var flatFillsVertexFunction: MTLFunction?
+        var flatFillsFragmentFunction: MTLFunction?
+        // The relief variants' vertex functions: the lines class, the fills
+        // class, and the opaque and the blended road ribbons.
+        var flatReliefVertexFunctions: (lines: MTLFunction, fills: MTLFunction,
+                                        roadOpaque: MTLFunction, roadBlended: MTLFunction)?
+        // The relief variants' fragment functions, the same classes.
+        var flatReliefFragmentFunctions: (lines: MTLFunction, fills: MTLFunction,
+                                          roadOpaque: MTLFunction, roadBlended: MTLFunction)?
+        // The road ribbons: the opaque and the blended vertex and fragment
+        // pairs.
+        var flatRoadFunctions: (opaqueVertex: MTLFunction, opaqueFragment: MTLFunction,
+                                blendedVertex: MTLFunction, blendedFragment: MTLFunction)?
+        switch surface {
+        case .flat:
+            func flatFunction(_ name: String,
+                              lineFields: Bool,
+                              roadRibbons: Bool = false,
+                              roadBlended: Bool = false,
+                              groundRelief: Bool = false) -> MTLFunction {
+                let values = MTLFunctionConstantValues()
+                // The mask is the plane's shadow: the relief's variants
+                // sample the cascades at their raised points instead
+                // (`GroundShadowMaskBinding`).
+                var readsMask = readsGroundShadowMask && groundRelief == false
+                var lineFieldsValue = lineFields
+                var roadRibbonsValue = roadRibbons
+                var roadBlendedValue = roadBlended
+                var groundReliefValue = groundRelief
+                values.setConstantValue(&readsMask, type: .bool, index: 0)
+                values.setConstantValue(&lineFieldsValue, type: .bool, index: 1)
+                values.setConstantValue(&roadRibbonsValue, type: .bool, index: 4)
+                values.setConstantValue(&roadBlendedValue, type: .bool, index: 5)
+                values.setConstantValue(&groundReliefValue, type: .bool, index: 6)
+                return try! library.makeFunction(name: name, constantValues: values)
+            }
+            func roadFunction(_ name: String, blended: Bool) -> MTLFunction {
+                flatFunction(name, lineFields: true, roadRibbons: true, roadBlended: blended)
+            }
+            vertexFunction = flatFunction("tileVertexShader", lineFields: true)
+            fragmentFunction = flatFunction("tileFragmentShader", lineFields: true)
+            flatFillsVertexFunction = flatFunction("tileVertexShader", lineFields: false)
+            flatFillsFragmentFunction = flatFunction("tileFragmentShader", lineFields: false)
+            flatReliefVertexFunctions = (
+                lines: flatFunction("tileVertexShader", lineFields: true, groundRelief: true),
+                fills: flatFunction("tileVertexShader", lineFields: false, groundRelief: true),
+                roadOpaque: flatFunction("tileVertexShader", lineFields: true, roadRibbons: true, groundRelief: true),
+                roadBlended: flatFunction("tileVertexShader", lineFields: true, roadRibbons: true, roadBlended: true,
+                                          groundRelief: true)
+            )
+            flatReliefFragmentFunctions = (
+                lines: flatFunction("tileFragmentShader", lineFields: true, groundRelief: true),
+                fills: flatFunction("tileFragmentShader", lineFields: false, groundRelief: true),
+                roadOpaque: flatFunction("tileRoadFragmentShader", lineFields: true, roadRibbons: true, groundRelief: true),
+                roadBlended: flatFunction("tileRoadFragmentShader", lineFields: true, roadRibbons: true, roadBlended: true,
+                                          groundRelief: true)
+            )
+            flatRoadFunctions = (
+                opaqueVertex: roadFunction("tileVertexShader", blended: false),
+                opaqueFragment: roadFunction("tileRoadFragmentShader", blended: false),
+                blendedVertex: roadFunction("tileVertexShader", blended: true),
+                blendedFragment: roadFunction("tileRoadFragmentShader", blended: true)
+            )
+        case .sphere:
+            func sphereFunction(_ name: String, fog: Bool, lineFields: Bool,
+                                ribbonPhase: SphereRibbonPhase = .whole) -> MTLFunction {
+                let values = MTLFunctionConstantValues()
+                var fogValue = fog
+                var lineFieldsValue = lineFields
+                var ribbonPhaseValue = ribbonPhase.rawValue
+                values.setConstantValue(&fogValue, type: .bool, index: 0)
+                values.setConstantValue(&lineFieldsValue, type: .bool, index: 1)
+                values.setConstantValue(&ribbonPhaseValue, type: .int, index: 2)
+                return try! library.makeFunction(name: name, constantValues: values)
+            }
+            // The morph: the sphere variants with the unroll and the fog.
+            vertexFunction = sphereFunction("tileSphereMorphVertexShader", fog: true, lineFields: true)
+            fragmentFunction = sphereFunction("tileSphereFragmentShader", fog: true, lineFields: true)
+            // The class variants, keyed by lineFields: the fills class
+            // carries no line fields at all, the ribbons class carries the
+            // analytic line coverage. The morph pair adds the fog.
+            spherePureVertexFunctions = [
+                false: sphereFunction("tileSpherePureVertexShader", fog: false, lineFields: false),
+                true: sphereFunction("tileSpherePureVertexShader", fog: false, lineFields: true)
+            ]
+            spherePureFragmentFunctions = [
+                false: sphereFunction("tileSphereFragmentShader", fog: false, lineFields: false),
+                true: sphereFunction("tileSphereFragmentShader", fog: false, lineFields: true)
+            ]
+            sphereMorphVertexFunctions = [
+                false: sphereFunction("tileSphereMorphVertexShader", fog: true, lineFields: false),
+                true: vertexFunction!
+            ]
+            sphereMorphFragmentFunctions = [
+                false: sphereFunction("tileSphereFragmentShader", fog: true, lineFields: false),
+                true: fragmentFunction!
+            ]
+            // The ribbons class in its phases: the core and the feather,
+            // on the resting sphere and through the morph.
+            for phase in [SphereRibbonPhase.core, .feather] {
+                spherePureRibbonPhaseFragmentFunctions[phase] =
+                    sphereFunction("tileSphereFragmentShader", fog: false, lineFields: true, ribbonPhase: phase)
+                sphereMorphRibbonPhaseFragmentFunctions[phase] =
+                    sphereFunction("tileSphereFragmentShader", fog: true, lineFields: true, ribbonPhase: phase)
+            }
+        }
+
+        let vertexDescriptor = Self.makeVertexDescriptor()
+
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = vertexFunction
+        pipelineDescriptor.fragmentFunction = fragmentFunction
+        pipelineDescriptor.vertexDescriptor = vertexDescriptor
+        pipelineDescriptor.rasterSampleCount = sampleCount
+        
+        
+        pipelineDescriptor.colorAttachments[0].pixelFormat = pixelFormat
+        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float_stencil8
+        pipelineDescriptor.stencilAttachmentPixelFormat = .depth32Float_stencil8
+        pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+        pipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
+        pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
+        pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        // Alpha blends with .one so coverage accumulates on a transparent
+        // destination; over an opaque one the result is unchanged.
+        pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+        pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        
+        self.pipelineState = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+
+        if spherePureVertexFunctions.isEmpty == false {
+            func makeClassStates(vertexFns: [Bool: MTLFunction],
+                                 fragmentFns: [Bool: MTLFunction],
+                                 ribbonPhaseFragmentFns: [SphereRibbonPhase: MTLFunction])
+                -> (fills: MTLRenderPipelineState,
+                    opaqueFills: MTLRenderPipelineState,
+                    ribbons: MTLRenderPipelineState,
+                    ribbonCore: MTLRenderPipelineState,
+                    ribbonFeather: MTLRenderPipelineState) {
+                pipelineDescriptor.vertexFunction = vertexFns[false]
+                pipelineDescriptor.fragmentFunction = fragmentFns[false]
+                let fills = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                // The opaque fills variant: same functions, no blending.
+                pipelineDescriptor.colorAttachments[0].isBlendingEnabled = false
+                let opaqueFills = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+                pipelineDescriptor.vertexFunction = vertexFns[true]
+                pipelineDescriptor.fragmentFunction = fragmentFns[true]
+                let ribbons = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                // The phases: the same vertex stage, the fragment keeps
+                // its share of the ribbon.
+                pipelineDescriptor.fragmentFunction = ribbonPhaseFragmentFns[.core]
+                let ribbonCore = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                pipelineDescriptor.fragmentFunction = ribbonPhaseFragmentFns[.feather]
+                let ribbonFeather = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                return (fills, opaqueFills, ribbons, ribbonCore, ribbonFeather)
+            }
+            let pure = makeClassStates(vertexFns: spherePureVertexFunctions,
+                                       fragmentFns: spherePureFragmentFunctions,
+                                       ribbonPhaseFragmentFns: spherePureRibbonPhaseFragmentFunctions)
+            self.sphereFillsPipelineState = pure.fills
+            self.sphereOpaqueFillsPipelineState = pure.opaqueFills
+            self.sphereRibbonsPipelineState = pure.ribbons
+            self.sphereRibbonCorePipelineState = pure.ribbonCore
+            self.sphereRibbonFeatherPipelineState = pure.ribbonFeather
+            let morph = makeClassStates(vertexFns: sphereMorphVertexFunctions,
+                                        fragmentFns: sphereMorphFragmentFunctions,
+                                        ribbonPhaseFragmentFns: sphereMorphRibbonPhaseFragmentFunctions)
+            self.sphereMorphFillsPipelineState = morph.fills
+            self.sphereMorphOpaqueFillsPipelineState = morph.opaqueFills
+            self.sphereMorphRibbonsPipelineState = morph.ribbons
+            self.sphereMorphRibbonCorePipelineState = morph.ribbonCore
+            self.sphereMorphRibbonFeatherPipelineState = morph.ribbonFeather
+            pipelineDescriptor.vertexFunction = vertexFunction
+            pipelineDescriptor.fragmentFunction = fragmentFunction
+        } else {
+            self.sphereFillsPipelineState = nil
+            self.sphereOpaqueFillsPipelineState = nil
+            self.sphereRibbonsPipelineState = nil
+            self.sphereRibbonCorePipelineState = nil
+            self.sphereRibbonFeatherPipelineState = nil
+            self.sphereMorphFillsPipelineState = nil
+            self.sphereMorphOpaqueFillsPipelineState = nil
+            self.sphereMorphRibbonsPipelineState = nil
+            self.sphereMorphRibbonCorePipelineState = nil
+            self.sphereMorphRibbonFeatherPipelineState = nil
+        }
+
+        if surface == .flat, let flatFillsVertexFunction, let flatFillsFragmentFunction {
+            pipelineDescriptor.vertexFunction = flatFillsVertexFunction
+            pipelineDescriptor.fragmentFunction = flatFillsFragmentFunction
+            self.flatFillsPipelineState = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            pipelineDescriptor.colorAttachments[0].isBlendingEnabled = false
+            self.flatOpaquePipelineState = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+            // The relief variants: each class's fragment function and
+            // blending with the relief's vertex function.
+            var reliefStates: [FlatClass: MTLRenderPipelineState] = [:]
+            if let relief = flatReliefVertexFunctions, let reliefFragment = flatReliefFragmentFunctions {
+                func reliefState(_ vertex: MTLFunction, _ fragment: MTLFunction?, blended: Bool) -> MTLRenderPipelineState {
+                    pipelineDescriptor.vertexFunction = vertex
+                    pipelineDescriptor.fragmentFunction = fragment
+                    pipelineDescriptor.colorAttachments[0].isBlendingEnabled = blended
+                    let state = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                    pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+                    return state
+                }
+                reliefStates[.lines] = reliefState(relief.lines, reliefFragment.lines, blended: true)
+                reliefStates[.fills] = reliefState(relief.fills, reliefFragment.fills, blended: true)
+                reliefStates[.opaqueFills] = reliefState(relief.fills, reliefFragment.fills, blended: false)
+                reliefStates[.roadOpaque] = reliefState(relief.roadOpaque, reliefFragment.roadOpaque, blended: false)
+                reliefStates[.roadBlended] = reliefState(relief.roadBlended, reliefFragment.roadBlended, blended: true)
+            }
+            self.flatReliefPipelineStates = reliefStates
+            pipelineDescriptor.vertexFunction = flatFillsVertexFunction
+            pipelineDescriptor.fragmentFunction = flatFillsFragmentFunction
+            // The road ribbons: the blended pair, then the opaque pair
+            // with blending off.
+            func makeRoadStates() -> (opaque: MTLRenderPipelineState?, blended: MTLRenderPipelineState?) {
+                guard let functions = flatRoadFunctions else { return (nil, nil) }
+                pipelineDescriptor.vertexFunction = functions.blendedVertex
+                pipelineDescriptor.fragmentFunction = functions.blendedFragment
+                let blended = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                pipelineDescriptor.vertexFunction = functions.opaqueVertex
+                pipelineDescriptor.fragmentFunction = functions.opaqueFragment
+                pipelineDescriptor.colorAttachments[0].isBlendingEnabled = false
+                let opaque = try! metalDevice.makeRenderPipelineState(descriptor: pipelineDescriptor)
+                pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+                return (opaque, blended)
+            }
+            let roadStates = makeRoadStates()
+            self.flatRoadOpaquePipelineState = roadStates.opaque
+            self.flatRoadBlendedPipelineState = roadStates.blended
+            pipelineDescriptor.vertexFunction = vertexFunction
+            pipelineDescriptor.fragmentFunction = fragmentFunction
+        } else {
+            self.flatRoadOpaquePipelineState = nil
+            self.flatRoadBlendedPipelineState = nil
+            self.flatFillsPipelineState = nil
+            self.flatOpaquePipelineState = nil
+            self.flatReliefPipelineStates = [:]
+        }
+    }
+
+    /// The tile vertex format (`TileVertexIn`, `VertexIn` in TileShading.h)
+    /// at buffer 0, for every pipeline that reads a tile's vertices.
+    static func makeVertexDescriptor() -> MTLVertexDescriptor {
+        let vertexDescriptor = MTLVertexDescriptor()
+        vertexDescriptor.attributes[0].format = .float2
+        vertexDescriptor.attributes[0].offset = MemoryLayout<TileVertexIn>.offset(of: \.position)!
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        vertexDescriptor.attributes[1].format = .uchar
+        vertexDescriptor.attributes[1].offset = MemoryLayout<TileVertexIn>.offset(of: \.styleIndex)!
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        vertexDescriptor.attributes[2].format = .char
+        vertexDescriptor.attributes[2].offset = MemoryLayout<TileVertexIn>.offset(of: \.lineDistance)!
+        vertexDescriptor.attributes[2].bufferIndex = 0
+        vertexDescriptor.attributes[3].format = .short
+        vertexDescriptor.attributes[3].offset = MemoryLayout<TileVertexIn>.offset(of: \.lineParameter)!
+        vertexDescriptor.attributes[3].bufferIndex = 0
+        // The deferred ribbons' extrusion direction, snorm to a unit float2.
+        vertexDescriptor.attributes[4].format = .char2Normalized
+        vertexDescriptor.attributes[4].offset = MemoryLayout<TileVertexIn>.offset(of: \.normal)!
+        vertexDescriptor.attributes[4].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<TileVertexIn>.stride
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+        return vertexDescriptor
+    }
+
+    func selectPipeline(renderEncoder: MTLRenderCommandEncoder) {
+        renderEncoder.setRenderPipelineState(pipelineState)
+    }
+
+    /// The flat line-fields pipeline (ribbons, road buckets, bridge
+    /// overlay).
+    func selectFlatLinesPipeline(renderEncoder: MTLRenderCommandEncoder) {
+        selectPipeline(renderEncoder: renderEncoder)
+    }
+
+    /// The road ribbons' pipeline, opaque or blended. False when the
+    /// pipeline has none (a sphere pipeline), and the caller draws the
+    /// roads as plain ribbons.
+    @discardableResult
+    func selectFlatRoadPipeline(renderEncoder: MTLRenderCommandEncoder, blended: Bool) -> Bool {
+        let state = blended ? flatRoadBlendedPipelineState : flatRoadOpaquePipelineState
+        guard let state else { return false }
+        renderEncoder.setRenderPipelineState(state)
+        return true
+    }
+
+    /// The flat translucent fills variant (no line fields); falls back to
+    /// the line-fields pipeline when absent.
+    func selectFlatFillsPipeline(renderEncoder: MTLRenderCommandEncoder) {
+        if let flatFillsPipelineState {
+            renderEncoder.setRenderPipelineState(flatFillsPipelineState)
+            return
+        }
+        selectPipeline(renderEncoder: renderEncoder)
+    }
+
+    /// The flat opaque ground variant (no line fields, blending off); falls
+    /// back to the blended pipeline when absent.
+    func selectFlatOpaquePipeline(renderEncoder: MTLRenderCommandEncoder) {
+        if let flatOpaquePipelineState {
+            renderEncoder.setRenderPipelineState(flatOpaquePipelineState)
+            return
+        }
+        selectPipeline(renderEncoder: renderEncoder)
+    }
+
+    /// A flat class raised by its terrain. False when the pipeline has no
+    /// relief variants (a sphere pipeline), and the caller draws flat.
+    @discardableResult
+    func selectFlatReliefPipeline(_ flatClass: FlatClass, renderEncoder: MTLRenderCommandEncoder) -> Bool {
+        guard let state = flatReliefPipelineStates[flatClass] else { return false }
+        renderEncoder.setRenderPipelineState(state)
+        return true
+    }
+
+    /// The opaque fills variant (blending off) for the layered ground;
+    /// falls back to the blended fills variant when absent.
+    func selectSphereOpaqueFillsPipeline(renderEncoder: MTLRenderCommandEncoder,
+                                         morph: Bool) {
+        let state = morph ? sphereMorphOpaqueFillsPipelineState : sphereOpaqueFillsPipelineState
+        if let state {
+            renderEncoder.setRenderPipelineState(state)
+            return
+        }
+        selectSphereClassPipeline(renderEncoder: renderEncoder, linesClass: false, morph: morph)
+    }
+
+    /// The sphere variant for one ground class, on the resting sphere or
+    /// the morph; falls back to the combined morph pipeline on a surface
+    /// that has no variants.
+    func selectSphereClassPipeline(renderEncoder: MTLRenderCommandEncoder,
+                                   linesClass: Bool,
+                                   morph: Bool,
+                                   ribbonPhase: SphereRibbonPhase = .whole) {
+        let state: MTLRenderPipelineState?
+        if morph {
+            switch (linesClass, ribbonPhase) {
+            case (false, _): state = sphereMorphFillsPipelineState
+            case (true, .whole): state = sphereMorphRibbonsPipelineState
+            case (true, .core): state = sphereMorphRibbonCorePipelineState
+            case (true, .feather): state = sphereMorphRibbonFeatherPipelineState
+            }
+        } else {
+            switch (linesClass, ribbonPhase) {
+            case (false, _): state = sphereFillsPipelineState
+            case (true, .whole): state = sphereRibbonsPipelineState
+            case (true, .core): state = sphereRibbonCorePipelineState
+            case (true, .feather): state = sphereRibbonFeatherPipelineState
+            }
+        }
+        if let state {
+            renderEncoder.setRenderPipelineState(state)
+            return
+        }
+        renderEncoder.setRenderPipelineState(pipelineState)
+    }
+}

@@ -30,11 +30,7 @@ final class HelmetAudio {
         starting = true
         startGeneration += 1
         let generation = startGeneration
-        let session = AVAudioSession.sharedInstance()
-        AudioSessionWork.perform {
-            try? session.setCategory(.playback, mode: .voicePrompt,
-                                     options: [.duckOthers, .allowBluetoothA2DP, .allowBluetoothHFP])
-        }
+        AudioSessionOwner.shared.activate(.helmet)
 
         engine.attach(environment)
         engine.attach(player)
@@ -63,13 +59,6 @@ final class HelmetAudio {
         // Async activation keeps the main thread responsive during the first
         // helmet cue; the engine starts as soon as the route is ready.
         Task { @MainActor in
-            if #available(iOS 27.0, *) {
-                _ = try? await session.activate(options: [])
-            } else {
-                AudioSessionWork.perform {
-                    try? AVAudioSession.sharedInstance().setActive(true)
-                }
-            }
             guard generation == self.startGeneration, !self.started else {
                 self.starting = false
                 return
@@ -82,6 +71,15 @@ final class HelmetAudio {
             }
             self.starting = false
         }
+    }
+
+    /// A Bluetooth route change (headset connected, disconnected, reconnected)
+    /// leaves the engine on a dead output. Rebuild it if the rider still wants
+    /// helmet cues.
+    func restartIfEnabled() {
+        guard isEnabled, started else { return }
+        stop()
+        start()
     }
 
     func stop() {

@@ -104,6 +104,10 @@ nonisolated struct RivalResult: Codable, Identifiable, Hashable, Sendable {
 /// Builds and reads `revert://rival?d=…` links.
 nonisolated enum RivalLink {
     static let host = "rival"
+    /// The largest link this app writes is a 200 KB trace; base64 of that plus
+    /// the JSON envelope stays well under this. Reject before decoding so a
+    /// hostile URL cannot force a huge allocation.
+    static let maxEncodedLength = 1_000_000
 
     static func url(for result: RivalResult) -> URL? {
         guard let data = try? JSONEncoder().encode(result), !result.routeKey.isEmpty else { return nil }
@@ -122,7 +126,7 @@ nonisolated enum RivalLink {
         guard url.scheme == "revert", url.host == host else { return nil }
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let token = components.queryItems?.first(where: { $0.name == "d" })?.value,
-              !token.isEmpty else { return nil }
+              !token.isEmpty, token.count <= maxEncodedLength else { return nil }
         var base64 = token
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
@@ -130,8 +134,20 @@ nonisolated enum RivalLink {
         guard let data = Data(base64Encoded: base64),
               let decoded = try? JSONDecoder().decode(RivalResult.self, from: data) else { return nil }
         guard !decoded.routeKey.isEmpty,
+              decoded.rider.count <= 60,
+              decoded.routeName.count <= 120,
               decoded.durationSeconds > 0,
-              decoded.durationSeconds.isFinite else { return nil }
+              decoded.durationSeconds.isFinite,
+              decoded.durationSeconds <= 7 * 86_400,
+              decoded.distanceMeters.isFinite,
+              decoded.distanceMeters >= 0,
+              decoded.distanceMeters <= 2_000_000,
+              decoded.maxSpeedMps.isFinite,
+              decoded.maxSpeedMps >= 0,
+              decoded.maxSpeedMps <= 200,
+              decoded.maxLeanDegrees.isFinite,
+              decoded.maxLeanDegrees >= 0,
+              decoded.maxLeanDegrees <= 90 else { return nil }
         // Do not let a malformed link allocate an unbounded replay.
         if let track = decoded.track, track.count > 200_000 { return nil }
         return decoded

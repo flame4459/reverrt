@@ -40,6 +40,11 @@ struct PulseShellView: View {
 
     var body: some View {
         content
+            .overlay(alignment: .top) {
+                if RevertServices.shared.isUsingTransientStore {
+                    storageWarning
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PulseTabBar(selection: tab) { selected in
                     select(selected)
@@ -134,6 +139,34 @@ struct PulseShellView: View {
                         }
                 }
             }
+    }
+
+    /// Shown when SwiftData could not open the on-disk store. Without this the
+    /// app looks normal while every ride is written to a throwaway container.
+    private var storageWarning: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(MapUI.amber)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Rides can't be saved right now")
+                    .font(.system(.caption, design: .rounded).weight(.bold))
+                    .foregroundStyle(MapUI.ink)
+                Text("The ride store on this iPhone could not be opened. New rides are kept in the recovery journal until storage works again.")
+                    .font(.scaledSystem(size: 10, design: .rounded))
+                    .foregroundStyle(MapUI.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(MapUI.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(MapUI.amber.opacity(0.35), lineWidth: 0.8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
     }
 
     @ViewBuilder

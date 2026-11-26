@@ -111,7 +111,7 @@ struct PulseSafetyView: View {
                 divider
                 PulseToggleRow(
                     title: "Haptic feedback",
-                    subtitle: "Silent handlebar pulse with each alert",
+                    subtitle: "A silent pulse through the bars with each alert",
                     isOn: $haptics
                 )
             }

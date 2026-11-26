@@ -206,9 +206,23 @@ struct RideSafetyTests {
         RideJournal.shared.finish()
     }
 
+    /// A previous run (a crashed ride, or a debug launch) can leave a journal
+    /// behind, including archived ones with too few points to recover. These
+    /// tests assert on the journal their own recorder writes, so start clean.
+    private func clearJournal() {
+        let fm = FileManager.default
+        let directory = URL.applicationSupportDirectory
+            .appending(path: "RevertJournal", directoryHint: .isDirectory)
+        if let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            for file in files { try? fm.removeItem(at: file) }
+        }
+        RideJournal.shared.finish()
+    }
+
     // MARK: Journal lifetime
 
     @Test func suspendKeepsTheJournalForRecovery() {
+        clearJournal()
         let recorder = RideRecorder()
         recorder.start()
         let base = Self.start
@@ -224,6 +238,7 @@ struct RideSafetyTests {
     }
 
     @Test func explicitDiscardStillDeletesTheJournal() {
+        clearJournal()
         let recorder = RideRecorder()
         recorder.start()
         recorder.ingest(Self.fix(lat: 40.7, lon: -73.5, speed: 10, at: Self.start))

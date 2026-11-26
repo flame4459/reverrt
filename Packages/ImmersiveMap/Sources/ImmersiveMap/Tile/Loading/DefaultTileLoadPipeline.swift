@@ -1,0 +1,178 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+import os
+
+final class DefaultTileLoadPipeline: TileLoadPipeline {
+    // nil when the prepared-tile cache is disabled; the pipeline then always parses
+    // from raw bytes and never persists the parsed result.
+    private let preparedTileDiskCaching: PreparedTileDiskCaching?
+    private let tileDownloader: TileDownloader
+    // Which upload of the archive the prepared tiles on disk must be of.
+    // nil when nothing is checked: a caller that wires none.
+    private let archiveVersion: TileArchiveVersion?
+    // The overview of the globe laid into the tiles of the zooms it covers
+    // (`OverviewTileSource`), nil when the setting is off or the package
+    // lacks the archive.
+    private let overviewTileSource: OverviewTileSource?
+    // Where the archive's depth is reported once a session, by the
+    // archive's source revision, nil when nothing is reported.
+    private let archiveDepths: (depths: TileArchiveDepths, sourceRevision: UInt64)?
+    private let archiveDepthCheck = OSAllocatedUnfairLock(initialState: false)
+    private weak var tileRenderStore: TileRenderStore?
+
+    convenience init(tileRenderStore: TileRenderStore,
+                     config: ImmersiveMapSettings,
+                     preparedTileCacheIdentity: PreparedTileCacheIdentity,
+                     geometryTransport: any PreparedTileGeometryTransporting) {
+        self.init(tileRenderStore: tileRenderStore,
+                  preparedTileDiskCaching: config.tiles.cache.preparedTileCacheEnabled
+                      ? PreparedTileDiskCaching(config: config,
+                                                cacheIdentity: preparedTileCacheIdentity,
+                                                geometryTransport: geometryTransport)
+                      : nil,
+                  tileDownloader: TileDownloader(config: config),
+                  archiveVersion: TileArchiveVersion(sourceRevision: preparedTileCacheIdentity.tileSourceRevision,
+                                                     clearsRemembered: config.tiles.cache.clearDiskCachesOnLaunch),
+                  overviewTileSource: config.tiles.overview.isEnabled ? OverviewTileSource.bundled() : nil,
+                  archiveDepths: (.shared, preparedTileCacheIdentity.tileSourceRevision))
+    }
+
+    init(tileRenderStore: TileRenderStore?,
+         preparedTileDiskCaching: PreparedTileDiskCaching?,
+         tileDownloader: TileDownloader,
+         archiveVersion: TileArchiveVersion? = nil,
+         overviewTileSource: OverviewTileSource? = nil,
+         archiveDepths: (depths: TileArchiveDepths, sourceRevision: UInt64)? = nil) {
+        self.archiveVersion = archiveVersion
+        self.overviewTileSource = overviewTileSource
+        self.archiveDepths = archiveDepths
+        self.preparedTileDiskCaching = preparedTileDiskCaching
+        self.tileDownloader = tileDownloader
+        self.tileRenderStore = tileRenderStore
+    }
+
+    var hasPreparedDiskCache: Bool {
+        preparedTileDiskCaching != nil
+    }
+
+    func isPreparedOnDisk(_ tile: Tile) -> Bool {
+        preparedTileDiskCaching?.isPreparedOnDisk(tile) ?? false
+    }
+
+    /// The disk stage asks with no ETag of its own. It then gets only an
+    /// entry of the archive's current upload, as far as that is known
+    /// (`TileArchiveVersion`): an archive overwritten under the same URL
+    /// leaves its old entries behind, and each is parsed again from the
+    /// new archive.
+    func requestPreparedDiskCached(tile: Tile, matchingETag: String?) async -> PreparedTileDiskCacheHit? {
+        startArchiveCheckIfNeeded()
+        startArchiveDepthCheckIfNeeded()
+        let expectedETag = matchingETag ?? archiveVersion?.expectedSourceETag(for: tile)
+        return await preparedTileDiskCaching?.requestPreparedDiskCached(tile: tile, matchingETag: expectedETag)
+    }
+
+    /// Asks the archive for its ETag once a session, off the caller's
+    /// task: a map whose tiles are all on disk downloads nothing, and
+    /// would otherwise never learn that the archive was uploaded again.
+    private func startArchiveCheckIfNeeded() {
+        guard let archiveVersion, archiveVersion.beginSessionCheck() else {
+            return
+        }
+        let tileDownloader = tileDownloader
+        Task.detached(priority: .utility) {
+            do {
+                archiveVersion.observe(archiveETag: try await tileDownloader.archiveETag())
+            } catch {
+                archiveVersion.observeUnreachable()
+            }
+        }
+    }
+
+    /// Reads the archive's depth from its header once a session, off the
+    /// caller's task, and reports it (`TileArchiveDepths`): the map plans by
+    /// the depth it kept from an earlier session, and learns here when the
+    /// archive turns out deeper or shallower. A failure leaves the kept one.
+    private func startArchiveDepthCheckIfNeeded() {
+        guard let archiveDepths,
+              archiveDepthCheck.withLock({ started in
+                  defer { started = true }
+                  return started == false
+              }) else {
+            return
+        }
+        let tileDownloader = tileDownloader
+        Task.detached(priority: .utility) {
+            guard let maximumZoom = try? await tileDownloader.archiveMaximumZoom() else {
+                return
+            }
+            archiveDepths.depths.observe(maximumZoom: maximumZoom, sourceRevision: archiveDepths.sourceRevision)
+        }
+    }
+
+    /// The tile's bytes from the archive, with the overview's layers laid in
+    /// where the overview covers the tile.
+    func download(tile: Tile) async -> TileDownloader.DownloadResult {
+        let result = await networkResult(tile: tile)
+        guard let overviewTileSource,
+              case let .success(data, etag) = result,
+              let overview = await overviewTileSource.tileBytes(tile) else {
+            return result
+        }
+        return .success(OverviewTileSource.merge(mapTile: data, overview: overview), etag: etag)
+    }
+
+    private func networkResult(tile: Tile) async -> TileDownloader.DownloadResult {
+        let result = await tileDownloader.downloadResult(tile: tile)
+        // Every answer says which upload the archive is now, and a request
+        // that did not arrive says the disk is all there is for the moment.
+        switch result {
+        case .success(_, let etag):
+            archiveVersion?.observe(sourceETag: etag)
+        case .failure(.network):
+            archiveVersion?.observeUnreachable()
+        case .failure:
+            break
+        }
+        return result
+    }
+
+    func savePreparedOnDisk(tile: Tile,
+                            preparedTile: PreparedTileCPU,
+                            plan: TileArenaImagePlan?,
+                            sourceETag: String?) async {
+        await preparedTileDiskCaching?.saveOnDisk(tile: tile,
+                                                  preparedTile: preparedTile,
+                                                  plan: plan,
+                                                  sourceETag: sourceETag)
+    }
+
+    func removePreparedFromDisk(tile: Tile) {
+        preparedTileDiskCaching?.removeFromDisk(tile: tile)
+    }
+
+    func prepare(tile: Tile, data: Data) async -> PreparedTileLoadResult? {
+        guard let tileRenderStore else {
+            return nil
+        }
+        return await tileRenderStore.prepareTile(tile: tile, data: data)
+    }
+
+    func materialize(preparedTile: PreparedTileCPU,
+                     plan: TileArenaImagePlan?) async -> PreparedTileMaterializeOutcome {
+        guard let tileRenderStore else {
+            return .allocationOrStoreFailed
+        }
+        let isMaterialized = await tileRenderStore.materializePreparedTile(preparedTile,
+                                                                           plan: plan)
+        return isMaterialized ? .materialized : .allocationOrStoreFailed
+    }
+
+    func materialize(image: PreparedTileArenaImage) async -> PreparedTileMaterializeOutcome {
+        guard let tileRenderStore else {
+            return .allocationOrStoreFailed
+        }
+        return await tileRenderStore.materializeArenaImage(image)
+    }
+}

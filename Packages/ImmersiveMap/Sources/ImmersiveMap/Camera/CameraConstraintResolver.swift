@@ -1,0 +1,107 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+struct CameraConstraints {
+    let bearing: CameraBearingConstraint
+    let pitch: CameraPitchConstraint
+}
+
+struct CameraBearingConstraint {
+    let maximumAbsoluteBearing: Float?
+
+    func apply(to bearing: Float) -> Float {
+        let normalizedBearing = CameraBearingConstraintResolver.normalized(bearing)
+        guard let maximumAbsoluteBearing else {
+            return normalizedBearing
+        }
+
+        let clampedLimit = min(max(maximumAbsoluteBearing, 0), .pi)
+        return min(max(normalizedBearing, -clampedLimit), clampedLimit)
+    }
+}
+
+struct CameraPitchConstraint {
+    let minimumPitch: Float
+    let maximumPitch: Float
+
+    var clampedMaximumPitch: Float {
+        max(maximumPitch, 0)
+    }
+
+    /// The floor never rises above the ceiling, so an inverted range collapses
+    /// to the ceiling instead of deadlocking the camera.
+    var clampedMinimumPitch: Float {
+        min(max(minimumPitch, 0), clampedMaximumPitch)
+    }
+
+    func apply(to pitch: Float) -> Float {
+        min(max(pitch, clampedMinimumPitch), clampedMaximumPitch)
+    }
+}
+
+enum CameraConstraintResolver {
+    static func resolve(cameraState: ImmersiveMapCameraState,
+                        cameraSettings: ImmersiveMapSettings.CameraSettings,
+                        renderSurfaceMode: ViewMode) -> CameraConstraints {
+        CameraConstraints(
+            bearing: CameraBearingConstraintResolver.resolve(cameraState: cameraState,
+                                                             cameraSettings: cameraSettings,
+                                                             renderSurfaceMode: renderSurfaceMode),
+            pitch: CameraPitchConstraintResolver.resolve(cameraState: cameraState,
+                                                         cameraSettings: cameraSettings)
+        )
+    }
+}
+
+enum CameraBearingConstraintResolver {
+    static func resolve(cameraState: ImmersiveMapCameraState,
+                        cameraSettings: ImmersiveMapSettings.CameraSettings,
+                        renderSurfaceMode: ViewMode) -> CameraBearingConstraint {
+        guard renderSurfaceMode == .spherical,
+              let globeBearingLimit = cameraSettings.globeBearingLimit else {
+            return CameraBearingConstraint(maximumAbsoluteBearing: cameraSettings.maximumAbsoluteBearing)
+        }
+
+        return CameraBearingConstraint(
+            maximumAbsoluteBearing: globeMaximumAbsoluteBearing(zoom: cameraState.zoom,
+                                                                limit: globeBearingLimit,
+                                                                maximumAbsoluteBearing: cameraSettings.maximumAbsoluteBearing)
+        )
+    }
+
+    static func globeMaximumAbsoluteBearing(zoom: Double,
+                                            limit: ImmersiveMapSettings.CameraSettings.GlobeBearingLimit,
+                                            maximumAbsoluteBearing: Float?) -> Float {
+        // The configured cap is the widest the globe's bearing window opens; a
+        // cap below the window's floor collapses the window to the cap.
+        let ceiling = min(max(maximumAbsoluteBearing ?? .pi, 0), .pi)
+        let minimumBearing = min(max(limit.minimumAbsoluteBearing, 0), ceiling)
+        let unlockZoom = max(limit.unlockZoom, 0)
+        guard unlockZoom > Double.leastNonzeroMagnitude else {
+            return ceiling
+        }
+
+        let progress = min(max(zoom / unlockZoom, 0), 1)
+        return minimumBearing + (ceiling - minimumBearing) * Float(progress)
+    }
+
+    static func normalized(_ bearing: Float) -> Float {
+        let twoPi = Float.pi * 2
+        var normalized = (bearing + .pi).truncatingRemainder(dividingBy: twoPi)
+        if normalized < 0 {
+            normalized += twoPi
+        }
+        return normalized - .pi
+    }
+}
+
+enum CameraPitchConstraintResolver {
+    /// The same ceiling on both surfaces: the configured maximum plus the
+    /// high-zoom extensions, so a whole-planet view can tilt as far as a
+    /// street view.
+    static func resolve(cameraState: ImmersiveMapCameraState,
+                        cameraSettings: ImmersiveMapSettings.CameraSettings) -> CameraPitchConstraint {
+        CameraPitchConstraint(minimumPitch: cameraSettings.minimumPitch,
+                              maximumPitch: cameraSettings.maximumReachablePitch(at: cameraState.zoom))
+    }
+}

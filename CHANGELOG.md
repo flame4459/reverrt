@@ -3,11 +3,116 @@
 Notable changes to **Revert**, newest first. Dates are ISO-8601.
 
 This is a personal, pre-release community project and nothing has been submitted
-to the App Store. The version in the app's About screen is 1.0; sections below
+to the App Store. The version in the app's About screen is 1.2; sections below
 record what shipped under it. The long-form design
 notes behind the UI work live in [PHASE0](PHASE0_BASELINE.md) →
 [PHASE5](PHASE5_FINAL_POLISH.md), and the feature debate lives in
 [FEATURE_OUTLINE.md](FEATURE_OUTLINE.md).
+
+## [1.2] — 2026-11-26
+
+### Spoken navigation refresh
+
+#### Changed
+
+- One announcement scheduler for loops, sprints and point-to-point: stages are
+  tracked by kind, not rung index, so a speed change no longer skips unspoken
+  distances; a minimum-gap rule prevents bursts.
+- Distances are spoken accurately by TTS; the coarse distance clips are gone
+  from navigation prompts and a missing clip can no longer drop the distance.
+- `Speaker` is priority-aware: safety may interrupt, the interrupted turn is
+  replayed if still relevant, ACE yields, and stale/duplicate prompts are
+  dropped. Explicit "say that again" bypasses dedupe.
+- One audio-session owner: recording is dominant, interruptions and Bluetooth
+  route changes are handled, and a prompt no longer kills ACE listening.
+- Sprint routes keep `.sprint` and one lap on the graph path; finish announces
+  time. Loops announce lap times and completion. Approaching the start line is
+  announced with a distance. Graph-first local reroute for point-to-point;
+  offline multi-stop messaging corrected.
+- Lane advice is kept at the final prompt; approach prompts use the shared
+  distance-first wording; "say that again" works via voice and ACE; ending
+  navigation is spoken.
+
+#### Known limitations
+
+- Physical headset, call, Siri and real-riding validation is still required
+  (`PHYSICAL_DEVICE_TESTS.md`).
+- Two close turns are not merged into a "turn right, then left" sentence.
+
+### Map fit, offline coverage and updates
+
+#### Added
+
+- `RevertMapFit`: real Web-Mercator fit for a viewport (padding, portrait,
+  landscape, identical/invalid coordinates, antimeridian), unit tested.
+- Camera readiness in `RevertMapView`: the initial camera is applied only after
+  the renderer has produced frames, and again on viewport changes.
+- Whole-route offline coverage: `MapRegionStore.coverage(forRoute:)` samples
+  every segment and separates tiles / roads / hazards; the cockpit shows a
+  precise warning instead of a single "online map" chip.
+- Region versions and dataset flags in `installed.json`; `Update` in the
+  region manager when the catalog is newer; a failed update keeps the old file.
+
+#### Known issue
+
+- Overview rendering on the hosted archive draws the route but no basemap below
+  roughly zoom 14 (it renders at 14.5). The corner-report preview therefore
+  stays on SwiftUI `Map` until the engine's low-zoom tile coverage is fixed.
+
+### One map renderer
+
+#### Changed
+
+**The cockpit has one map.** `RideMapKitView` (MKMapView) and the cockpit's
+SwiftUI `Map` fallback are gone, along with the "Map renderer" picker and the
+`map.renderer` setting. `RevertMapView` (ImmersiveMap) now draws the ride map,
+its route ribbon, breadcrumbs, approach line, puck, ghost and hazard pins from
+one `RevertMapScene`. MapKit stays for directions, search and map-item helpers;
+it no longer renders the ride map.
+
+`RevertMapView`'s overview camera is still under repair (tiles need a delayed
+camera push and the fitted zoom is unreliable), so the corner-report preview
+stays on SwiftUI `Map` for now.
+
+#### Removed
+
+`revert/MapKitRenderer.swift`, `revert/ImmersiveMapRenderer.swift` (replaced by
+`revert/RevertMapView.swift`), the cockpit's `NavigationPuck` view, the dead
+`MapConfig.style` and `CockpitCamera.camera(for:)`.
+
+### Offline maps
+
+#### Added
+
+**Offline map regions.** ImmersiveMap is now vendored at
+`Packages/ImmersiveMap` (MIT) instead of fetched from GitHub, so the project
+builds with no network and no upstream surprise. The renderer resolves its tile
+archive per position: a downloaded region that covers the rider first, then a
+bundled starter (`region.pmtiles`), then the hosted stream. **Settings →
+Offline riding data → Offline map regions** lists published regions with sizes,
+checksum-verified downloads with progress, delete, and free-space reporting. The
+cockpit shows an "Online map" chip while streaming and an explicit
+"needs a connection" notice when offline, with a one-tap MapKit fallback.
+
+`Scripts/maps/build-region.sh` cuts a regional PMTiles extract from a larger
+archive, hashes it, and updates `revert/MapRegions.json`; `Scripts/maps/README.md`
+documents hosting, budgets and attribution. Offline A→B routing already exists on
+the cached road graph (`RouteBuilder.direct`), with generated turn steps.
+
+### Cleanup
+
+#### Removed
+
+**CarPlay, Director Mode, the Ride simulator and the handlebar remote.** None of
+them are part of the app anymore. The CarPlay scene, entitlement, coordinator,
+map controller and diagnostics screen are gone; the Director's film pipeline
+(director, overlays, exporter, audio engine and screen) is gone; the simulator
+engine, its HUD, panel, pause markers and simulation flags are gone; the
+handlebar remote input handling and its setting are gone.
+
+Kept and repaired: Organic Maps GPX import, the widget extension and its Live
+Activity, Ride Replay (now labelled **Drone replay**), ride recording, history
+and route guidance.
 
 ## [1.1] — 2026-11-20
 
@@ -16,11 +121,13 @@ notes behind the UI work live in [PHASE0](PHASE0_BASELINE.md) →
 **Ace, the on-device companion.** A spoken ride companion that answers distance,
 fuel, weather/sunset, hazard, ride, bike and home questions, makes the occasional
 dry remark and checks in sparingly. One cockpit chip cycles
-**On → Asked only → Off** (long press for Off) and the handlebar remote mirrors
-it; Settings carries the same control, the address term and a memory reset. Off
+**On → Asked only → Off** (long press for Off); Settings carries the same
+control, the address term, an **Ace speaks** switch and a memory reset. Off
 stops the microphone and leaves navigation prompts untouched. "Hey Ace" is the
 always-waiting wake word (on by default, switchable), long-press Y on the remote
 is hold-to-talk, and a connected headset such as a Cardo is preferred for output.
+Ace speaks on its own `companion.voice` channel, so hazard voice no longer
+silences him.
 Canned and templated lines work offline; free-form conversation is
 availability-gated and falls back silently.
 

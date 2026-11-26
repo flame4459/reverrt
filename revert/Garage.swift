@@ -313,6 +313,17 @@ struct GarageView: View {
         }
         try? context.save()
         syncPrimaryPreferences()
+        // A deleted vehicle must not stay on the widget. Point it at whatever
+        // became primary, or clear it when the garage is empty.
+        if wasPrimary {
+            if let replacement = bikes.first(where: { $0.id != bike.id }) {
+                WidgetBridge.updateBike(name: replacement.displayName,
+                                        odometerKm: replacement.odometerKm,
+                                        kind: replacement.kind)
+            } else {
+                WidgetBridge.clearBike()
+            }
+        }
     }
 
     private func syncPrimaryPreferences() {
@@ -666,7 +677,11 @@ struct BikeEditorView: View {
             context.insert(target)
         }
         try? context.save()
-        WidgetBridge.updateBike(name: target.displayName, odometerKm: target.odometerKm, kind: target.kind)
+        // Only the primary vehicle may overwrite the widget snapshot; editing a
+        // second bike used to replace the widget's name, odometer and kind.
+        if target.isPrimary {
+            WidgetBridge.updateBike(name: target.displayName, odometerKm: target.odometerKm, kind: target.kind)
+        }
         if target.isPrimary || garageBikes.isEmpty {
             VehiclePreferences.sync(primaryKind: target.kind,
                                     avoidTolls: target.avoidTolls,
@@ -921,7 +936,9 @@ struct MaintenanceEditorView: View {
                         bike.lastServiceKm = max(bike.lastServiceKm, odometerKm)
                         bike.odometerKm = max(bike.odometerKm, odometerKm)
                         try? context.save()
-                        WidgetBridge.updateBike(name: bike.displayName, odometerKm: bike.odometerKm, kind: bike.kind)
+                        if bike.isPrimary {
+                            WidgetBridge.updateBike(name: bike.displayName, odometerKm: bike.odometerKm, kind: bike.kind)
+                        }
                         dismiss()
                     }
                 }

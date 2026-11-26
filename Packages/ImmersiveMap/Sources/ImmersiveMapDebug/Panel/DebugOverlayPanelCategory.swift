@@ -1,0 +1,60 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import ImmersiveMap
+import Foundation
+
+/// The tabs along the top of the debug panel: each shows the groups of one
+/// category, and `all` shows every group at once, the way the panel was
+/// before it had tabs, for the debugging that watches two groups together
+/// (the stats while a control is toggled).
+enum DebugOverlayPanelCategory: Int, CaseIterable {
+    case all
+    case stats
+    case labels
+    /// The sun: its direction in the sky.
+    case light
+    /// The shadow map's settings, and the hillshade with the mountains'
+    /// shadows as a group of its own.
+    case shadows
+    /// The occlusion of the sky by the terrain
+    /// (`ImmersiveMapTerrainOcclusion`).
+    case occlusion
+    case sky
+    /// The sun on the globe (`GlobeLightSettings`).
+    case globe
+    /// The air over the flat map: the ground fog's curves and its heights
+    /// on the relief (`GroundFogSettings`).
+    case air
+    case map
+    /// The 3D models of the buildings, from the model archive: their depth
+    /// bias (`ModelArchiveSettings.depthBias`). Nothing else has one.
+    case buildingModels
+    case tiles
+    case relief
+    case export
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .stats: "Stats"
+        case .labels: "Labels"
+        case .light: "Light"
+        case .shadows: "Shadows"
+        case .occlusion: "AO"
+        case .sky: "Sky"
+        case .globe: "Globe"
+        case .air: "Air"
+        case .map: "Map"
+        case .buildingModels: "3D buildings"
+        case .tiles: "Tiles"
+        case .relief: "Relief"
+        case .export: "Export"
+        }
+    }
+
+    /// Whether the panel, on this tab, shows the groups of a category.
+    func shows(_ category: DebugOverlayPanelCategory) -> Bool {
+        self == .all || self == category
+    }
+}

@@ -400,6 +400,21 @@ nonisolated enum Units {
         return "\(Int(mi.rounded())) miles"
     }
 
+    /// A duration the way a navigation voice says it, not `0:04:12`.
+    static func spokenClock(_ seconds: Double) -> String {
+        let total = Int(max(seconds, 0))
+        let hours = total / 3_600
+        let minutes = (total % 3_600) / 60
+        let secs = total % 60
+        if hours > 0 {
+            return "\(hours) hour\(hours == 1 ? "" : "s") \(minutes) minute\(minutes == 1 ? "" : "s")"
+        }
+        if minutes > 0 {
+            return "\(minutes) minute\(minutes == 1 ? "" : "s") \(secs) second\(secs == 1 ? "" : "s")"
+        }
+        return "\(secs) second\(secs == 1 ? "" : "s")"
+    }
+
     static func clock(_ seconds: Double) -> String {
         let s = Int(max(seconds, 0))
         return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)

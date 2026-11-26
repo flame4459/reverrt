@@ -50,6 +50,8 @@ final class AlertManager {
     @ObservationIgnored private var lastDeviceRouteID: UUID?
     @ObservationIgnored private var lastDeviceLap = 1
     @ObservationIgnored private var routeHazards: [Hazard] = []
+    @ObservationIgnored private var lastHazardRoute: PlannedRoute?
+    @ObservationIgnored private var lastHazardProgress: Double = 0
     @ObservationIgnored private var cachedHazards: [Hazard] = []
     @ObservationIgnored private var hazardCacheAt = Date.distantPast
     @ObservationIgnored private var hazardCacheCoordinate: CLLocationCoordinate2D?
@@ -100,6 +102,25 @@ final class AlertManager {
     var pendingTileCount: Int { store.pendingCount + roadStore.pendingCount }
     /// nil until the route-corridor query answers.
     var routeHazardCount: Int? { routeHazardsLoaded ? routeHazards.count : nil }
+
+    /// Nearest device ahead on the route that has not been passed yet, whether
+    /// or not it is being announced right now. The companion's "any hazards?"
+    /// answer needs the corridor, not just the live banner.
+    var upcomingHazard: (kind: HazardKind, meters: Double)? {
+        guard let route = lastHazardRoute, routeHazardsLoaded, !routeHazards.isEmpty else { return nil }
+        var best: (kind: HazardKind, meters: Double)?
+        for hazard in routeHazards {
+            guard let match = RouteCorridor.project(
+                latitude: hazard.lat, longitude: hazard.lon,
+                route: route, near: 0, behind: 0, ahead: route.length,
+                maxLateral: hazard.kind.lateralTolerance
+            ) else { continue }
+            let ahead = match.along - lastHazardProgress
+            guard ahead > 5, ahead <= 1_500 else { continue }
+            if best == nil || ahead < best!.meters { best = (hazard.kind, ahead) }
+        }
+        return best
+    }
 
     @ObservationIgnored private var lastDataLine = Date.distantPast
 
@@ -160,6 +181,8 @@ final class AlertManager {
             activeAlert = nil
             return
         }
+        lastHazardRoute = context.route
+        lastHazardProgress = context.progress
 
         // Keep the on-screen alert tied to route distance, and clear it as
         // soon as the rider has passed the device.

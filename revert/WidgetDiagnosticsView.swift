@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Read-only view of the Dashboard snapshot the CarPlay widget consumes and
+/// Read-only view of the Dashboard snapshot the widget consumes and
 /// the provider's recent timeline/snapshot refreshes. The same data is copied
 /// into the ride transcript, but this makes it inspectable without exporting.
 struct WidgetDiagnosticsView: View {
@@ -69,7 +69,7 @@ struct WidgetDiagnosticsView: View {
                 .font(.scaledSystem(size: 9, weight: .heavy, design: .rounded))
                 .tracking(1.8)
                 .foregroundStyle(MapUI.amber)
-            Text("CarPlay diagnostics")
+            Text("Widget diagnostics")
                 .font(RevertType.display(30, weight: .heavy))
                 .foregroundStyle(MapUI.ink)
             Text("The snapshot the Dashboard widget reads, plus every provider refresh. Ride transcripts also receive these entries as WIDGET-STATE and WIDGET-REFRESH.")
@@ -106,7 +106,7 @@ struct WidgetDiagnosticsView: View {
             row("Remaining / ETA", "\(snapshot.remaining) · \(snapshot.eta)")
             row("Speed / limit", "\(snapshot.speed) · \(snapshot.speedLimit ?? "—")")
             row("Lap", "\(snapshot.lap)/\(snapshot.totalLaps)")
-            row("Hazard / SIM", "\(snapshot.hazard ?? "—") · \(snapshot.isSimulation ? "yes" : "no")")
+            row("Hazard", snapshot.hazard ?? "—")
             row("Progress", String(format: "%.3f", snapshot.progress))
             row("Map card", snapshot.mapImage ?? "—")
             row("Updated", snapshot.updatedAt.formatted(date: .abbreviated, time: .standard))

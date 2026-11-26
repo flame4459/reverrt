@@ -1,0 +1,211 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+import Mvt
+
+/// Reads what a polygon feature contributes to the buildings of a tile:
+/// whether it is extruded at all, how tall, and the
+/// candidate that records it until the whole tile has been read and
+/// `BuildingExtrusionResolver` can tell the outlines from the parts. What
+/// the feature is as a building is the schema reading's answer
+/// (`ImmersiveMapFeatureFacts.building`), and whether it rises is the
+/// style's (`FeatureStyle.extrusion`); this reader never looks at a tag. The
+/// footprint's ground fill is not this reader's either: the ground reader
+/// draws it whether or not the building rises.
+///
+/// Stateless across tiles, so one value serves every parse of a map.
+struct BuildingFeatureReader {
+    /// What a building layer says about its parts before any feature is
+    /// read: the ids of the buildings that have parts, and the footprints
+    /// of the parts, so an outline that repeats a part is not extruded twice.
+    struct PartInfo {
+        let partIds: Set<UInt64>
+        let footprintSignatures: Set<BuildingFootprintSignature>
+
+        static let none = PartInfo(partIds: [], footprintSignatures: [])
+    }
+
+    /// A feature's extrusion, decided once for all of its polygons.
+    struct Extrusion {
+        let buildingId: UInt64
+        let isPart: Bool
+        let heights: BuildingExtrusionHeights
+    }
+
+    private let minimumSourceZoom: Int
+    /// `TileParseOptions.buildingDeepestSourceZoom`.
+    private let deepestSourceZoom: Int?
+    private let tileExtent = TileCoordinateSpace.tileExtentDouble
+
+    init(options: TileParseOptions) {
+        self.minimumSourceZoom = options.buildingMinimumSourceZoom
+        self.deepestSourceZoom = options.buildingDeepestSourceZoom
+    }
+
+    /// Whether a tile of `zoom` ships its buildings merged into groups
+    /// (`TileParseOptions.buildingDeepestSourceZoom`).
+    private func shipsMergedBuildings(tileZoom zoom: Int) -> Bool {
+        deepestSourceZoom.map { zoom < $0 } ?? false
+    }
+
+    /// One pass over a layer collecting both the part identifiers and the
+    /// part footprint signatures of its buildings, so an outline that repeats
+    /// a part is not extruded twice. A layer with no buildings has no parts.
+    func partInfo(geometry: TileLayerGeometry, featureFacts: [ImmersiveMapFeatureFacts]) -> PartInfo {
+        guard featureFacts.contains(where: { $0.building != nil }) else { return .none }
+        var partIds = Set<UInt64>()
+        var signatures = Set<BuildingFootprintSignature>()
+        for (featureIndex, feature) in geometry.layer.features.enumerated() {
+            guard let building = featureFacts[featureIndex].building, building.isPart else { continue }
+            partIds.insert(building.buildingIdentity ?? feature.id)
+            let polygons = geometry.polygons(of: feature)
+            for polygon in polygons {
+                if let signature = BuildingFootprintSignature(polygon: polygon) {
+                    signatures.insert(signature)
+                }
+            }
+        }
+        return PartInfo(partIds: partIds, footprintSignatures: signatures)
+    }
+
+    /// Whether and how the feature is extruded, nil when it stays a flat
+    /// ground fill: the style does not raise it, the schema reading did not
+    /// find it to be a building or says it is hidden, extrusion is off in
+    /// the settings, the tile is coarser than the building grid, or the
+    /// footprint repeats a part of its own building, which on a tile of
+    /// merged buildings is read off the footprints instead
+    /// (`TileParseOptions.buildingDeepestSourceZoom`). The extrusion flag is
+    /// prepared-cache identity, so toggling it re-parses instead of serving
+    /// the other shape from disk.
+    func extrusion(feature: MvtDecodedFeature,
+                   facts: ImmersiveMapFeatureFacts,
+                   style: ExtrusionStyle,
+                   polygons: MultiPolygon,
+                   partInfo: PartInfo,
+                   tile: Tile) -> Extrusion? {
+        guard tile.z >= minimumSourceZoom,
+              let building = facts.building,
+              building.isHidden == false else {
+            return nil
+        }
+        let buildingId = building.buildingIdentity ?? feature.id
+        // A merged group's id is one member's: the rules by id would lay
+        // the whole group flat for that member's parts. Each polygon then
+        // stands, and the resolver sorts an outline from its parts by
+        // their footprints.
+        let isMerged = shipsMergedBuildings(tileZoom: tile.z)
+        let hasParts = isMerged == false && partInfo.partIds.contains(buildingId)
+        // The footprint signature's canonical rotation is O(n^2) in ring
+        // vertices; only building-part dedup needs it. Skip it entirely when
+        // there are no part signatures to match (always the case for
+        // non-building layers), so large landcover/water polygons don't pay
+        // the quadratic cost. Result is unchanged: an empty set never matches.
+        let matchesPartFootprint = isMerged == false
+            && building.isPart == false
+            && partInfo.footprintSignatures.isEmpty == false
+            && polygons.contains { polygon in
+                guard let signature = BuildingFootprintSignature(polygon: polygon) else {
+                    return false
+                }
+                return partInfo.footprintSignatures.contains(signature)
+            }
+        guard matchesPartFootprint == false,
+              (hasParts && building.isPart == false) == false,
+              let heights = extrusionHeights(building: building, tileZoom: tile.z, style: style) else {
+            return nil
+        }
+        return Extrusion(buildingId: buildingId, isPart: building.isPart, heights: heights)
+    }
+
+    /// The candidate for one polygon of an extruded feature, nil for a
+    /// polygon with no height or no usable footprint. The extrusion path's
+    /// ONE entry into render space: the candidate's rings all flip here.
+    /// `quarter` is the quarter of the tile `parsedGeometry` was cut to,
+    /// nil for a tile kept whole (`TileParseOptions.keepsQuarters`).
+    func candidate(polygon: Polygon,
+                   parsedGeometry: ParsePolygon.ParsedGeometry,
+                   styleKey: UInt8,
+                   extrusion: Extrusion,
+                   quarter: Int? = nil) -> BuildingExtrusionCandidate? {
+        let heights = extrusion.heights
+        guard heights.top > heights.base,
+              let footprintSignature = BuildingFootprintSignature(polygon: polygon) else {
+            return nil
+        }
+        return BuildingExtrusionCandidate(styleKey: styleKey,
+                                          buildingId: extrusion.buildingId,
+                                          isPart: extrusion.isPart,
+                                          footprintSignature: footprintSignature,
+                                          clippedExterior: TileCoordinateSpace.renderPoints(parsedGeometry.clipped.exterior),
+                                          clippedInteriors: parsedGeometry.clipped.interiors.map(TileCoordinateSpace.renderPoints),
+                                          roof: parsedGeometry.parsedPolygon,
+                                          baseHeight: heights.base,
+                                          topHeight: heights.top,
+                                          edgeRadius: heights.edgeRadius,
+                                          quarter: quarter)
+    }
+
+    /// After the whole tile is read: resolves the candidates against each
+    /// other and builds a mesh for each survivor, marked with its
+    /// building's id. Returns the survivors, the volumes the tile draws.
+    /// The pieces of a tile kept by quarters are resolved quarter by
+    /// quarter: the pieces of one footprint share its id, its signature
+    /// and its heights, and would otherwise go as one another's
+    /// duplicates.
+    @discardableResult
+    func appendExtrudedMeshes(resolving candidates: [BuildingExtrusionCandidate],
+                              into result: inout ReadingStageResult) -> [BuildingExtrusionCandidate] {
+        let resolved: [BuildingExtrusionCandidate]
+        if candidates.contains(where: { $0.quarter != nil }) {
+            resolved = (0..<TileQuarters.count).flatMap { quarter in
+                BuildingExtrusionResolver.resolveExterior(candidates.filter { $0.quarter == quarter })
+            }
+        } else {
+            resolved = BuildingExtrusionResolver.resolveExterior(candidates)
+        }
+        for candidate in resolved {
+            if var extrudedMesh = BuildingExtrusionMeshBuilder.build(clippedExterior: candidate.clippedExterior,
+                                                                     clippedInteriors: candidate.clippedInteriors,
+                                                                     roof: candidate.roof,
+                                                                     baseHeight: candidate.baseHeight,
+                                                                     topHeight: candidate.topHeight,
+                                                                     edgeRadius: candidate.edgeRadius,
+                                                                     tileExtent: Float(tileExtent),
+                                                                     quarter: candidate.quarter) {
+                extrudedMesh.buildingID = candidate.buildingId
+                extrudedMesh.quarter = candidate.quarter
+                result.extrudedByStyle[candidate.styleKey, default: []].append(extrudedMesh)
+            }
+        }
+        return resolved
+    }
+
+    /// The building's heights in tile units at the tile's zoom, from the
+    /// schema reading or the style's fallback height; nil when nothing says
+    /// how tall it is.
+    func extrusionHeights(building: ImmersiveMapBuildingExtrusion,
+                          tileZoom: Int,
+                          style: ExtrusionStyle) -> BuildingExtrusionHeights? {
+        let fallbackHeight = style.fallbackHeight
+        if building.heightMetres == nil && building.baseHeightMetres == nil {
+            guard fallbackHeight > 0 else { return nil }
+        }
+
+        let resolvedHeight = building.heightMetres ?? fallbackHeight
+        guard resolvedHeight > 0 else { return nil }
+        let resolvedMinHeight = building.baseHeightMetres ?? 0
+
+        let zoomDelta = tileZoom - style.anchorZoom
+        let zoomScale = powf(2.0, Float(zoomDelta))
+        let scaledHeight = resolvedHeight * style.heightScale * zoomScale
+        let scaledMinHeight = resolvedMinHeight * style.heightScale * zoomScale
+
+        let base = max(0, min(scaledMinHeight, scaledHeight))
+        let top = max(scaledHeight, base)
+        // The radius in the units the heights take, which are the
+        // footprint's: metres scaled as a height is.
+        let edgeRadius = max(0, style.edgeRadius) * style.heightScale * zoomScale
+        return BuildingExtrusionHeights(base: base, top: top, edgeRadius: edgeRadius)
+    }
+}

@@ -1,10 +1,11 @@
 import SwiftUI
+import AVFoundation
 import UserNotifications
 import SwiftData
 
 @main
 struct RevertApp: App {
-    // The same navigation session is used by the CarPlay scene, so a ride
+    // The same navigation session is shared with the widgets, so a ride
     // started on either screen continues on the other.
     @State private var nav = RevertServices.shared.navigation
     @State private var directionsPlanner = RoutePlanner()
@@ -17,6 +18,24 @@ struct RevertApp: App {
         // Install before anything else so an early SwiftUI or SwiftData crash
         // is still written to the debug folder.
         CrashReporter.install()
+        AudioSessionOwner.shared.onInterruptionBegan = {
+            Speaker.shared.handleInterruptionBegan()
+        }
+        AudioSessionOwner.shared.onInterruptionEnded = { resume in
+            Speaker.shared.handleInterruptionEnded(resume: resume)
+            if resume { HelmetAudio.shared.restartIfEnabled() }
+        }
+        AudioSessionOwner.shared.onRouteChanged = { reason in
+            AudioRouteMonitor.shared.refresh()
+            switch reason {
+            case .oldDeviceUnavailable, .routeConfigurationChange:
+                HelmetAudio.shared.stop()
+            case .newDeviceAvailable:
+                HelmetAudio.shared.restartIfEnabled()
+            default:
+                break
+            }
+        }
         #if DEBUG
         SelfCheck.run()
         #endif
@@ -143,8 +162,6 @@ struct RevertApp: App {
                     OfflineView()
                 }
                 .environment(nav)
-            } else if DebugScreens.isCarPlayMap {
-                DebugCarPlayMapRoot()
             } else if DebugScreens.isDebugReports {
                 NavigationStack {
                     DebugReportsView()
@@ -165,8 +182,6 @@ struct RevertApp: App {
                     .environment(nav)
             } else if DebugScreens.isChaseReplay {
                 RideChaseReplayView(ride: DebugScreens.sampleRide())
-            } else if DebugScreens.isDirectorReplay {
-                RideDirectorReplayView(ride: DebugScreens.sampleRide())
             } else if DebugScreens.isRide {
                 RideView()
                     .environment(nav)

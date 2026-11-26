@@ -6,7 +6,8 @@ struct DirectionsFuelCard: View {
     let route: PlannedRoute
     let onAddStop: (CLLocationCoordinate2D) -> Void
 
-    @AppStorage("fuel.rangeKm") private var rangeKm = 260.0
+    /// Fallback when no garage vehicle knows its range.
+    private let rangeKm = 260.0
     @AppStorage("fuel.tankFraction") private var tankFraction = 0.8
     @Query(sort: \Bike.createdAt, order: .reverse) private var garageBikes: [Bike]
     @State private var plan: FuelPlan?

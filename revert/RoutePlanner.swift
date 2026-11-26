@@ -453,7 +453,9 @@ final class RoutePlanner {
         if via.isEmpty, kind == .sprint || preference == .sporty {
             if let local = await localDirections(from: start, to: destination,
                                                  surface: surface, preference: preference) {
-                results = [local]
+                // The graph answers with a directions route; the sprint's
+                // identity and one-lap semantics are metadata, not geometry.
+                results = [Self.applying(routeKind: kind, to: local)]
                 phase = .done
                 await attachElevation(to: local.id, prefersPasses: false)
                 return
@@ -563,6 +565,16 @@ final class RoutePlanner {
         }
     }
 
+    /// Applies the navigation type a planner asked for to a route produced by
+    /// a different source. Geometry, steps and distances are untouched.
+    nonisolated static func applying(routeKind kind: RouteKind,
+                                     to route: PlannedRoute) -> PlannedRoute {
+        var result = route
+        result.kind = kind
+        if kind != .directions { result.laps = 1 }
+        return result
+    }
+
     /// Turns a transport error into something the rider can act on. "Check your
     /// connection" for a DNS failure and for a captive portal are different
     /// problems; saying the same sentence for both is how a bug report becomes
@@ -573,7 +585,7 @@ final class RoutePlanner {
         }
         switch urlError.code {
         case .notConnectedToInternet, .networkConnectionLost:
-            return "You're offline. Reconnect and try again — areas you've already downloaded still plan."
+            return "You're offline. Reconnect to plan this route; multi-stop routes need a connection."
         case .timedOut:
             return "The route service didn't answer in time. Try again, or plan a smaller area."
         case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost:

@@ -6,7 +6,6 @@ struct RideDebugView: View {
     @AppStorage("debug.rideLogging") private var enabled = true
     @State private var entries: [RideDebug.Entry] = []
     @State private var reportCount = 0
-    @State private var showingSimulator = false
 
     var body: some View {
         List {
@@ -58,7 +57,7 @@ struct RideDebugView: View {
                             .frame(width: 30, height: 30)
                             .background(MapUI.amber.opacity(0.10), in: Circle())
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("CarPlay diagnostics")
+                            Text("Widget diagnostics")
                                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
                                 .foregroundStyle(MapUI.ink)
                             Text("Widget snapshot and provider refresh log")
@@ -72,40 +71,9 @@ struct RideDebugView: View {
             } header: {
                 Text("Widget")
             } footer: {
-                Text("Inspect the Dashboard snapshot the CarPlay widget reads and the latest WidgetKit timeline/snapshot refreshes.")
+                Text("Inspect the Dashboard snapshot the widget reads and the latest WidgetKit timeline/snapshot refreshes.")
             }
 
-            Section {
-                Button {
-                    RevertHaptics.tap()
-                    showingSimulator = true
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.scaledSystem(size: 14, weight: .bold))
-                            .foregroundStyle(MapUI.cyan)
-                            .frame(width: 30, height: 30)
-                            .background(MapUI.cyan.opacity(0.10), in: Circle())
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Route simulator")
-                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                .foregroundStyle(MapUI.ink)
-                            Text("Drive the active route without leaving home")
-                                .font(.system(.caption, design: .rounded))
-                                .foregroundStyle(MapUI.secondaryInk)
-                        }
-                        Spacer(minLength: 4)
-                        Image(systemName: "chevron.right")
-                            .font(.scaledSystem(size: 10, weight: .bold))
-                            .foregroundStyle(MapUI.textTertiary)
-                    }
-                    .padding(.vertical, 2)
-                }
-            } header: {
-                Text("Simulator")
-            } footer: {
-                Text("Start navigation first, then move the app's location along the route at 1×–10×. Simulated transcripts and reports are marked SIMULATION.")
-            }
 
             Section {
                 if entries.isEmpty {
@@ -157,9 +125,6 @@ struct RideDebugView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingSimulator) {
-            RouteSimulatorView(holdAtStart: 3.4)
-        }
         .onAppear(perform: reload)
     }
 
@@ -176,15 +141,6 @@ struct RideDebugView: View {
                     .foregroundStyle(MapUI.textTertiary)
             }
             HStack(spacing: 5) {
-                if entry.isSimulation {
-                    Text("SIM")
-                        .font(.scaledSystem(size: 7, weight: .heavy, design: .rounded))
-                        .tracking(0.8)
-                        .foregroundStyle(MapUI.amber)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(MapUI.amber.opacity(0.12), in: Capsule())
-                }
                 Text(entry.routeName ?? "Free ride")
                     .font(.system(.caption, design: .rounded))
                     .foregroundStyle(MapUI.secondaryInk)

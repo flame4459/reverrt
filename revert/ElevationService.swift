@@ -143,8 +143,10 @@ nonisolated enum ElevationService {
     }
 
     private static func fetch(_ coordinates: [CLLocationCoordinate2D]) async -> [Double]? {
-        let latitudes = coordinates.map { String(format: "%.6f", $0.latitude) }.joined(separator: ",")
-        let longitudes = coordinates.map { String(format: "%.6f", $0.longitude) }.joined(separator: ",")
+        // Send the same ~11 m precision the cache key uses: enough for an
+        // elevation answer, less precise than a recorded track.
+        let latitudes = coordinates.map { String(format: "%.4f", $0.latitude) }.joined(separator: ",")
+        let longitudes = coordinates.map { String(format: "%.4f", $0.longitude) }.joined(separator: ",")
         guard var components = URLComponents(string: "https://api.open-meteo.com/v1/elevation") else { return nil }
         components.queryItems = [
             URLQueryItem(name: "latitude", value: latitudes),

@@ -1,0 +1,244 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+import MetalKit
+
+/// Thread-safe (`@unchecked Sendable`): references are assigned during wiring
+/// before loads start, `workingSet` is internally synchronized and mutated
+/// only through main-actor hops.
+final class TileRenderStore: @unchecked Sendable {
+    struct TileRequestResult {
+        let readyTilesCount: Int
+        let requestedTilesCount: Int
+    }
+
+    private var mapNeedsTile: ImmersiveMapNeedsTile?
+    private var workingSet: TileWorkingSetStore!
+    private let preparedDataBuilder: TilePreparedDataBuilder
+    private let metalTileFactory: MetalTileFactory
+    private let tileTraceRecorder: TileTraceRecorder
+
+    weak var eventSink: RenderFrameEventSink?
+
+    init(
+        styleRuntime: MapStyleRuntime,
+        metalDevice: MTLDevice,
+        textRenderer: TextRenderer,
+        config: ImmersiveMapSettings,
+        tileTraceRecorder: TileTraceRecorder,
+        tileLoadingStatusReporter: TileLoadingStatusReporter?
+    ) {
+        self.tileTraceRecorder = tileTraceRecorder
+        let parseOptions = TileParseOptions(settings: config)
+        let preparedTileCacheIdentity = PreparedTileCacheIdentity(
+            preparedFormatVersion: PreparedTileDiskCaching.preparedFormatVersion,
+            styleRevision: styleRuntime.preparedTileStyleRevision,
+            tileSourceRevision: PreparedTileCacheIdentity.tileSourceRevision(for: config.tiles.network),
+            textRevision: textRenderer.preparedTileTextRevision,
+            labelLanguage: config.labels.language,
+            labelFallbackPolicy: config.labels.fallbackPolicy,
+            capitalMaximumZoom: UInt32(max(0, config.labels.settlementVisibility.capitalMaximumZoom)),
+            cityMaximumZoom: UInt32(max(0, config.labels.settlementVisibility.cityMaximumZoom)),
+            smallSettlementMaximumZoom: UInt32(max(0, config.labels.settlementVisibility.smallSettlementMaximumZoom)),
+            landmarkMinimumZoom: UInt32(max(0, config.labels.landmarks.minimumZoom)),
+            addTestBorders: config.tiles.parsing.addTestBorders,
+            labelsEnabled: config.labels.isEnabled,
+            groundFlatteningFromTileZoom: parseOptions.groundFlatteningFromTileZoom,
+            groundFlatteningGrid: parseOptions.groundFlatteningGrid,
+            groundFlatteningGridByTileZoomKey: parseOptions.groundFlatteningGridByTileZoomKey,
+            groundReliefEnabled: parseOptions.groundReliefEnabled,
+            buildingMinimumSourceZoom: parseOptions.buildingMinimumSourceZoom,
+            buildingDeepestSourceZoom: parseOptions.buildingDeepestSourceZoom,
+            overviewTilesEnabled: config.tiles.overview.isEnabled,
+            treeMinimumSourceZoom: parseOptions.treeMinimumSourceZoom,
+            treeMaximumPerTile: parseOptions.treeMaximumPerTile
+        )
+        let labelDecisions = TileLabelDecisions(style: styleRuntime.style,
+                                                glyphCoverage: textRenderer.glyphCoverage,
+                                                language: config.labels.language,
+                                                fallbackPolicy: config.labels.fallbackPolicy)
+        let tileParser = TileMvtParser(mapStyle: styleRuntime,
+                                       labelDecisions: labelDecisions,
+                                       options: parseOptions)
+        let textLabelsBuilder = TileTextLabelsBuilder(textRenderer: textRenderer)
+        let roadLabelsBuilder = TileRoadLabelsBuilder(textRenderer: textRenderer)
+        self.preparedDataBuilder = TilePreparedDataBuilder(tileParser: tileParser,
+                                                           textLabelsBuilder: textLabelsBuilder,
+                                                           roadLabelsBuilder: roadLabelsBuilder,
+                                                           surfaceLabelsBuilder: TileSurfaceLabelsBuilder(textRenderer: textRenderer))
+        self.metalTileFactory = MetalTileFactory(metalDevice: metalDevice)
+        workingSet = TileWorkingSetStore(tileTraceRecorder: tileTraceRecorder)
+        // The factory owns the MTLIO capability decision: the transport that
+        // writes file entries is selected only when the queue that loads them
+        // actually exists, so a queue-creation failure degrades to inline
+        // entries instead of a cache no hit can read.
+        let geometryTransport: any PreparedTileGeometryTransporting =
+            metalTileFactory.loadsFileBlobs
+                ? MTLIOPreparedTileGeometryTransport(
+                    compressionEnabled: config.tiles.cache.preparedDiskCompressionEnabled)
+                : InlinePreparedTileGeometryTransport()
+        mapNeedsTile = ImmersiveMapNeedsTile(tileRenderStore: self,
+                                             config: config,
+                                             preparedTileCacheIdentity: preparedTileCacheIdentity,
+                                             geometryTransport: geometryTransport,
+                                             tileTraceRecorder: tileTraceRecorder,
+                                             tileLoadingStatusReporter: tileLoadingStatusReporter)
+        // Backoff-window expiry wakes the on-demand renderer: the frame reruns
+        // requestTiles and retries the failed tiles. Without this, a hole left
+        // by a load failure hangs until the next camera gesture.
+        mapNeedsTile!.onFrameNeeded = { [weak self] in
+            self?.eventSink?.invalidate(.tileRetryDue)
+        }
+    }
+    
+    func getMetalTile(tile: Tile) -> MetalTile? {
+        return workingSet.tile(forKey: tile)
+    }
+
+    // Working-set content version: changes on insert and release.
+    // Together with coverageVersion it forms the demand pipeline's dirty-gate key.
+    var cacheContentVersion: UInt64 {
+        workingSet.contentVersion
+    }
+
+    /// Whether the tile is resident in the working set, GPU buffers and all.
+    func isResident(_ tile: Tile) -> Bool {
+        workingSet.contains(tile)
+    }
+
+    /// Every resident tile, the stand-ins included.
+    func residentTiles() -> [Tile: MetalTile] {
+        workingSet.residentTiles()
+    }
+
+    /// `shown` is what the last frame's placements drew: kept resident
+    /// while the planner keeps showing it (`TileWorkingSetStore`).
+    func requestTiles(_ tiles: [Tile], shown: Set<Tile> = [], frameIndex: UInt64? = nil) -> TileRequestResult {
+        workingSet.updateDemandedTiles(tiles, shown: shown)
+        var request: [Tile] = []
+        var readyTilesCount = 0
+        for tile in tiles {
+            let metalTile = getMetalTile(tile: tile)
+
+            // No ready tile to display; request it, load from disk or network
+            // Also parse it and then store it in the working set
+            if metalTile == nil {
+                request.append(tile)
+            } else {
+                readyTilesCount += 1
+            }
+
+        }
+        
+        
+        // Send all missing tiles for loading
+        mapNeedsTile!.request(tiles: request)
+        tileTraceRecorder.record(.tileStoreRequest(frameIndex: frameIndex,
+                                                   demanded: tiles.count,
+                                                   ready: readyTilesCount,
+                                                   requested: request.count))
+
+        return TileRequestResult(readyTilesCount: readyTilesCount,
+                                 requestedTilesCount: request.count)
+    }
+
+    func prepareTile(tile: Tile, data: Data) async -> PreparedTileLoadResult? {
+        tileTraceRecorder.record(.tilePrepareStart(tile))
+        do {
+            let result = try preparedDataBuilder.build(tile: tile, data: data)
+            tileTraceRecorder.record(.tilePrepareSuccess(tile, layerTimings: result.parseLayerTimings))
+            return result
+        } catch {
+            #if DEBUG
+            print("[WARN] Failed to parse tile \(tile): \(error)")
+            #endif
+            tileTraceRecorder.record(.tilePrepareFailed(tile, error: error))
+            return nil
+        }
+    }
+
+    /// `plan` is the tile's arena plan when the caller already built one
+    /// (the loader shares it with the disk save so the layout work runs once).
+    func materializePreparedTile(_ preparedTile: PreparedTileCPU,
+                                 plan: TileArenaImagePlan? = nil) async -> Bool {
+        tileTraceRecorder.record(.tileMaterializeStart(preparedTile.tile))
+        guard let metalTile = metalTileFactory.makeTile(from: preparedTile, plan: plan) else {
+            // Backing allocation failed (memory pressure): report a
+            // materialize failure so the loader's retry path owns the tile
+            // instead of the cache holding a permanently blank one.
+            #if DEBUG
+            print("[WARN] Failed to materialize tile \(preparedTile.tile): the arena allocation failed")
+            #endif
+            tileTraceRecorder.record(.tileMaterializeFailed(preparedTile.tile))
+            return false
+        }
+
+        await publishMaterializedTile(metalTile, forKey: preparedTile.tile)
+        tileTraceRecorder.record(.tileMaterializeSuccess(preparedTile.tile))
+        return true
+    }
+
+    /// The arena-image sibling of `materializePreparedTile`: a disk hit is
+    /// blob bytes plus a span table, so the factory copies (or MTLIO-loads)
+    /// instead of rebuilding buffers from decoded arrays.
+    func materializeArenaImage(_ image: PreparedTileArenaImage) async -> PreparedTileMaterializeOutcome {
+        tileTraceRecorder.record(.tileMaterializeStart(image.tile))
+        let result = await metalTileFactory.makeTile(fromImage: image)
+        let metalTile: MetalTile
+        switch result {
+        case .tile(let tile):
+            metalTile = tile
+        case .allocationFailed:
+            tileTraceRecorder.record(.tileMaterializeFailed(image.tile))
+            return .allocationOrStoreFailed
+        case .imageUnreadable:
+            tileTraceRecorder.record(.tileMaterializeFailed(image.tile))
+            return .imageUnreadable
+        }
+
+        await publishMaterializedTile(metalTile, forKey: image.tile)
+        tileTraceRecorder.record(.tileMaterializeSuccess(image.tile))
+        return .materialized
+    }
+
+    /// Shared tail of both materialize paths: stores the tile and invalidates
+    /// a frame so the on-demand renderer draws it.
+    private func publishMaterializedTile(_ metalTile: MetalTile,
+                                         forKey key: Tile) async {
+        await MainActor.run {
+            self.workingSet.insert(metalTile, forKey: key)
+            eventSink?.invalidate(.tileAvailable)
+        }
+    }
+
+    /// Stops the tile loader when the owning engine is being discarded
+    /// (renderer recreation, view-reuse pool drop, export teardown). Without
+    /// this the orphaned loader keeps draining its queue against a dead store,
+    /// and dead-store materialize failures masquerade as corruption and delete
+    /// valid prepared-disk entries.
+    func cancelLoading() {
+        mapNeedsTile?.cancelAll()
+    }
+
+    func parseTile(tile: Tile, data: Data) async -> Bool {
+        guard let result = await prepareTile(tile: tile, data: data) else {
+            return false
+        }
+        return await materializePreparedTile(result.preparedTile)
+    }
+
+    func handleMemoryWarning() {
+        mapNeedsTile?.cancelAll()
+        // The demanded tiles stay resident, so the map does not go blank and
+        // does not reload the screen; only the off-screen residue (the world
+        // cover included) is handed back, to warm up again from the prepared
+        // disk cache.
+        workingSet.releaseUndemandedTiles()
+    }
+
+    func evict() {
+        mapNeedsTile?.cancelAll()
+        workingSet.removeAll()
+    }
+}

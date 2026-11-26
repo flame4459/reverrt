@@ -1,0 +1,1270 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+struct PreparedTileCacheIdentity {
+    let preparedFormatVersion: UInt32
+    let styleRevision: UInt32
+    let tileSourceRevision: UInt64
+    let textRevision: UInt32
+    let labelLanguage: ImmersiveMapSettings.LabelLanguage
+    let labelFallbackPolicy: ImmersiveMapSettings.LabelFallbackPolicy
+    let capitalMaximumZoom: UInt32
+    let cityMaximumZoom: UInt32
+    let smallSettlementMaximumZoom: UInt32
+    let landmarkMinimumZoom: UInt32
+    let addTestBorders: Bool
+    /// With labels off the parser bakes no text at all (no place names, no
+    /// points of interest, no road names), so the switch
+    /// is identity: a tile prepared without labels must not answer a map
+    /// that wants them, and vice versa.
+    let labelsEnabled: Bool
+    /// The flattened ground's zoom and grid (`TileParseOptions`): a tile
+    /// flattened, or on another grid, is another tile.
+    var groundFlatteningFromTileZoom: Int? = ImmersiveMapSettings.default.tiles.resolvedGroundFlatteningFromTileZoom
+    var groundFlatteningGrid: Int = ImmersiveMapSettings.TileSettings.GroundFlatteningSettings().grid
+    /// The grids by zoom over `groundFlatteningGrid`
+    /// (`TileParseOptions.groundFlatteningGridByTileZoomKey`), empty
+    /// without any.
+    var groundFlatteningGridByTileZoomKey: String = ""
+    /// Whether the roads and the lines of a flattened tile take a vertex at
+    /// every grid crossing, for the ground relief (`TileParseOptions`).
+    var groundReliefEnabled: Bool = false
+    /// The coarsest tile zoom whose buildings are extruded
+    /// (`TileParseOptions.buildingMinimumSourceZoom`): a tile prepared
+    /// without its buildings' walls must not answer a map that draws them,
+    /// and vice versa.
+    var buildingMinimumSourceZoom: Int = BuildingCoveragePlanner.minimumSourceZoom
+    /// The zoom below which the buildings ship merged
+    /// (`TileParseOptions.buildingDeepestSourceZoom`): the parts rules
+    /// read them otherwise there.
+    var buildingDeepestSourceZoom: Int?
+    /// Whether the overview of the globe is laid into the tiles of the
+    /// zooms it covers (`OverviewTileSource`,
+    /// `TileSettings.OverviewSettings`): a tile prepared with its biomes
+    /// must not answer a map that wants the source's land cover, and vice
+    /// versa.
+    var overviewTilesEnabled: Bool = true
+    /// The coarsest tile zoom that stands trees and the most a tile keeps
+    /// (`TileParseOptions.treeMinimumSourceZoom`, `treeMaximumPerTile`):
+    /// a tile prepared without its trees must not answer a map that draws
+    /// them, and vice versa.
+    var treeMinimumSourceZoom: Int?
+    var treeMaximumPerTile: Int = 0
+    var namespaceComponent: String {
+        return "s\(styleRevision)-u\(String(tileSourceRevision, radix: 16))-t\(textRevision)-l\(labelLanguage.preparedTileCacheNamespaceKey)-f\(labelFallbackPolicy.rawValue)-c\(capitalMaximumZoom)-y\(cityMaximumZoom)-m\(smallSettlementMaximumZoom)-k\(landmarkMinimumZoom)-b\(addTestBorders ? 1 : 0)-n\(labelsEnabled ? 1 : 0)-g\(groundFlatteningFromTileZoom ?? -1)x\(groundFlatteningGrid)\(groundFlatteningGridByTileZoomKey.isEmpty ? "" : "[" + groundFlatteningGridByTileZoomKey + "]")\(groundReliefEnabled ? "r" : "")-e\(buildingMinimumSourceZoom)\(buildingDeepestSourceZoom.map { "m\($0)" } ?? "")-o\(overviewTilesEnabled ? 1 : 0)-w\(treeMinimumSourceZoom ?? -1)x\(treeMaximumPerTile)"
+    }
+
+    static func tileSourceRevision(for network: ImmersiveMapSettings.TileSettings.NetworkSettings) -> UInt64 {
+        var hasher = StableFNV1aHasher()
+        // The archive URL is the identity, hashed whole (a key embedded in
+        // its query included). A new planet is a new dated file name, so it
+        // is a new namespace. Header names are identity too, but header
+        // values are credentials by convention, left out for the same reason
+        // the bearer token is: rotating a key must not cold-start the
+        // prepared cache. The archive's ETag is not part of the namespace
+        // (it is computed before any request) and travels in every tile's
+        // source ETag instead: the disk stage takes only the entries of the
+        // archive's current upload (`TileArchiveVersion`), so a re-upload
+        // at the same URL does not go on serving the tiles parsed from the
+        // previous one.
+        hasher.combine(network.tileArchiveURL.absoluteString)
+        for field in network.tileRequestHeaders.keys.sorted() {
+            hasher.combine("header:\(field)")
+        }
+        // The hosted archive's manual lever: a bump re-parses every tile
+        // of it even at the same URL.
+        if network.tileArchiveURL == ImmersiveMapTilesService.tileArchiveURL {
+            hasher.combine("revision:\(ImmersiveMapTilesService.contentRevision)")
+        }
+        return hasher.finalize()
+    }
+}
+
+/// All cache instances that target the same root share a serial utility queue
+/// and one root-wide index. This prevents two map views from racing atomic
+/// replacements/pruning and avoids rescanning every namespace after each save.
+/// Internally synchronized: the registry is guarded by `registryLock`, all other
+/// state is mutated only on the serial `queue`.
+final class PreparedTileDiskIOCoordinator: @unchecked Sendable {
+    private struct Policy {
+        var byteQuota: Int64
+        var timeToLive: TimeInterval
+    }
+
+    private struct IndexedFile {
+        let url: URL
+        let byteCount: Int64
+        let lastAccessDate: Date
+    }
+
+    private static let registryLock = NSLock()
+    nonisolated(unsafe) private static var coordinatorsByRootPath: [String: PreparedTileDiskIOCoordinator] = [:]
+
+    static func shared(rootDirectory: URL, fileManager: FileManager) -> PreparedTileDiskIOCoordinator {
+        let key = rootDirectory.standardizedFileURL.path
+        registryLock.lock()
+        defer { registryLock.unlock() }
+        if let existing = coordinatorsByRootPath[key] {
+            return existing
+        }
+        let coordinator = PreparedTileDiskIOCoordinator(rootDirectory: rootDirectory,
+                                                        fileManager: fileManager)
+        coordinatorsByRootPath[key] = coordinator
+        return coordinator
+    }
+
+    private let rootDirectory: URL
+    private let fileManager: FileManager
+    private let queue: DispatchQueue
+    private let queueSpecificKey = DispatchSpecificKey<Bool>()
+    private var indexedFilesByPath: [String: IndexedFile] = [:]
+    private var indexedByteCount: Int64 = 0
+    private var isRootIndexPrepared = false
+    // The per-directory availability indexes (`PreparedTileAvailabilityIndex`):
+    // handed out synchronously to each cache instance for its own namespace
+    // directory, so the registry has its own lock, the one piece of state the
+    // IO queue does not confine. Every write, read, removal and reset of the
+    // root-wide file index also updates the index of the file's directory.
+    private let availabilityRegistryLock = NSLock()
+    private var availabilityIndexesByDirectoryPath: [String: PreparedTileAvailabilityIndex] = [:]
+    // The cache root is process-global, so its active policy must be global as
+    // well. The most recently initialized map view owns the current policy;
+    // operations from older instances never restore stale limits.
+    private var policy = Policy(
+        byteQuota: Int64(ImmersiveMapSettings.TileSettings.CacheSettings.defaultPreparedDiskCacheSizeInBytes),
+        timeToLive: 7 * 24 * 60 * 60
+    )
+    // Pruning sweeps the whole index (and sorts it when over quota), so writes
+    // trigger it through a throttle: immediately on quota overshoot, otherwise
+    // at most once per interval. Expired files are also rejected on read, so a
+    // sweep delayed by the throttle cannot serve stale data.
+    private var lastPruneDate: Date = .distantPast
+    private static let pruneInterval: TimeInterval = 60
+
+    private init(rootDirectory: URL, fileManager: FileManager) {
+        self.rootDirectory = rootDirectory
+        self.fileManager = fileManager
+        self.queue = DispatchQueue(label: "ImmersiveMap.PreparedTileDiskCacheIO.\(rootDirectory.path.hashValue)",
+                                   qos: .utility)
+        queue.setSpecific(key: queueSpecificKey, value: true)
+    }
+
+    func enqueue(_ work: @escaping () -> Void) {
+        // The queue runs the work items one at a time, so what they
+        // capture is never touched by two of them at once.
+        nonisolated(unsafe) let work = work
+        queue.async { work() }
+    }
+
+    /// The availability index of one cache directory, shared by every cache
+    /// instance on that namespace (the live map and an export engine, say).
+    /// Lock only: safe from any thread, never waits on the IO queue.
+    func availabilityIndex(forDirectory directory: URL, timeToLive: TimeInterval) -> PreparedTileAvailabilityIndex {
+        let key = Self.availabilityDirectoryKey(for: directory)
+        availabilityRegistryLock.lock()
+        defer { availabilityRegistryLock.unlock() }
+        if let existing = availabilityIndexesByDirectoryPath[key] {
+            return existing
+        }
+        let index = PreparedTileAvailabilityIndex(timeToLive: timeToLive)
+        availabilityIndexesByDirectoryPath[key] = index
+        return index
+    }
+
+    /// The registry key of a namespace directory: its last two path
+    /// components, `v<format>/<namespace>`, which is complete under one
+    /// root and does not depend on the path's spelling. `standardizedFileURL`
+    /// strips a leading `/private` only for a path that exists, so a key
+    /// taken from the directory before it is created (at init) would not
+    /// match the one taken from a file inside it later.
+    static func availabilityDirectoryKey(for directory: URL) -> String {
+        let components = directory.pathComponents
+        return components.suffix(2).joined(separator: "/")
+    }
+
+    private func availabilityIndex(forDirectoryKey key: String) -> PreparedTileAvailabilityIndex? {
+        availabilityRegistryLock.lock()
+        defer { availabilityRegistryLock.unlock() }
+        return availabilityIndexesByDirectoryPath[key]
+    }
+
+    private var registeredAvailabilityIndexes: [PreparedTileAvailabilityIndex] {
+        availabilityRegistryLock.lock()
+        defer { availabilityRegistryLock.unlock() }
+        return Array(availabilityIndexesByDirectoryPath.values)
+    }
+
+    /// Fills the directory's availability index from the root-wide file
+    /// index: the `.ptile` files inside that directory with their access
+    /// dates. Runs after the root index is prepared, so a cache instance
+    /// created later for a new namespace still starts complete, and the
+    /// hooks keep it current from then on.
+    private func seedAvailabilityIndex(forDirectory directory: URL, timeToLive: TimeInterval) {
+        let directoryKey = Self.availabilityDirectoryKey(for: directory)
+        for index in registeredAvailabilityIndexes {
+            index.updateTimeToLive(timeToLive)
+        }
+        guard let index = availabilityIndex(forDirectoryKey: directoryKey) else {
+            return
+        }
+        var entries: [Tile: Date] = [:]
+        for entry in indexedFilesByPath.values
+        where Self.availabilityDirectoryKey(for: entry.url.deletingLastPathComponent()) == directoryKey {
+            if let tile = PreparedTileAvailabilityIndex.tile(forIndexedFileName: entry.url.lastPathComponent) {
+                entries[tile] = entry.lastAccessDate
+            }
+        }
+        index.replaceAll(entries)
+    }
+
+    func performSync<T>(_ work: () throws -> T) rethrows -> T {
+        if DispatchQueue.getSpecific(key: queueSpecificKey) == true {
+            return try work()
+        }
+        return try queue.sync(execute: work)
+    }
+
+    func prepare(currentCacheDirectory: URL,
+                 clearOnLaunch: Bool,
+                 byteQuota: Int64,
+                 timeToLive: TimeInterval) throws {
+        policy = Policy(byteQuota: max(0, byteQuota), timeToLive: timeToLive)
+
+        let rootExists = fileManager.fileExists(atPath: rootDirectory.path)
+        if clearOnLaunch, rootExists {
+            try fileManager.removeItem(at: rootDirectory)
+            resetIndex()
+            isRootIndexPrepared = true
+        } else if rootExists == false {
+            resetIndex()
+            isRootIndexPrepared = true
+        }
+        try fileManager.createDirectory(at: currentCacheDirectory, withIntermediateDirectories: true)
+        if isRootIndexPrepared == false {
+            rebuildRootIndex()
+            isRootIndexPrepared = true
+        }
+        seedAvailabilityIndex(forDirectory: currentCacheDirectory, timeToLive: timeToLive)
+        prune()
+    }
+
+    /// Seeds the availability index of a directory a derived cache keeps
+    /// its files in (the raster tiles of a namespace), from the root-wide
+    /// index, preparing that index first when no prepared cache of the
+    /// root has yet. Run on the queue after the prepared cache's own
+    /// `prepare`, which is enqueued first.
+    func prepareAuxiliaryDirectory(_ directory: URL, timeToLive: TimeInterval) {
+        if isRootIndexPrepared == false {
+            rebuildRootIndex()
+            isRootIndexPrepared = true
+        }
+        seedAvailabilityIndex(forDirectory: directory, timeToLive: timeToLive)
+    }
+
+    func clearAndCreate(currentCacheDirectory: URL) throws {
+        if fileManager.fileExists(atPath: rootDirectory.path) {
+            try fileManager.removeItem(at: rootDirectory)
+        }
+        resetIndex()
+        isRootIndexPrepared = true
+        try fileManager.createDirectory(at: currentCacheDirectory, withIntermediateDirectories: true)
+    }
+
+    func readFile(at url: URL) -> Data? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let modificationDate = attributes[.modificationDate] as? Date else {
+            removeBestEffort(url)
+            return nil
+        }
+        if isExpired(lastAccessDate: modificationDate, timeToLive: policy.timeToLive, now: Date()) {
+            removeBestEffort(url)
+            return nil
+        }
+
+        do {
+            // Mapping skips an upfront full-file copy; pages stream in as the
+            // checksum and decompressor walk the payload. Atomic writes replace
+            // the file by rename and APFS keeps a deleted file's pages valid
+            // while mapped, so a concurrent replace or prune cannot invalidate
+            // a mapping handed to a decode in flight.
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            let byteCount = fileByteCount(attributes: attributes, fallback: data.count)
+            upsert(IndexedFile(url: url,
+                               byteCount: byteCount,
+                               lastAccessDate: modificationDate))
+            return data
+        } catch {
+            removeBestEffort(url)
+            return nil
+        }
+    }
+
+    func markAccessed(_ url: URL) {
+        let now = Date()
+        // The mtime doubles as the LRU/TTL access time, and refreshing it costs
+        // a metadata write per cache hit. LRU decisions tolerate coarse access
+        // times, so a recently refreshed entry is left untouched. The window
+        // scales down with short TTLs so an actively used entry cannot expire
+        // between refreshes.
+        let refreshInterval = min(15.0 * 60.0, policy.timeToLive / 16.0)
+        if let existing = indexedFilesByPath[indexKey(for: url)],
+           now.timeIntervalSince(existing.lastAccessDate) < refreshInterval {
+            return
+        }
+        do {
+            try fileManager.setAttributes([.modificationDate: now], ofItemAtPath: url.path)
+            let existing = indexedFilesByPath[indexKey(for: url)]
+            let byteCount: Int64
+            if let existing {
+                byteCount = existing.byteCount
+            } else {
+                let attributes = try fileManager.attributesOfItem(atPath: url.path)
+                byteCount = fileByteCount(attributes: attributes, fallback: 0)
+            }
+            upsert(IndexedFile(url: url, byteCount: byteCount, lastAccessDate: now))
+        } catch {
+            // A hit remains usable even when the file system refuses an atime
+            // update. Its previous timestamp simply remains the LRU fallback.
+        }
+    }
+
+    func writeFile(_ data: Data, to url: URL) throws {
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(),
+                                        withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+
+        let modificationDate = Date()
+        try? fileManager.setAttributes([.modificationDate: modificationDate], ofItemAtPath: url.path)
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let byteCount = fileByteCount(attributes: attributes, fallback: data.count)
+        upsert(IndexedFile(url: url,
+                           byteCount: byteCount,
+                           lastAccessDate: modificationDate))
+        pruneIfNeeded()
+    }
+
+    /// Indexes a file some other writer just produced (the geometry-blob
+    /// transport writes MTLIO containers itself), so quota accounting and
+    /// LRU pruning cover it like any entry.
+    func registerWrittenFile(at url: URL) {
+        let modificationDate = Date()
+        try? fileManager.setAttributes([.modificationDate: modificationDate], ofItemAtPath: url.path)
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
+            return
+        }
+        upsert(IndexedFile(url: url,
+                           byteCount: fileByteCount(attributes: attributes, fallback: 0),
+                           lastAccessDate: modificationDate))
+        pruneIfNeeded()
+    }
+
+    private func pruneIfNeeded() {
+        guard indexedByteCount > policy.byteQuota
+                || Date().timeIntervalSince(lastPruneDate) >= Self.pruneInterval else {
+            return
+        }
+        prune()
+    }
+
+    func removeFile(at url: URL) {
+        removeBestEffort(url)
+    }
+
+    private func rebuildRootIndex() {
+        resetIndex()
+
+        let resourceKeys: [URLResourceKey] = [
+            .isRegularFileKey,
+            .fileSizeKey,
+            .contentModificationDateKey
+        ]
+        let resourceKeySet = Set(resourceKeys)
+        guard let enumerator = fileManager.enumerator(at: rootDirectory,
+                                                      includingPropertiesForKeys: resourceKeys,
+                                                      options: [],
+                                                      errorHandler: { _, _ in true }) else {
+            return
+        }
+
+        let now = Date()
+        var emptiedParentDirectories: Set<URL> = []
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: resourceKeySet),
+                  values.isRegularFile == true else {
+                continue
+            }
+            let modificationDate = values.contentModificationDate ?? .distantPast
+            if isExpired(lastAccessDate: modificationDate, timeToLive: policy.timeToLive, now: now) {
+                if removeBestEffort(url, cleanEmptyParents: false) {
+                    emptiedParentDirectories.insert(url.deletingLastPathComponent())
+                }
+                continue
+            }
+            upsert(IndexedFile(url: url,
+                               byteCount: Int64(max(0, values.fileSize ?? 0)),
+                               lastAccessDate: modificationDate))
+        }
+        for directory in emptiedParentDirectories {
+            removeEmptyParentDirectories(startingAt: directory)
+        }
+    }
+
+    private func prune() {
+        let quota = policy.byteQuota
+        let now = Date()
+        var emptiedParentDirectories: Set<URL> = []
+
+        for entry in Array(indexedFilesByPath.values)
+            where isExpired(lastAccessDate: entry.lastAccessDate, timeToLive: policy.timeToLive, now: now) {
+            if removeBestEffort(entry.url, cleanEmptyParents: false) {
+                emptiedParentDirectories.insert(entry.url.deletingLastPathComponent())
+            }
+        }
+
+        if indexedByteCount > quota {
+            let oldestFirst = indexedFilesByPath.values.sorted { lhs, rhs in
+                if lhs.lastAccessDate != rhs.lastAccessDate {
+                    return lhs.lastAccessDate < rhs.lastAccessDate
+                }
+                return lhs.url.path < rhs.url.path
+            }
+            for entry in oldestFirst where indexedByteCount > quota {
+                if removeBestEffort(entry.url, cleanEmptyParents: false) {
+                    emptiedParentDirectories.insert(entry.url.deletingLastPathComponent())
+                }
+            }
+        }
+
+        for directory in emptiedParentDirectories {
+            removeEmptyParentDirectories(startingAt: directory)
+        }
+        // Stamped on completion: measuring the interval from the start would
+        // count the sweep's own duration against the throttle window.
+        lastPruneDate = Date()
+    }
+
+    @discardableResult
+    private func removeBestEffort(_ url: URL,
+                                  cleanEmptyParents: Bool = true) -> Bool {
+        // Compute the lookup keys while the file still exists: on macOS,
+        // `standardizedFileURL` strips a leading `/private` only for a path
+        // that exists, so a key taken after the removal would not match the
+        // one the file was indexed under.
+        let key = indexKey(for: url)
+        let directoryKey = Self.availabilityDirectoryKey(for: url.deletingLastPathComponent())
+        let fileName = url.lastPathComponent
+        do {
+            try fileManager.removeItem(at: url)
+            forget(indexKey: key, directoryKey: directoryKey, fileName: fileName)
+            if cleanEmptyParents {
+                removeEmptyParentDirectories(startingAt: url.deletingLastPathComponent())
+            }
+            return true
+        } catch {
+            if fileManager.fileExists(atPath: url.path) == false {
+                forget(indexKey: key, directoryKey: directoryKey, fileName: fileName)
+                if cleanEmptyParents {
+                    removeEmptyParentDirectories(startingAt: url.deletingLastPathComponent())
+                }
+                return true
+            }
+            return false
+        }
+    }
+
+    private func removeEmptyParentDirectories(startingAt directory: URL) {
+        var currentDirectory = directory
+        while currentDirectory.lastPathComponent != rootDirectory.lastPathComponent {
+            if fileManager.fileExists(atPath: currentDirectory.path) {
+                guard let contents = try? fileManager.contentsOfDirectory(atPath: currentDirectory.path),
+                      contents.isEmpty else {
+                    break
+                }
+                do {
+                    try fileManager.removeItem(at: currentDirectory)
+                } catch {
+                    break
+                }
+            }
+            let parentDirectory = currentDirectory.deletingLastPathComponent()
+            guard parentDirectory != currentDirectory else { break }
+            currentDirectory = parentDirectory
+        }
+    }
+
+    private func resetIndex() {
+        indexedFilesByPath.removeAll(keepingCapacity: true)
+        indexedByteCount = 0
+        for index in registeredAvailabilityIndexes {
+            index.removeAll()
+        }
+    }
+
+    private func upsert(_ entry: IndexedFile) {
+        let key = indexKey(for: entry.url)
+        if let replaced = indexedFilesByPath.updateValue(entry, forKey: key) {
+            indexedByteCount = subtractClamped(indexedByteCount, replaced.byteCount)
+        }
+        indexedByteCount = addClamped(indexedByteCount, entry.byteCount)
+        if let tile = PreparedTileAvailabilityIndex.tile(forIndexedFileName: entry.url.lastPathComponent),
+           let index = availabilityIndex(forDirectoryKey: Self.availabilityDirectoryKey(for: entry.url.deletingLastPathComponent())) {
+            index.insert(tile, lastAccessDate: entry.lastAccessDate)
+        }
+    }
+
+    private func forget(indexKey: String, directoryKey: String, fileName: String) {
+        // The entry or its blob: losing either makes the tile unreadable (a
+        // pruned `.ptgeo` leaves a `.ptile` that fails at materialize), so
+        // both take the tile out of the index.
+        if let tile = PreparedTileAvailabilityIndex.tile(forIndexedFileName: fileName)
+            ?? PreparedTileAvailabilityIndex.tile(forPreparedBlobFileName: fileName),
+           let index = availabilityIndex(forDirectoryKey: directoryKey) {
+            index.remove(tile)
+        }
+        guard let removed = indexedFilesByPath.removeValue(forKey: indexKey) else {
+            return
+        }
+        indexedByteCount = subtractClamped(indexedByteCount, removed.byteCount)
+    }
+
+    private func indexKey(for url: URL) -> String {
+        url.standardizedFileURL.path
+    }
+
+    private func fileByteCount(attributes: [FileAttributeKey: Any]?, fallback: Int) -> Int64 {
+        if let number = attributes?[.size] as? NSNumber {
+            return max(0, number.int64Value)
+        }
+        return Int64(max(0, fallback))
+    }
+
+    private func isExpired(lastAccessDate: Date, timeToLive: TimeInterval, now: Date) -> Bool {
+        now.timeIntervalSince(lastAccessDate) > timeToLive
+    }
+
+    private func addClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? Int64.max : sum
+    }
+
+    private func subtractClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        max(0, lhs - min(lhs, rhs))
+    }
+}
+
+final class PreparedTileDiskCaching {
+    /// v31: file-transport entries carry the blob's checksum and container
+    /// format in the metadata (binding a `.ptile` to its `.ptgeo` content),
+    /// and the span table is validated against the arena schema at decode.
+    // 32: label and marker geometry moved from device pixels to layout points.
+    // A version-31 record is structurally valid but numerically means something
+    // else, and nothing in the payload encodes its unit, so the version is the
+    // only thing keeping a warm cache from rendering half-size labels.
+    // 33: `TileVertexIn`'s padding bytes became the analytic line-antialiasing
+    // attributes (edge threshold and normalized centerline distance), and line
+    // geometry is extruded wider by the antialiasing feather. A version-32
+    // arena decodes cleanly but its zeroed padding marks every line as plain
+    // polygon geometry, so a warm cache would keep serving hard-edged lines
+    // forever.
+    // 34: the transverse distance narrowed from Int16 to Int8 and the freed
+    // byte carries the longitudinal end distance, so free butt ends (dash
+    // cuts) feather too. A version-33 arena would have its 16-bit distance
+    // misread as two 8-bit fields.
+    // 35: every geometry layer grew a fifth span, the per-style point-locked
+    // line widths, and the arena slot sequence changed with it, so a
+    // version-34 span table no longer matches the schema traversal.
+    // 36: the fifth span widened into the TileLineStyle struct (width, point
+    // dash pattern, edge threshold), the edge threshold left the vertex, and
+    // the freed byte rejoined the longitudinal parameter as a 16-bit value
+    // that point-dashed styles fill with arc length. A version-35 record's
+    // strides and vertex bytes both mean something else.
+    // 37: TilePolygonStyle carries the street-palette counterpart color, so
+    // the style spans doubled in stride; a version-36 record's style bytes
+    // would bind half a struct per entry.
+    // 38: TileLineStyle widened to eight floats, adding the world-width
+    // floor and reserved space, so the line-style spans changed stride.
+    // 39: label language resolution learned the `name:xx` field spelling, so
+    // a version-38 record prepared from a colon-convention source carries
+    // native-name label text the parser would no longer produce.
+    // 40: label priority follows the one-number `rank` contract (no more
+    // capital/population fallbacks, unranked POIs at the reveal tail), and
+    // priorities are baked into prepared label runs.
+    // 41: TileLineStyle.reserved0 became dashInTileUnits, and the lane
+    // marking passes it set; a version-40 record's markings would read as
+    // point dashes at a tile-unit period.
+    // 42: a fourth road structure bucket, automobileGround, joined the
+    // arena span order between ground and bridge; a version-41 record's
+    // road spans bind to the wrong structures.
+    // 43: labels that overflow three lines re-wrap at a wider, six-line box;
+    // the baked label geometry of a version-42 record carries the old
+    // three-line layout with its trailing line.
+    // 44: round joins tessellate as an arc fan instead of one chord triangle;
+    // a version-43 record's wide bends carry the uncovered circular segment.
+    // 45: junction areas draw in the automobile road phases as surface and
+    // kerb; a version-44 record prepared from the new tiles has them as
+    // ground polygons under every road.
+    // 46: TileLineStyle.reserved1 became maximumWidthPoints (the symbol
+    // ceiling), ribbons inside a carriageway surface are clipped away, and
+    // one-way carriageways carry lane lines at lateral offsets.
+    // 47: a junction area's kerb follows its own outline (a version-46
+    // record has it mirrored about the tile's mid-line), markings are drawn
+    // only where the tiles state a lane count and only for the through
+    // hierarchy, and they are cut at every junction the carriageway passes
+    // through instead of running across it.
+    // 48: two-way carriageways carry their lane boundaries, paint goes solid
+    // on the approach to a junction and leaves a gap sized by the road it
+    // meets, and marked pedestrian crossings draw as zebra stripes.
+    // 49: a two-way street is painted down the middle and nowhere else, and
+    // only where its lanes divide evenly; the split between the directions is
+    // not something the tiles carry.
+    // 50: a junction for the paint is where two named streets of class
+    // `minor` or above meet, not any point two road features share: a seam
+    // in one street and a service driveway no longer break the line.
+    // 51: the solid approach to a junction is gone; every stroke of a broken
+    // line is the same length again.
+    // 52: pieces of a line carry how far along it they begin, so a dash
+    // pattern broken at a junction resumes in step instead of starting a
+    // fresh stroke; the street a piece belongs to comes from the source
+    // (`street`) where it says, and decides both stitching and what counts
+    // as a junction.
+    // 53: stitching on the source's street id keeps a tunnel or a bridge
+    // out of the weld, which version 52 joined to the surface it belongs to.
+    // 54: the clip of roads against carriageway surfaces runs in the right
+    // coordinate space (version 53 cut against a mirror image of every
+    // area), the paint is cut only by reconstructed crossings while ribbons
+    // are cut by every surface, and a crossing wears its own half-tone.
+    // 55: a stated carriageway width (`width`, decimetres, from the same
+    // cross-section model that builds the junction polygons) overrides the
+    // lane-count width model, and a width change within one street is a
+    // real edge the stitcher keeps.
+    // 56: carriageway surfaces (`subclass=carriageway_area`) join the
+    // junction-area machinery, one polygon per stretch of street that clips
+    // the ribbons and the synthesized paint of the roads it covers, and a
+    // surface owns only the roads of its own structure and layer, so a
+    // bridge deck no longer clips the street under it; the paint the source
+    // measured ships as its own lines (`marking`), drawn as detail passes
+    // that bypass the surface clip, and a marked crossing can arrive as such
+    // a line and stripe itself.
+    // 57: a surface parking lot (`subclass=parking_area`) is service-tier
+    // asphalt with a kerb, and from street zoom its detail phase carries the
+    // synthesized parking-bay comb: short point-locked stripes laid out in
+    // rows the way real lots are painted, clipped to the polygon.
+    // 58: a dedicated bus lane (`subclass=bus_lane_area`) is a warm-toned
+    // fill over the carriageway; a parking lot eats only its own aisles
+    // (the rest of the service tier moved a step up), and the bay comb ends
+    // at the edge of any surface that overlaps the lot.
+    // 59: a dedicated bus lane is no longer a toned polygon but the letter
+    // A stamped along the lane's axis (`marking=bus_lane`, oriented with the
+    // direction of travel), in the plain marking paint.
+    // 60: a public transport stop carries the yellow sawtooth of the bus
+    // stop marking (`marking=bus_stop_zigzag`), folded from the kerb-side
+    // axis the tiles ship.
+    // 61: the polygon clip runs in raw MVT tile space and the y flip into
+    // render space happens once, at tessellation (see TileCoordinateSpace).
+    // The picture is the same, but the float order changed and a clipped
+    // vertex can round one unit differently, so cached tiles rebuild.
+    // 62: the slit between two trimmed pieces of one street (a road-graph
+    // connection no polygon ships for) is paved with a bridge quad
+    // (RoadSurfaceGapBridger) that also clips the street's fallback ribbon
+    // out of the slit; prepared tiles gain the quads and lose the stubs.
+    // 63: the bridger's edge phase paves the tapering wedges beside
+    // junction polygons that no street line crosses; prepared tiles gain
+    // those hulls.
+    // 64: the bus-lane letter and the bus-stop sawtooth are rebuilt with
+    // mitered joints (shared apex edge, one seamless band) instead of
+    // detached butt-capped quads; their prepared geometry changes.
+    // 65: one letter leg shipped as a bowtie ring in v64; the ring order
+    // is fixed and the cached copies of the broken leg must rebuild.
+    // 66: the gap bridger's edge phase is retired (its hulls could stick
+    // out of the roadway at complex junctions); tiles prepared with those
+    // hulls baked in must rebuild without them.
+    // 67: the street draws its full detail from z15, the level the measured
+    // street itself ships at, instead of z16: a z15 prepared tile gains the
+    // lane paint, the crossings, the bus lane letters and the parking bay
+    // comb it was baked without.
+    // 68: a POI label (icon disc, type and the gap between them) is laid out
+    // smaller, and a POI whose category has no icon is not labelled at all;
+    // both are baked into the prepared label geometry.
+    // 69: the POI block's scale settled at 1.05; tiles prepared while it was
+    // 0.7 carry the smaller layout baked in.
+    // 70: a vehicular tunnel is a bare translucent fill. Its ribbon is no
+    // longer dashed, the road surface the tiles ship for it (negative
+    // `layer`, matched to its `brunnel=tunnel` centreline) takes the tunnel
+    // look instead of open asphalt with a kerb, and the shipped lane paint
+    // inside that surface is clipped away; all three are baked geometry.
+    // 71: tunnel geometry moves to style keys of its own. Under the class
+    // key the first tunnel in a tile baked its translucent colour into the
+    // slot every road of that class samples, so tiles prepared as v70 carry
+    // whole ghosted streets.
+    // 72: a tunnel ribbon ends flat; the round caps baked into v71 stubs
+    // showed as darker semicircles at the portals.
+    // 73: the overview road stroke is baked in one asphalt grey with round
+    // joins and caps through tile z11; v72 tiles carry the earlier stroke
+    // and its street-palette blend under the same style fingerprint.
+    // 74: the overview stroke bakes the per-class fade mask; v73 tiles carry
+    // the opaque overview band.
+    // 75: the ground geometry of tiles up to z9 is split on a grid of 64 to
+    // 1024 units by zoom so it can be drawn straight onto the sphere; v74
+    // tiles carry tile-spanning triangles that cut into the globe as chords.
+    // 76: every triangle of the ground, bridge and road geometry is wound
+    // counter-clockwise in render space so the tile drawers can cull back
+    // faces (the far side of the sphere); v75 tiles carry clockwise line
+    // quads, right-turn join fans, zebra stripes, one-way arrows and bus
+    // lane letters that culling would drop.
+    // 77: the background of every tile is one quad that the ground
+    // subdivider cuts on its per-zoom grid; v76 tiles carry a 64x64 mesh
+    // built into every zoom (8192 triangles under a flat plane from z10).
+    // 78: the building vertex shrank from 48 to 12 bytes (14.2 fixed-point
+    // positions, 8-bit normals, and no per-vertex surface id, which no
+    // shader ever read); the extruded spans of a version-77 arena bind
+    // bytes at the wrong stride.
+    // 79: the sphere subdivision grid coarsened one step (a whole tile is
+    // 32x32 cells instead of 64x64, step 128 to 2048 units by zoom), a
+    // quarter of the ground vertices; v78 tiles carry the finer mesh.
+    // 80: the entry carries the ground index buffer's per-style runs
+    // (GroundStyleRun), which the sphere drawer layers the ground by; a
+    // v79 entry has no run table to draw from.
+    // 81: the ground bucket is two class segments, polygon fills first and
+    // line ribbons second (each by ascending style), the run table gained a
+    // class flag bit, and the sphere subdivision grid returned to 64x64
+    // (step 64 to 1024 units by zoom); a v80 entry interleaves the classes
+    // per style and its runs carry no class flag.
+    // 82: the line ribbons split on a grid twice as coarse as the fills
+    // (half the split vertices per border); a v81 entry carries the finer
+    // ribbon mesh.
+    // 83: point-locked ribbons are provisioned at 12 tile units per point
+    // of visible width instead of 32 (a native tile is at least 512 points,
+    // so a point is at most 8 units); a v82 entry carries ribbons almost
+    // three times as wide, whose extra fragments compute alpha 0.
+    // 84: the ribbon split grid is four times as coarse as the fills
+    // (was twice): another halving of the split vertices per border, at a
+    // chord sag that bends a thin line a fraction of a pixel without ever
+    // opening a gap. A v83 entry carries the finer ribbon mesh.
+    // 85: the ground index buffer gains a third class segment, the fill
+    // outlines: the ring edges of every plain fill as a line list over the
+    // fill's own vertices (`fillOutlinesIndexStart`), and the ground style
+    // runs carry a class flag for it. A v84 entry has no outline segment and
+    // its fills would draw with no edge antialiasing.
+    // 86: the ground style gains the footprint fade's far colour pair
+    // (`TilePolygonStyle.farColor`, `farStreetColor`; the style stride
+    // doubles), the target a fill converges on where a pixel covers more
+    // ground than its detail resolves. A v85 entry carries the old stride.
+    // 87: road paint (lane lines and centre dividers synthesized from the
+    // lane count, parking-bay combs, the shipped markings and carriageway
+    // surfaces) is baked only when the streetscape is on; the default map
+    // draws casing and fill by class with zebra crossings alone. A v86 entry
+    // carries paint the default map no longer draws.
+    // 88: without the streetscape a road is a street map's stroke, its
+    // width the class's alone (`streetStrokeWidthUnits`) with a casing,
+    // instead of the carriageway width read off the lane count. A v87
+    // entry prepared without the streetscape carries the carriageway
+    // ribbons.
+    // 89: tiles coarser than z14 no longer carry extruded buildings (the
+    // building coverage never draws them); a v88 entry of such a tile
+    // carries walls and roofs the renderer would upload for nothing.
+    // 90: one text label set per tile instead of three distance tiers; a
+    // v89 entry's span table and metadata carry three sets the reader no
+    // longer walks.
+    // 91: fill triangles are wound counter-clockwise on the rounded
+    // vertices; a v90 entry of a sliver fill can carry a triangle that
+    // back-face culling drops.
+    // 92: fills are triangulated by the earcut port brought up to v3.2.3
+    // (hole bridging on touching, coincident and self-tangent holes); a v91
+    // entry of such a fill can leave part of it uncovered.
+    // 93: the ground style carries one colour and one far colour; the
+    // street-palette counterparts and the per-frame blend between the two
+    // are gone, so the style stride halves. A v92 entry carries the old
+    // stride.
+    // 94: a line ribbon is extruded to at least eight tile units a side
+    // (ParseLine.minimumExtrudedHalfWidth), so a hairline's geometry covers
+    // a pixel; a v93 entry carries slivers narrower than that.
+    // 95: `TileVertexIn` grows a per-vertex extrusion direction (stride 8
+    // to 12) and the road buckets of a flat-era tile carry centrelines
+    // plus directions for the GPU to extrude at the width on screen; a
+    // v94 entry has the old stride and baked ribbons.
+    // 96: `ExtrudedVertexIn`'s padding bytes became the building's footprint
+    // radius; a v95 entry carries zeros there, which the level of detail
+    // of the time read as a building too small to draw.
+    // 97: the built-in style's roads state a width in points (screen-fixed)
+    // instead of a width on the ground; a v96 entry carries line styles and
+    // host ribbons baked for the ground width.
+    // 98: the built-in style draws minor and service roads from tile z14
+    // only; a v97 entry of z12 or z13 still carries them.
+    // 99: the building fills carry the footprint fade mask and their
+    // polygon's footprint radius in the vertices' normal bytes
+    // (TileVertexIn.footprintRadiusNormal); a v98 entry carries zeros there
+    // and the old mask, so its buildings would never fade.
+    // 100: TileLineStyle widened to thirteen floats, adding the zoom a
+    // point-locked width is frozen on the ground from (worldLockZoom) and
+    // the zoom ramp it comes in over, and the built-in style's overview
+    // strokes state their class symbol under that ramp; a v99 entry has the
+    // narrower span stride and the stepped overview widths.
+    // 101: the join and cap fans of a line lead every triangle with a rim
+    // vertex instead of the hub, so a deferred ribbon's fans resolve their
+    // width on screen; a v100 entry draws a dot at every node of a road.
+    // 102: z8 and z9 tiles are flat-era (no sphere grid, deferred road
+    // ribbons), so their roads take the same path as z10; a v101 entry
+    // keeps them as baked sphere-era ribbons.
+    // 103: TileLineStyle narrowed to twelve floats (the symbol ceiling,
+    // maximumWidthPoints, is gone with the world-width road model), every
+    // road past the overview era is the theme's point symbol whatever the
+    // tile carries, its lane lines and their junction inset are laid across
+    // the symbol's ground width instead of a width read off the lane count,
+    // and the ferry is a point-locked dashed stroke; a v102 entry has the
+    // wider span stride, the carriageway-width paint and a sub-pixel ferry.
+    // 104: the lane paint the style synthesized from a road's lane count
+    // (centre dividers, lane lines, their junction cuts and insets) is
+    // gone; a v103 entry carries that paint in its detail passes.
+    // 105: the fill outline segment is gone from the ground index buffer
+    // (two class segments again, fills then ribbons, and the style runs
+    // carry no outline flag), the ground style is one colour (the far
+    // colour is gone, the style stride halves to 16 bytes), the building
+    // fills carry no footprint fade mask or footprint radius in their
+    // normal bytes, and the building vertex's last two bytes are padding
+    // again. A v104 entry has the wider style stride, a trailing line list
+    // the drawer would read as triangles, and building fills baked on
+    // mask 5.
+    // 106: a road piece's connected end at a node where the road goes on
+    // as another piece of the same style is rounded off with a cap
+    // (`RoadLayerPrecomputation.continuationKeysByPoint`); a v105 entry
+    // has square cuts there and a wedge of ground open on every bend.
+    // 107: the disk record no longer stores the house-number identity, the
+    // road phases carry no carriageway surfaces, shipped paint, zebra
+    // stripes, parking combs, bus letters or stop zigzags, and buildings
+    // carry flat lids only. A v106 entry has a longer entry header and
+    // detail geometry the parser no longer makes.
+    // 108: the building resolver leaves out an outline that ground-standing
+    // parts cover and a volume hidden inside kept volumes with its lid in
+    // their plane. A v107 entry still holds those extra lids, which flicker
+    // through the lids they share a plane with.
+    // 109: a style's zoom fade is a pair of camera zooms (zero alpha, full
+    // alpha) instead of one mask float, in the arena's per-style fade slot
+    // and in every ground style run. A v108 entry holds one float per style
+    // and a shorter run record.
+    // 110: the labels painted on the map (`LabelPlacement.surface`) are
+    // baked as glyph quads in the tile's units, a trailing arena span and a
+    // record per label in the entry. A v109 entry has neither and draws
+    // the water names upright on the screen.
+    // 111: a surface label's vertex holds its anchor and its offset in
+    // points instead of a baked tile position, so the frame scales the text
+    // by the map's scale on screen. A v110 entry's text is baked for a tile
+    // of 256 points and draws several times too large.
+    // 112: a surface label's record carries its letter spacing. A v111
+    // entry has no such field.
+    // 113: a surface label's record carries the zooms it shows at instead
+    // of two zoom fades. A v112 entry has the fades.
+    // 114: a POI label waits for the camera zoom the basemap ranks it at
+    // (`min_zoom`) and for its category's and long name's zooms, and a
+    // house number for `addressMinimumZoom`. A v113 entry shows every POI
+    // and house number from the tile's own zoom.
+    // 115: a map in a language written in Latin letters shows a local name
+    // in another alphabet romanized (`VectorTileLabelRomanizer`). A v114
+    // entry holds the name in its own alphabet.
+    // 116: a road's route numbers are signs (`RouteShieldStyle`): point
+    // labels with a plate run of their own in the text label set, and a
+    // trailing arena span per plate run. A v115 entry lays the numbers
+    // along the road as text, in front of the name.
+    // 117: a label style may set its text in capitals
+    // (`LabelTextStyle.uppercased`), which the entry's text styles carry.
+    // A v116 entry has no such field.
+    // 118: a label style states how far its letters are grown past the
+    // font's outline (`LabelTextStyle.emboldenPoints`), which the entry's
+    // text styles carry. A v117 entry has no such field.
+    // 119: a map in a language written in an alphabet other than Latin
+    // shows a local name in that alphabet before the English one
+    // (`VectorTileLabelLanguagePreferences`). A v118 entry holds the
+    // English name.
+    // 120: a point label carries the roof it stands on
+    // (`TilePointInput.roofHeight`), which the entry's placement inputs
+    // store. A v119 entry has no such field.
+    // 121: a point label in a building carries the roof over it whether or
+    // not it draws there, and says which (`TilePointInput.liftsToRoof`): only
+    // the label naming the building rises. A v120 entry lifts every label
+    // in a building and has no such field.
+    // 122: a POI with no icon of its own draws its name alone; a v121 entry
+    // carries the plain marker's sprite beside it.
+    // 126: the road buckets are ordered by depth (`RoadRankDepth`): a road
+    // layer's style indices follow the class priority and its indices go
+    // out nearest first. A deferred ribbon's free end carries no feather
+    // rows, and its rim follows the bodies in the layer's indices as edge
+    // lines over the same vertices, from the index the entry stores
+    // (`PreparedTileCPU.roadEdgeLineIndexStarts`). A v122 entry indexes
+    // the styles by key, paints bottom to top, feathers its ends and has
+    // no edge lines. The versions 123 to 125 were steps of this work that
+    // were never released.
+    // 129: a tile keeps every building and says where each one sits in the
+    // extruded indices by its feature id (`TileBuildingRange`, the entry's
+    // `buildingRanges`), so the frame leaves out the buildings a model
+    // names. A point label knows nothing of the models: the mark of a roof
+    // a landmark replaces is gone from the point input. A v126 entry has
+    // no ranges, carries that mark, and was parsed without the buildings
+    // its map's landmarks replaced. A label naming an outline raised only
+    // by its parts stands on the roof of the parts over its anchor, where
+    // an older entry left it on the ground. The versions 127 and 128 were
+    // steps of this work that were never released.
+    // 138: a tile's labels are ordered by the zoom they show from
+    // (`TileTextLabelsBuilder`), so a camera zoom shows a run at the head
+    // of them. A v129 entry orders them by their collision rank. The
+    // versions 130 to 137 were experiments that were never released, and
+    // a machine that ran them may hold entries of another layout under
+    // those numbers.
+    // 139: a label of something inside a building carries no roof (its
+    // `roofHeight` is 0): only a label naming the building draws on one.
+    // A v138 entry carries the roof over every label in a building.
+    // 140: a tile's ground fills may be flattened into one layer that does
+    // not overlap (`GroundFlattening`), which its fill runs say
+    // (`GroundStyleRun.flattenedFlag`). A v139 entry stacks every fill.
+    // 141: `TileVertexIn.position` is float render space (stride 16): the
+    // vertices are the tessellators' and the flattener's, unrounded. A
+    // v140 entry stores Int16 positions in a 12-byte vertex.
+    // 142: an extruded building may have rounded edges
+    // (`ExtrusionStyle.edgeRadius`, `buildRounded`): bevels along its
+    // corners and its roof's rim, its walls drawn back and lowered. A v141
+    // entry carries every building as a sharp box.
+    // 143: every triangle is counter-clockwise in render space again: a
+    // flattened tile's slivers (`GroundFlattening`) and the pieces of a
+    // ribbon clipped at the tile's edge (`ParseLine.clipToTile`), whose
+    // winding was read off a float area that lost the sign of a sliver. A
+    // v142 entry may carry such a sliver turned clockwise.
+    // 144: with the ground relief on, the roads and the lines of a
+    // flattened tile take a vertex at every crossing of the flattening's
+    // grid (`ParseLine.parse(subdivisionStep:)`, `GroundGeometrySubdivider`
+    // on the road decorations and the bridge decks), so they follow the
+    // relief as the ground does. The namespace says whether the relief is
+    // on; the version keeps a v143 entry of the same namespace from
+    // answering. Also, every extruded vertex carries its volume's ordinal
+    // in the tile (`ExtrudedVertexIn.buildingOrdinal`, the bytes a v143
+    // entry pads with) and the tile lists each volume's anchor
+    // (`Extruded.buildingAnchors`), which the relief lifts the volume by.
+    // 145: a tile coarser than the tileset's deepest zoom ships its
+    // buildings merged into groups of one height, by one member's id
+    // (`TileParseOptions.buildingDeepestSourceZoom`): each polygon of a
+    // group now stands at the group's height, and the parts rules by id
+    // are left to the footprints. A v144 entry lays whole groups flat.
+    // 146: the national borders are thinner and translucent
+    // (`ProtomapsBasemapDefaultMapStyle.boundaryStyle`): 1 point wide,
+    // lightened over a country view, at 0.65 of the colour's alpha nearer.
+    // A v145 entry holds the 1.6 point near-opaque stroke.
+    // 147: the peaks collide ahead of the towns and the smaller places
+    // (`ProtomapsBasemapDefaultMapStyle.LabelBand`): the label collision
+    // ranks of the places under a city and of the peaks are baked into the
+    // prepared labels. A v146 entry has every place ahead of every peak.
+    // 148: on the relief a line ribbon takes a row at every crossing of a
+    // grid cell's diagonal too (`ParseLine.subdividedRows`), so each piece
+    // of it lies inside one triangle of the ground. A v147 ribbon crosses
+    // the cells' creases on chords.
+    // 149: the overview of the globe is laid into the tiles of zooms 0 to 7
+    // (`OverviewTileSource`): the biomes of its `biome` layer and the
+    // lakes of its `lake` layer are baked as fills, the tiles' own land
+    // cover and land use draw over them from tile zoom 2 in the cover
+    // tones and give way to them before (`ProtomapsBasemapDefaultMapStyle
+    // .biomeStyle`), the land cover fading out with the biomes and the
+    // land use staying, and the fills above the ground, the water first,
+    // take the keys from 30 up. A v148 entry holds the raster-derived land
+    // cover alone. The overview archive is part of this number: a new
+    // archive bumps it.
+    // 150: a screen label carries the camera zoom it goes away at
+    // (`LabelPlacementMeta.maxCameraZoom`) and its text style the tracking
+    // of its letters (`LabelTextStyle.letterSpacingEm`), which the baked
+    // glyphs are laid out with, and its opacity (`LabelTextStyle.opacity`):
+    // the names of the countries and the regions are spaced, translucent
+    // capitals that leave the street zooms
+    // (`ProtomapsBasemapTheme.LabelVisibility.countryMaximumZoom`). A v149
+    // entry has no maximum, no tracking and no opacity.
+    // 151: a line style carries the share of its alpha it keeps on the
+    // globe (`TileLineStyle.sphereAlpha`, a thirteenth float at the end of
+    // the struct, stride 52): the overview road strokes are a veil over
+    // the painted globe (`ProtomapsBasemapTheme.RoadMetrics.globeOpacity`)
+    // and the same stroke on the plane, and a ribbons run of such a style
+    // carries `GroundStyleRun.sphereVeiledFlag`. A v150 line style is 48
+    // bytes and no run has the flag.
+    // 152: the overview archive carries the Natural Earth road network as
+    // the layer `road` at tile zooms 2 to 5 (`OverviewTileSource`), baked
+    // as ground lines in the highway tones of the theme
+    // (`ProtomapsBasemapTheme.OverviewRoadStyles`) in place of the
+    // basemap's own roads, which are hidden through those zooms. A v151
+    // entry has the motorways alone there.
+    // 153: a line style carries the colour it wears on the globe
+    // (`TileLineStyle.sphereColor`, three floats after the sphere alpha,
+    // stride 64): the basemap's overview strokes are the highway yellow
+    // through the globe's view and the unroll, asphalt on the plane. A
+    // v152 line style is 52 bytes.
+    // 154: a fill's line style slot carries the colour the fill wears on
+    // the globe (`FillStyle.sphereColor` in `TileLineStyle.sphereColor`,
+    // the fill's own colour where the style states none), which the
+    // sphere's fill vertex mixes with the plane's by the air handover: a
+    // theme with a globe palette (`ProtomapsBasemapTheme.globeLayers`)
+    // paints the globe in it and the plane in its own. A v153 fill's slot
+    // holds the fill's colour, which a globe palette's tiles must not read.
+    // 155: a label's text style carries the fill and the halo it wears on
+    // the globe (`LabelTextStyle.sphereFillColor`, `sphereStrokeColor`,
+    // absent where the style states none), which the label drawers mix
+    // with the label's own by the air handover: a theme with globe labels
+    // (`ProtomapsBasemapTheme.globeLabels`) letters the globe in them. A
+    // v154 text style has no such colours.
+    // 156: the cover over the biomes comes in with the camera over the
+    // first cover zooms (`ProtomapsBasemapTheme.BiomeStyles.coverFadeInZooms`):
+    // the cover fills of a tile at the cover zoom carry a fade in, the
+    // land use's cover block included. A v155 tile shows them whole.
+    // 157: the arena carries the tile's trees (`TileArenaSlot.treeInstances`,
+    // `TreeInstance`) after the extruded styles: the woods and the parks
+    // of the street zooms stand the engine's tree model. A v156 arena has
+    // no such slot.
+    // 158: the trees keep off the roads of the ground by the fill's
+    // clearance (`TreeFillStyle.roadClearanceMetres`, `TreeScatter`). A
+    // v157 tile stands them on the paths.
+    // 159: the trees keep off the fills that stand none
+    // (`FillStyle.excludesTrees`: the water, the pitches and the lawns),
+    // holes excepted, and off the buildings' courtyards no more. A v158
+    // tile stands them in the ponds.
+    // 160: the trees' lattice is sized by the latitude of the tile's z14
+    // ancestor (`TreeScatter.latitudeZoom`), so a tile and its children
+    // stand the same trees. A v159 tile's trees stand elsewhere than its
+    // children's.
+    // 161: a road's width keeps the trees off at one width on the ground
+    // whatever the tile's zoom (`TreeScatter.Road`). A v160 z14 tile
+    // keeps them off twice as far as its children.
+    // 162: a label's style carries how softly its halo ends
+    // (`LabelTextStyle.haloSoftness`) and whether it names a POI
+    // (`LabelTextStyle.isPointOfInterest`). A v161 tile has neither field.
+    // 163: a tree stands at every point the data maps one
+    // (`TreePointStyle`), the scattered trees off its crown. A v162 tile
+    // has no tree on a street.
+    // 164: a line style carries the camera zoom it keeps its sphere colour
+    // and alpha up to (`TileLineStyle.sphereLookUntilZoom`), 68 bytes. A
+    // v163 arena's line styles are 64.
+    // 165: a tile coarser than the tileset's deepest zoom keeps its
+    // buildings and its trees by quarters (`TileQuarters`): each volume is
+    // cut at the quarters' edges, the volumes and the trees are laid out
+    // one quarter after another, and the entry keeps where each quarter
+    // starts (`Entry.buildingQuarterIndexStarts`, `treeQuarterStarts`). A
+    // v164 tile is whole and its entry has neither field.
+    // 166: a building cut at a quarter's edge stands no wall there and
+    // keeps its corners there sharp, as at a tile's edge
+    // (`BuildingExtrusionMeshBuilder.isBoundaryEdge`). A v165 zoom 14 tile
+    // has walls and rounded corners along its quarters' edges.
+    static let preparedFormatVersion: UInt32 = 166
+
+    private let cacheDirectory: URL
+    private let cacheIdentity: PreparedTileCacheIdentity
+    private let ioCoordinator: PreparedTileDiskIOCoordinator
+    private let compressionEnabled: Bool
+    private let geometryTransport: any PreparedTileGeometryTransporting
+    /// Which tiles of this namespace are on disk right now, for the demand
+    /// planner's ancestor fallback. Shared with every other cache instance
+    /// on the same namespace.
+    let availabilityIndex: PreparedTileAvailabilityIndex
+
+    init(config: ImmersiveMapSettings,
+         cacheIdentity: PreparedTileCacheIdentity,
+         geometryTransport: any PreparedTileGeometryTransporting = InlinePreparedTileGeometryTransport(),
+         fileManager: FileManager = .default,
+         baseCachesDirectory: URL? = nil) {
+        self.cacheIdentity = cacheIdentity
+        self.compressionEnabled = config.tiles.cache.preparedDiskCompressionEnabled
+        self.geometryTransport = geometryTransport
+
+        let rootDirectory = Self.rootDirectory(fileManager: fileManager, baseCachesDirectory: baseCachesDirectory)
+        let currentDirectory = Self.namespaceDirectory(rootDirectory: rootDirectory,
+                                                       cacheIdentity: cacheIdentity,
+                                                       geometryTransport: geometryTransport)
+        self.cacheDirectory = currentDirectory
+        self.ioCoordinator = PreparedTileDiskIOCoordinator.shared(rootDirectory: rootDirectory,
+                                                                  fileManager: fileManager)
+
+        let coordinator = ioCoordinator
+        let clearOnLaunch = config.tiles.cache.clearDiskCachesOnLaunch
+        let quota = Int64(max(0, config.tiles.cache.preparedDiskCacheSizeInBytes))
+        let timeToLive = config.tiles.cache.preparedDiskTimeToLive
+        self.availabilityIndex = coordinator.availabilityIndex(forDirectory: currentDirectory,
+                                                               timeToLive: timeToLive)
+        coordinator.enqueue {
+            do {
+                try coordinator.prepare(currentCacheDirectory: currentDirectory,
+                                        clearOnLaunch: clearOnLaunch,
+                                        byteQuota: quota,
+                                        timeToLive: timeToLive)
+            } catch {
+#if DEBUG
+                print("Failed to initialize prepared tile cache: \(error)")
+#endif
+            }
+        }
+    }
+
+    /// The root every prepared namespace lives under.
+    static func rootDirectory(fileManager: FileManager = .default, baseCachesDirectory: URL? = nil) -> URL {
+        let cachesDirectory = baseCachesDirectory
+            ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return cachesDirectory.appendingPathComponent("MapPreparedTiles")
+    }
+
+    /// The directory of one namespace: its format, its identity and its
+    /// geometry transport.
+    static func namespaceDirectory(rootDirectory: URL,
+                                   cacheIdentity: PreparedTileCacheIdentity,
+                                   geometryTransport: any PreparedTileGeometryTransporting) -> URL {
+        rootDirectory
+            .appendingPathComponent("v\(cacheIdentity.preparedFormatVersion)")
+            .appendingPathComponent("\(cacheIdentity.namespaceComponent)-\(geometryTransport.cacheNamespaceMarker)")
+    }
+
+    /// Loads the cached prepared tile. When `matchingETag` is non-nil the entry is
+    /// returned only if it was derived from that exact raw-tile ETag (the CPU
+    /// stage's reuse of an entry another engine saved from the bytes just
+    /// downloaded); nil accepts any cached entry regardless of ETag, which is
+    /// the disk stage's read: a hit there answers the load with no download.
+    ///
+    /// Only the file read runs on the shared serial IO queue; the decode
+    /// (decompression + property-list decoding) runs on the caller's task, so
+    /// concurrent tile loads decode in parallel instead of queueing behind each
+    /// other and behind saves.
+    func requestPreparedDiskCached(tile: Tile, matchingETag: String?) async -> PreparedTileDiskCacheHit? {
+        let cachePath = cachePathFor(tile: tile)
+        let blobPath = blobPathFor(tile: tile)
+        let usesBlobFiles = geometryTransport.blobTransport != .inline
+        let data = await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
+            ioCoordinator.enqueue { [self] in
+                guard let data = ioCoordinator.readFile(at: cachePath) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                ioCoordinator.markAccessed(cachePath)
+                if usesBlobFiles {
+                    // Both access times are refreshed together so LRU pruning
+                    // rarely splits the pair; the files are still pruned
+                    // individually, and a split self-heals (a lost blob fails
+                    // the materialize, which removes the pair and re-parses;
+                    // an orphan blob simply ages out).
+                    ioCoordinator.markAccessed(blobPath)
+                }
+                continuation.resume(returning: data)
+            }
+        }
+        guard let data else {
+            return nil
+        }
+
+        do {
+            return try PreparedTileDiskCodec.decode(data: data,
+                                                    expectedTile: tile,
+                                                    cacheIdentity: cacheIdentity,
+                                                    expectedSourceETag: matchingETag,
+                                                    blobFileURL: blobPath)
+        } catch PreparedTileDiskCodecError.invalidMetadata {
+            // Identity/ETag mismatches are benign. Keep the entry for an
+            // offline fallback and let a fresh parse atomically replace it.
+            return nil
+        } catch {
+            removeFromDisk(tile: tile)
+            return nil
+        }
+    }
+
+    func saveOnDisk(tile: Tile,
+                    preparedTile: PreparedTileCPU,
+                    plan: TileArenaImagePlan? = nil,
+                    sourceETag: String?) async {
+        guard preparedTile.tile == tile else {
+            return
+        }
+        // Encode, compress, and stage before enqueueing: the shared serial
+        // queue carries only cheap file operations (the staged-blob rename and
+        // the metadata write), so disk-stage reads are never delayed behind
+        // the LZFSE pass of an unrelated save, and a queued save closure holds
+        // no uncompressed arena. (The MTLIO transport still serializes
+        // container writes among themselves, on its own queue; see
+        // MTLIOPreparedTileGeometryTransport.containerWriteQueue.)
+        let encoded: PreparedTileDiskCodec.EncodedPreparedTile
+        do {
+            encoded = try PreparedTileDiskCodec.encode(preparedTile: preparedTile,
+                                                       cacheIdentity: cacheIdentity,
+                                                       sourceETag: sourceETag ?? "",
+                                                       compressionEnabled: compressionEnabled,
+                                                       blobTransport: geometryTransport.blobTransport,
+                                                       plan: plan)
+        } catch {
+#if DEBUG
+            print("Failed to encode prepared tile \(tile): \(error)")
+#endif
+            return
+        }
+        var stagedBlobURL: URL?
+        if let fileBlob = encoded.fileBlob {
+            do {
+                stagedBlobURL = try geometryTransport.stageBlobFile(fileBlob, near: blobPathFor(tile: tile))
+            } catch {
+#if DEBUG
+                print("Failed to stage prepared tile blob for \(tile): \(error)")
+#endif
+                return
+            }
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            ioCoordinator.enqueue { [self] in
+                defer { continuation.resume() }
+                let cachePath = cachePathFor(tile: tile)
+                do {
+                    // Blob first, metadata second, so a crash between the two
+                    // leaves old metadata beside the new container instead of
+                    // new metadata beside the old one; either torn pair fails
+                    // the checksum stored in the metadata and is removed into
+                    // a clean re-parse rather than served.
+                    if let stagedBlobURL {
+                        let blobPath = blobPathFor(tile: tile)
+                        try geometryTransport.commitStagedBlobFile(at: stagedBlobURL, to: blobPath)
+                        ioCoordinator.registerWrittenFile(at: blobPath)
+                    }
+                    try ioCoordinator.writeFile(encoded.metadata, to: cachePath)
+                } catch {
+#if DEBUG
+                    print("Failed to save prepared tile to \(cachePath.path): \(error)")
+#endif
+                }
+            }
+        }
+    }
+
+    /// Removes only the blob, the way a quota prune can, for the test that
+    /// pins the index dropping the tile with it.
+    func removeBlobFromDiskForTesting(tile: Tile) {
+        let blobPath = blobPathFor(tile: tile)
+        ioCoordinator.enqueue { [ioCoordinator] in
+            ioCoordinator.removeFile(at: blobPath)
+        }
+    }
+
+    func removeFromDisk(tile: Tile) {
+        let cachePath = cachePathFor(tile: tile)
+        let blobPath = blobPathFor(tile: tile)
+        ioCoordinator.enqueue { [ioCoordinator] in
+            ioCoordinator.removeFile(at: cachePath)
+            ioCoordinator.removeFile(at: blobPath)
+        }
+    }
+
+    func clearAllCache() throws {
+        try ioCoordinator.performSync { [ioCoordinator, cacheDirectory] in
+            try ioCoordinator.clearAndCreate(currentCacheDirectory: cacheDirectory)
+        }
+    }
+
+    /// Whether the tile's prepared entry is on disk and unexpired: a lock-only
+    /// read of the availability index, safe on the frame path.
+    func isPreparedOnDisk(_ tile: Tile) -> Bool {
+        availabilityIndex.contains(tile)
+    }
+
+    func cachePathFor(tile: Tile) -> URL {
+        let fileName = "\(tile.z)_\(tile.x)_\(tile.y).ptile"
+        return cacheDirectory.appendingPathComponent(fileName)
+    }
+
+    /// The sibling MTLIO container of a file-transport entry.
+    func blobPathFor(tile: Tile) -> URL {
+        let fileName = "\(tile.z)_\(tile.x)_\(tile.y).ptgeo"
+        return cacheDirectory.appendingPathComponent(fileName)
+    }
+}

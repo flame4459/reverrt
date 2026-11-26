@@ -23,7 +23,7 @@ assuming a backend.
 | No accounts, no analytics, no server of ours | Anything social travels inside a link, a QR code or AirDrop. Nothing needs a login. |
 | Everything on the phone | Weather is the one exception: a keyless forecast API (Open-Meteo) called directly from the device, no account. |
 | SwiftUI + SwiftData, iOS 17.4, no dependencies | New data goes into the existing store with defaults so old stores keep opening. |
-| One store shared by app, widgets, Live Activity, CarPlay | New models must be reachable from the widget and CarPlay processes without duplicating logic. |
+| One store shared by app, widgets and Live Activity | New models must be reachable from the widget process without duplicating logic. |
 | The cockpit is used with gloves, in wind, at speed | New in-ride interactions are voice, haptic or single large targets. No new small buttons. |
 
 ---
@@ -593,9 +593,10 @@ does not; make the toggle explicit and reversible.
 
 ### D2. In-car handoff (no entitlement)
 
-**Problem.** Riders want the planned route on the car screen, and Apple's
-`com.apple.developer.carplay-maps` entitlement is not granted yet. The entitled
-CarPlay app in `CarPlayRideCoordinator.swift` exists but cannot sign.
+**Problem.** Riders want the planned route on the car screen. The CarPlay app
+was removed: Apple's `com.apple.developer.carplay-maps` entitlement was never
+granted, so the integration could not ship. The handoff below is the remaining
+answer.
 
 **Shape.** Revert keeps navigating and keeps talking; a free GPX app (Roavic)
 draws the track on the head unit with its own voice off. One action, "Send to car
@@ -767,4 +768,4 @@ Not features, but they decide whether the features feel finished.
 
 | Item | Status |
 | --- | --- |
-| Director mode (`RideDirectorReplayView`, `ReplayDirector`, `DirectorOverlays` — ~1,400 lines) | **Parked.** Debug-flag only and plays `DebugScreens.sampleRide()`, so no rider can reach it. Leave the files alone; do not spend 1.0 time finishing it, and do not re-litigate it before 1.1. The cheap version of the same instinct is the monthly poster (C2); the fun version is ghost chase (B2). |
+| Director mode | **Removed.** The film pipeline (director, overlays, exporter, audio engine, screen) was deleted in the cleanup pass. Ride Replay remains, now labelled **Drone replay**. |

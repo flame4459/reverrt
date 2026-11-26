@@ -1,0 +1,39 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Mvt
+import simd
+
+/// The buildings: extruded from the heights the schema reading states,
+/// or, with the theme's extrusion off, the footprints as flat fills.
+extension ProtomapsBasemapDefaultMapStyle {
+    /// The height, in metres, of a building the tile states no height for.
+    /// The basemap leaves `height` out when the source tags neither a height
+    /// nor a storey count, which is common for low buildings, and without a
+    /// fallback such a footprint stayed flat among its raised neighbours.
+    /// Two storeys, the way the basemap itself converts a storey count
+    /// (three metres a storey plus two).
+    static let buildingFallbackHeightMetres: Float = 8
+
+    /// A footprint on every tile that ships one: the basemap's merged
+    /// blocks of z12 and z13 draw too, flat or raised as the engine's
+    /// building coverage decides.
+    func buildingStyle(facts: ImmersiveMapFeatureFacts) -> FeatureStyle {
+        guard facts.building != nil else {
+            return hiddenStyle
+        }
+        guard theme.features.buildingExtrusion else {
+            // The same fill an extrusion draws under itself, and nothing
+            // rises: how buildings draw on the globe, now on the plane too.
+            return .fill(FillStyle(key: 40, color: theme.features.buildingFillColor))
+        }
+        return .extrusion(ExtrusionStyle(
+            key: 40,
+            color: theme.features.buildingFillColor,
+            heightScale: 8.0,
+            anchorZoom: 16,
+            fallbackHeight: Self.buildingFallbackHeightMetres,
+            edgeRadius: theme.features.buildingEdgeRadius
+        ))
+    }
+}

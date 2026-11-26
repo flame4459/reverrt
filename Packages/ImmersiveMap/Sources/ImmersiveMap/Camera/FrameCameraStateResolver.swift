@@ -1,0 +1,225 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import CoreGraphics
+import Foundation
+import simd
+
+struct CameraFrameState {
+    let drawSize: CGSize
+    let viewport: SIMD2<Float>
+    let cameraMatrices: FrameCameraMatrices
+    let cameraEye: SIMD3<Float>
+    let cameraFrustum: Frustum?
+    let mapCameraState: ImmersiveMapCameraState
+    /// The zoom the map is planned by (`CameraStateController.planningZoom`).
+    let planningZoom: Double
+
+    init(drawSize: CGSize,
+         viewport: SIMD2<Float>,
+         cameraMatrices: FrameCameraMatrices,
+         cameraEye: SIMD3<Float>,
+         cameraFrustum: Frustum?,
+         mapCameraState: ImmersiveMapCameraState,
+         planningZoom: Double? = nil) {
+        self.drawSize = drawSize
+        self.viewport = viewport
+        self.cameraMatrices = cameraMatrices
+        self.cameraEye = cameraEye
+        self.cameraFrustum = cameraFrustum
+        self.mapCameraState = mapCameraState
+        self.planningZoom = planningZoom ?? mapCameraState.zoom
+    }
+}
+
+/// Responsible for preparing the camera state for a render frame:
+/// syncs the controlling camera with the render camera, applies constraints,
+/// and assembles matrices, frustum, eye position, and camera state for the frame pipeline.
+final class FrameCameraStateResolver {
+    private let camera: RenderCamera
+    private let cameraStateController: CameraStateController
+    private let cameraPoseResolver: RenderCameraPoseResolver
+    private let screenMatrix: ScreenMatrix
+    private let presentationSettings: ImmersiveMapSettings.PresentationSettings
+    private var lastDrawableSize: CGSize = .zero
+    /// How many times the camera was set outright (a position or a whole
+    /// state, by a command, a flight's step or a path's): the animated
+    /// zoom snaps to such a camera instead of following it
+    /// (`AnimatedZoom`).
+    private(set) var cameraJumpCount = 0
+
+    init(settings: ImmersiveMapSettings) {
+        self.camera = RenderCamera()
+        self.cameraStateController = CameraStateController(settings: settings.camera)
+        self.cameraPoseResolver = RenderCameraPoseResolver()
+        self.screenMatrix = ScreenMatrix()
+        self.presentationSettings = settings.presentation
+        RendererSetup.configureCamera(cameraStateController)
+        requestRenderCameraUpdate()
+    }
+
+    /// `transition` is the frame's globe-to-plane phase as the presentation
+    /// resolved it (the forced surface included); nil resolves the automatic
+    /// phase from the settings, which is what a caller without a
+    /// presentation controller gets.
+    func makeFrameState(drawSize: CGSize, diagnostics: FrameDiagnostics, transition: Float? = nil) -> CameraFrameState? {
+        guard drawSize.width > 0, drawSize.height > 0 else {
+            diagnostics.recordSkipReason(.zeroDrawableSize)
+            return nil
+        }
+
+        if drawSize != lastDrawableSize {
+            let aspect = Float(drawSize.width) / Float(drawSize.height)
+            camera.recalculateProjection(aspect: aspect)
+            lastDrawableSize = drawSize
+        }
+
+        screenMatrix.update(drawSize)
+        guard let screenMatrixValue = screenMatrix.get() else {
+            diagnostics.recordSkipReason(.missingScreenMatrix)
+            return nil
+        }
+
+        let cameraState = cameraStateController.cameraState
+        let resolvedTransition = transition
+            ?? PresentationStateResolver.resolve(cameraState: cameraState,
+                                                 settings: presentationSettings).presentationState.transition
+        cameraPoseResolver.updateIfNeeded(camera: camera, cameraState: cameraState, transition: resolvedTransition)
+        guard let cameraMatrix = camera.cameraMatrix,
+              let cameraView = camera.view else {
+            diagnostics.recordSkipReason(.missingCameraState)
+            return nil
+        }
+
+        let matrices = FrameCameraMatrices(projectionView: cameraMatrix,
+                                           view: cameraView,
+                                           screen: screenMatrixValue)
+
+        return CameraFrameState(drawSize: drawSize,
+                                viewport: SIMD2<Float>(Float(drawSize.width), Float(drawSize.height)),
+                                cameraMatrices: matrices,
+                                cameraEye: camera.eye,
+                                cameraFrustum: camera.frustrum,
+                                mapCameraState: cameraStateController.cameraState,
+                                planningZoom: cameraStateController.planningZoom)
+    }
+
+    func rotateCameraYaw(delta: Float) {
+        cameraStateController.rotateYaw(delta: delta)
+        requestRenderCameraUpdate()
+    }
+
+    func panCamera(deltaX: Double, deltaY: Double, transition: Float) {
+        cameraStateController.pan(deltaX: deltaX, deltaY: deltaY, transition: transition)
+        requestRenderCameraUpdate()
+    }
+
+    func zoomCamera(scale: Double, velocity: Double = 0) {
+        cameraStateController.zoom(scale: scale, velocity: velocity)
+        requestRenderCameraUpdate()
+    }
+
+    func zoomCamera(delta: Double) {
+        cameraStateController.zoom(delta: delta)
+        requestRenderCameraUpdate()
+    }
+
+    func setCameraPitch(_ pitch: Float) {
+        cameraStateController.setPitch(pitch)
+        requestRenderCameraUpdate()
+    }
+
+    func setCameraBearing(_ bearing: Float) {
+        cameraStateController.setBearing(bearing)
+        requestRenderCameraUpdate()
+    }
+
+    func setCameraPosition(_ cameraPosition: ImmersiveMapCameraPosition) {
+        cameraStateController.setCameraPosition(cameraPosition)
+        cameraJumpCount += 1
+        requestRenderCameraUpdate()
+    }
+
+    func setCameraState(_ cameraState: ImmersiveMapCameraState) {
+        cameraStateController.setCameraState(cameraState)
+        cameraJumpCount += 1
+        requestRenderCameraUpdate()
+    }
+
+    /// Moves only the map center, leaving zoom, bearing and pitch untouched.
+    /// The zoom anchor compensation must use this instead of `setCameraState`:
+    /// re-submitting the whole state would re-apply the settings-level pitch
+    /// floor, which is surface-blind and on the globe can sit above the
+    /// zoom-eased ceiling the constraints have already enforced.
+    func setCameraCenterWorldMercator(_ centerWorldMercator: SIMD2<Double>) {
+        cameraStateController.setCenterWorldMercator(centerWorldMercator)
+        requestRenderCameraUpdate()
+    }
+
+    /// See `CameraStateController.setCenterWorldMercatorOverTerrain`: the
+    /// zoom anchor compensation on the flat map, where the camera may
+    /// stand over a terrain.
+    func setCameraCenterWorldMercatorOverTerrain(_ centerWorldMercator: SIMD2<Double>) {
+        cameraStateController.setCenterWorldMercatorOverTerrain(centerWorldMercator)
+        requestRenderCameraUpdate()
+    }
+
+    /// The terrain under the camera (`CameraTerrainFollow`), nil on a map
+    /// without a relief.
+    func setTerrainFollow(_ follow: CameraTerrainFollow?) {
+        cameraStateController.terrainFollow = follow
+    }
+
+    /// See `CameraStateController.lastTerrainFollowReport`.
+    var lastTerrainFollowReport: TerrainFollowReport? {
+        cameraStateController.lastTerrainFollowReport
+    }
+
+    /// See `CameraStateController.endPan()`.
+    func endPanCamera() {
+        cameraStateController.endPan()
+    }
+
+    /// See `CameraStateController.planningZoom`.
+    var planningZoom: Double {
+        cameraStateController.planningZoom
+    }
+
+    /// See `CameraStateController.advanceBoundsPull(deltaTime:)`.
+    func advanceBoundsPull(deltaTime: Double) -> Bool {
+        let centerBefore = cameraStateController.cameraState.centerWorldMercator
+        let isReturning = cameraStateController.advanceBoundsPull(deltaTime: deltaTime)
+        if cameraStateController.cameraState.centerWorldMercator != centerBefore {
+            requestRenderCameraUpdate()
+        }
+        return isReturning
+    }
+
+    func currentCameraPosition() -> ImmersiveMapCameraPosition {
+        let latLon = cameraStateController.getLatLonDeg()
+        return ImmersiveMapCameraPosition(latitudeDegrees: latLon.latDeg,
+                                          longitudeDegrees: latLon.lonDeg,
+                                          zoom: cameraStateController.zoom,
+                                          bearing: cameraStateController.yaw,
+                                          pitch: cameraStateController.pitch)
+    }
+
+    func currentCameraState() -> ImmersiveMapCameraState {
+        cameraStateController.currentCameraState()
+    }
+
+    func applyCameraSettings(_ settings: ImmersiveMapSettings.CameraSettings) {
+        cameraStateController.apply(settings: settings)
+        requestRenderCameraUpdate()
+    }
+
+    func applyConstraints(_ constraints: CameraConstraints) {
+        cameraStateController.clampBearing(to: constraints.bearing)
+        cameraStateController.clampPitch(to: constraints.pitch)
+        requestRenderCameraUpdate()
+    }
+
+    private func requestRenderCameraUpdate() {
+        cameraPoseResolver.requestUpdate()
+    }
+}

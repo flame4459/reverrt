@@ -1,0 +1,71 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+/// What one tile parses to: every geometry layer unified into GPU-ready
+/// streams, the styles they index, and the labels the layers carried,
+/// as `TilePreparedDataBuilder` turns into a `PreparedTileCPU`. A class so
+/// the loader passes one reference around instead of copying the streams.
+final class ParsedTile {
+    let drawingPolygon: DrawingPolygonBytes
+    let drawingRoadPhases: RoadStructureBuckets<RoadGeometryPhases<DrawingGeometryLayer>>
+    let drawingBridgePolygon: DrawingPolygonBytes
+    let drawingExtruded: DrawingExtrudedBytes
+    let styles: [TilePolygonStyle]
+    let styleZoomFades: [SIMD2<Float>]
+    let lineStyles: [TileLineStyle]
+    let bridgeStyles: [TilePolygonStyle]
+    let bridgeStyleZoomFades: [SIMD2<Float>]
+    let bridgeLineStyles: [TileLineStyle]
+    let tile: Tile
+    let textLabels: [ParsedTextLabel]
+    let roadTextLabels: [ParsedRoadTextLabel]
+    let parseLayerTimings: [TileParseLayerTiming]
+    /// Whether the ground fills are one flattened layer that does not
+    /// overlap (`GroundFlattening`).
+    let groundIsFlattened: Bool
+    /// The tile's trees, sorted by priority (`TreeScatter`), quarter by
+    /// quarter on a tile that keeps quarters.
+    let trees: [TreeInstance]
+    /// Where each quarter's trees start (`ReadingStageResult.treeQuarterStarts`).
+    let treeQuarterStarts: [UInt32]
+
+    init(
+        drawingPolygon: DrawingPolygonBytes,
+        drawingRoadPhases: RoadStructureBuckets<RoadGeometryPhases<DrawingGeometryLayer>>,
+        drawingBridgePolygon: DrawingPolygonBytes,
+        drawingExtruded: DrawingExtrudedBytes,
+        styles: [TilePolygonStyle],
+        styleZoomFades: [SIMD2<Float>],
+        lineStyles: [TileLineStyle],
+        bridgeStyles: [TilePolygonStyle],
+        bridgeStyleZoomFades: [SIMD2<Float>],
+        bridgeLineStyles: [TileLineStyle],
+        tile: Tile,
+        textLabels: [ParsedTextLabel],
+        roadTextLabels: [ParsedRoadTextLabel],
+        parseLayerTimings: [TileParseLayerTiming],
+        groundIsFlattened: Bool = false,
+        trees: [TreeInstance] = [],
+        treeQuarterStarts: [UInt32] = []
+    ) {
+        self.drawingPolygon = drawingPolygon
+        self.drawingRoadPhases = drawingRoadPhases
+        self.drawingBridgePolygon = drawingBridgePolygon
+        self.drawingExtruded = drawingExtruded
+        self.styles = styles
+        self.styleZoomFades = styleZoomFades
+        self.lineStyles = lineStyles
+        self.bridgeStyles = bridgeStyles
+        self.bridgeStyleZoomFades = bridgeStyleZoomFades
+        self.bridgeLineStyles = bridgeLineStyles
+        self.tile = tile
+        self.textLabels = textLabels
+        self.roadTextLabels = roadTextLabels
+        self.parseLayerTimings = parseLayerTimings
+        self.groundIsFlattened = groundIsFlattened
+        self.trees = trees
+        self.treeQuarterStarts = treeQuarterStarts
+    }
+}

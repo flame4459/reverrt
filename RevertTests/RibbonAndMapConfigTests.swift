@@ -14,13 +14,13 @@ struct RibbonAndMapConfigTests {
                             retraced: 0, bearing: 0, kind: .directions)
     }
 
-    @Test func ribbonSplitsAtTheRiddenDistance() {
+    @Test func ribbonSplitsAtTheRiddenDistance() throws {
         let route = route()
         let half = route.length / 2
         let ribbon = RouteRibbon(route: route, progress: half)
-        let travelledEnd = try? #require(ribbon.travelled.last)
-        let remainingStart = try? #require(ribbon.remaining.first)
-        #expect(abs((travelledEnd?.latitude ?? 0) - (remainingStart?.latitude ?? 1)) < 0.002)
+        let travelledEnd = try #require(ribbon.travelled.last)
+        let remainingStart = try #require(ribbon.remaining.first)
+        #expect(abs(travelledEnd.latitude - remainingStart.latitude) < 0.002)
         #expect(!ribbon.remainingSegments.isEmpty)
         #expect(ribbon.travelled.count > 1)
         #expect(ribbon.remaining.count > 1)

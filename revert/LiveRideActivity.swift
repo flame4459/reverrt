@@ -3,19 +3,14 @@ import Foundation
 
 /// Starts, updates and ends the Lock Screen / Dynamic Island Live Activity.
 ///
-/// iOS 18 introduced the small activity family (CarPlay Dashboard and Watch
-/// Smart Stack), and declaring it changes the widget's activity type. The
-/// activity type is also the widget's key, so the two generations cannot share
-/// one: iOS 18+ uses `NavigationActivityAttributes`, iOS 17 uses
-/// `LegacyNavigationActivityAttributes`. Both carry the same `ContentState`.
+/// The deployment target is iOS 18, so the adaptive `NavigationActivityAttributes`
+/// (which can also render the small Watch Smart Stack / car dashboard family) is
+/// the only activity type the app requests.
 @MainActor
 final class LiveRideActivity {
     static let shared = LiveRideActivity()
 
-    /// iOS 18+ activity. Only ever non-nil on iOS 18 and later.
     private var activity: Activity<NavigationActivityAttributes>?
-    /// iOS 17 activity. Only ever non-nil before iOS 18.
-    private var legacyActivity: Activity<LegacyNavigationActivityAttributes>?
 
     private init() {}
 
@@ -23,10 +18,7 @@ final class LiveRideActivity {
         ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    private var isActive: Bool {
-        if #available(iOS 18.0, *), activity != nil { return true }
-        return legacyActivity != nil
-    }
+    private var isActive: Bool { activity != nil }
 
     func start() {
         RideDebug.shared.event("LIVE-START", [
@@ -38,21 +30,13 @@ final class LiveRideActivity {
         endStaleActivities()
         let content = ActivityContent(state: Self.placeholderState(),
                                       staleDate: Date().addingTimeInterval(90))
-        if #available(iOS 18.0, *) {
-            activity = try? Activity.request(
-                attributes: NavigationActivityAttributes(startedAt: Date()),
-                content: content
-            )
-        } else {
-            legacyActivity = try? Activity.request(
-                attributes: LegacyNavigationActivityAttributes(startedAt: Date()),
-                content: content
-            )
-        }
+        activity = try? Activity.request(
+            attributes: NavigationActivityAttributes(startedAt: Date()),
+            content: content
+        )
         RideDebug.shared.event("LIVE-STARTED", [
-            ("modern", activity != nil ? "yes" : "no"),
-            ("legacy", legacyActivity != nil ? "yes" : "no"),
-            ("id", activity?.id ?? legacyActivity?.id ?? "—")
+            ("started", activity != nil ? "yes" : "no"),
+            ("id", activity?.id ?? "—")
         ])
     }
 
@@ -66,7 +50,7 @@ final class LiveRideActivity {
     func update(title: String, distance: String, speed: String, offRoute: Bool,
                 turnSymbol: String, remaining: String, eta: String,
                 speedLimit: String? = nil, lap: Int = 0, totalLaps: Int = 0,
-                hazard: String? = nil, isSimulation: Bool = false,
+                hazard: String? = nil,
                 vehicleKind: String = "motorcycle", mapImage: String? = nil,
                 progress: Double = 0, alert: String? = nil, stepID: Int = -1) {
         let signature = "\(title)|\(distance)|\(stepID)|\(mapImage ?? "")"
@@ -84,7 +68,7 @@ final class LiveRideActivity {
             title: title, distance: distance, speed: speed, offRoute: offRoute,
             updatedAt: Date(), turnSymbol: turnSymbol, remaining: remaining, eta: eta,
             speedLimit: speedLimit, lap: lap, totalLaps: totalLaps,
-            hazard: hazard, isSimulation: isSimulation, vehicleKind: vehicleKind,
+            hazard: hazard, vehicleKind: vehicleKind,
             mapImage: mapImage, progress: progress, stepID: stepID
         )
         let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(60))
@@ -98,9 +82,7 @@ final class LiveRideActivity {
         }
         RideDebug.shared.event("LIVE-UPDATE", [
             ("supported", isSupported ? "yes" : "no"),
-            ("id", activity?.id ?? legacyActivity?.id ?? "—"),
-            ("modern", activity != nil ? "yes" : "no"),
-            ("legacy", legacyActivity != nil ? "yes" : "no"),
+            ("id", activity?.id ?? "—"),
             ("title", title),
             ("distance", distance),
             ("speed", speed),
@@ -111,55 +93,35 @@ final class LiveRideActivity {
             ("limit", speedLimit ?? "—"),
             ("lap", "\(lap)/\(totalLaps)"),
             ("hazard", hazard ?? "—"),
-            ("sim", isSimulation ? "yes" : "no"),
             ("vehicle", vehicleKind),
             ("mapImage", mapImage ?? "—"),
             ("progress", String(format: "%.3f", progress)),
             ("stepID", "\(stepID)"),
             ("alert", alert ?? "—")
         ])
-        if #available(iOS 18.0, *), let activity {
-            Task { await activity.update(content, alertConfiguration: configuration) }
-        } else if let legacyActivity {
-            Task { await legacyActivity.update(content, alertConfiguration: configuration) }
-        }
+        guard let activity else { return }
+        Task { await activity.update(content, alertConfiguration: configuration) }
     }
 
     func end() {
         let current = activity
-        let legacy = legacyActivity
         activity = nil
-        legacyActivity = nil
         RideDebug.shared.event("LIVE-END", [
-            ("id", current?.id ?? legacy?.id ?? "—"),
-            ("modern", current != nil ? "yes" : "no"),
-            ("legacy", legacy != nil ? "yes" : "no")
+            ("id", current?.id ?? "—"),
+            ("started", current != nil ? "yes" : "no")
         ])
         Task {
             await current?.end(nil, dismissalPolicy: .immediate)
-            await legacy?.end(nil, dismissalPolicy: .immediate)
         }
     }
 
     /// Ends every Live Activity owned by this app. Called on launch, when no
     /// navigation state survives, and before starting a new activity.
     func endStaleActivities() {
-        let modernCount = Activity<NavigationActivityAttributes>.activities.count
-        let legacyCount = Activity<LegacyNavigationActivityAttributes>.activities.count
-        RideDebug.shared.event("LIVE-STALE", [
-            ("modern", "\(modernCount)"),
-            ("legacy", "\(legacyCount)")
-        ])
+        let count = Activity<NavigationActivityAttributes>.activities.count
+        RideDebug.shared.event("LIVE-STALE", [("count", "\(count)")])
         activity = nil
-        legacyActivity = nil
         for stale in Activity<NavigationActivityAttributes>.activities {
-            Task {
-                await stale.end(nil, dismissalPolicy: .immediate)
-            }
-        }
-        // Normally empty on iOS 17, but a device that ran the legacy activity
-        // and then updated its OS should not keep an orphan around.
-        for stale in Activity<LegacyNavigationActivityAttributes>.activities {
             Task {
                 await stale.end(nil, dismissalPolicy: .immediate)
             }
@@ -180,7 +142,6 @@ final class LiveRideActivity {
             lap: 0,
             totalLaps: 0,
             hazard: nil,
-            isSimulation: false,
             vehicleKind: "motorcycle"
         )
     }

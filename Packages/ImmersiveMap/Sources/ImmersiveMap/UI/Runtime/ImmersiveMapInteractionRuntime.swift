@@ -1,0 +1,82 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+/// Tracks active user-interaction sources of a single map view.
+/// Updates render-loop interaction activity and sends camera interaction notifications.
+@MainActor
+final class ImmersiveMapInteractionRuntime {
+    enum Source: Hashable {
+        case mapPan
+        case mapPinch
+        case mapRotation
+        /// Tilt gestures on the map canvas: the two-finger vertical drag on
+        /// touch platforms, the right-button or Option drag on macOS. Kept
+        /// apart from `pitchControl` because the sources are a plain set: the
+        /// zone and a canvas tilt can run at once on disjoint touches, and a
+        /// shared value would let whichever ends first deactivate both.
+        case mapTilt
+        case pitchControl
+        case zoomControl
+        case scrollZoom
+    }
+
+    private let cameraRuntime: ImmersiveMapCameraRuntime
+    private let renderRuntime: ImmersiveMapRenderRuntime
+    private var activeSources: Set<Source> = []
+
+    init(cameraRuntime: ImmersiveMapCameraRuntime,
+         renderRuntime: ImmersiveMapRenderRuntime) {
+        self.cameraRuntime = cameraRuntime
+        self.renderRuntime = renderRuntime
+    }
+
+    var hasActiveUserInteraction: Bool {
+        activeSources.isEmpty == false
+    }
+
+    func setActive(_ isActive: Bool,
+                   source: Source,
+                   notifiesUserInteractionBegan: Bool,
+                   requestsFrameOnStart: Bool = false) {
+        let wasInteracting = hasActiveUserInteraction
+
+        if isActive {
+            activeSources.insert(source)
+        } else {
+            activeSources.remove(source)
+        }
+
+        if isActive && wasInteracting == false && notifiesUserInteractionBegan {
+            cameraRuntime.notifyUserInteractionBegan()
+        }
+
+        renderRuntime.setInteractionRenderingActive(hasActiveUserInteraction)
+
+        if isActive && requestsFrameOnStart {
+            renderRuntime.requestFrame()
+        }
+
+        // One more frame after the last gesture lets go: the animations that
+        // carry on after the user, the elastic bounds' pull among them, keep
+        // the loop running only from a frame, which would otherwise pause
+        // right here.
+        if wasInteracting && hasActiveUserInteraction == false {
+            renderRuntime.requestFrame()
+        }
+    }
+
+    /// Clears every active source when the view parks in the reuse pool.
+    /// A gesture interrupted by the view leaving the window never delivers its
+    /// end event (raw macOS scroll phases especially), and a source stuck
+    /// active would keep the render loop hot and cancel the adopting screen's
+    /// first camera flight.
+    func resetForParking() {
+        guard activeSources.isEmpty == false else {
+            return
+        }
+        activeSources.removeAll()
+        renderRuntime.setInteractionRenderingActive(false)
+    }
+}

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import SwiftData
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -24,6 +25,7 @@ struct SettingsView: View {
     @AppStorage("alert.hazardSpeedThreshold") private var hazardSpeedThreshold = 0
     @AppStorage("alert.reactionTime") private var reactionTime = 1.5
     @AppStorage("rider.selectedBike") private var selectedBike = BikeCatalog.defaultBike
+    @Query(sort: \Bike.createdAt) private var garageBikes: [Bike]
     @AppStorage("units.system") private var unitSystem = UnitSystemPreference.automatic.rawValue
     @AppStorage("ride.autoPause") private var autoPause = true
     @AppStorage("ride.launchCountdown") private var launchCountdown = true
@@ -31,7 +33,6 @@ struct SettingsView: View {
     @AppStorage("alert.haptics") private var haptics = true
     @AppStorage("voice.commands") private var voiceCommands = false
     @AppStorage("helmet.binaural") private var binaural = true
-    @AppStorage("remote.enabled") private var remoteEnabled = true
     @AppStorage("fuel.tankFraction") private var tankFraction = 0.8
     @State private var voicePacks = VoicePackLibrary.shared
     @State private var showingFeatureLab = false
@@ -104,21 +105,41 @@ struct SettingsView: View {
                     SettingsCard(
                         title: "Your bike",
                         icon: "motorcycle",
-                        footer: "Choose the bike shown for your rider profile. Your selection is saved automatically."
+                        footer: primaryGarageBike == nil
+                            ? "No vehicle in your Garage yet. This catalog model is used for artwork and defaults until you add one; the Garage then becomes the single source of truth."
+                            : "Rides, the widget and the Live Activity use the primary vehicle from your Garage. Change it there, not here."
                     ) {
-                        NavigationLink {
-                            BikePickerView(selectedBike: $selectedBike)
-                        } label: {
-                            HStack(spacing: 10) {
-                                BikeArtworkView(bikeName: selectedBike, width: 42, height: 26)
-                                Text("Bike model")
-                                    .fixedSize()
-                                Spacer(minLength: 8)
-                                Text(selectedBike)
-                                    .foregroundStyle(MapUI.secondaryInk)
-                                    .multilineTextAlignment(.trailing)
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.8)
+                        if let primary = primaryGarageBike {
+                            NavigationLink {
+                                GarageView()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    BikeArtworkView(bikeName: primary.displayName, width: 42, height: 26)
+                                    Text("Primary vehicle")
+                                        .fixedSize()
+                                    Spacer(minLength: 8)
+                                    Text(primary.displayName)
+                                        .foregroundStyle(MapUI.secondaryInk)
+                                        .multilineTextAlignment(.trailing)
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.8)
+                                }
+                            }
+                        } else {
+                            NavigationLink {
+                                BikePickerView(selectedBike: $selectedBike)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    BikeArtworkView(bikeName: selectedBike, width: 42, height: 26)
+                                    Text("Bike model")
+                                        .fixedSize()
+                                    Spacer(minLength: 8)
+                                    Text(selectedBike)
+                                        .foregroundStyle(MapUI.secondaryInk)
+                                        .multilineTextAlignment(.trailing)
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.8)
+                                }
                             }
                         }
                         Divider()
@@ -417,7 +438,6 @@ struct SettingsView: View {
                         footer: "Spatial cues put hazard and turn alerts on the side of the road they belong to. Your Bluetooth helmet must be connected as the audio route."
                     ) {
                         Toggle("Binaural helmet cues", isOn: $binaural)
-                        Toggle("Handlebar remote / controller", isOn: $remoteEnabled)
                     }
 
                     SettingsCard(title: "Data & privacy", icon: "externaldrive") {
@@ -509,6 +529,11 @@ struct SettingsView: View {
         }
     }
 
+    /// The single authoritative vehicle: whatever the Garage marks primary.
+    private var primaryGarageBike: Bike? {
+        garageBikes.first(where: \.isPrimary) ?? garageBikes.first
+    }
+
     private var narratorLabel: String {
         if let pack = voicePacks.selectedPack { return pack.name }
         return voiceName
@@ -577,11 +602,14 @@ struct SettingsCard<Content: View>: View {
     /// one of these areas resets with the rest.
     private func resetPreferences() {
         let prefixes = ["ride.", "alert.", "units.", "voice.", "navigation.",
-                        "helmet.", "remote.", "companion.", "weather.", "map.",
+                        "helmet.", "companion.", "weather.", "map.",
                         "vehicle.", "conditions."]
         let defaults = UserDefaults.standard
         for key in defaults.dictionaryRepresentation().keys
         where prefixes.contains(where: { key.hasPrefix($0) }) {
+            // Companion memory is rider data, not a preference: the dialog
+            // promises rides are kept, and this is the record of them.
+            guard key != "companion.memory.v1" else { continue }
             defaults.removeObject(forKey: key)
         }
         RevertHaptics.success()

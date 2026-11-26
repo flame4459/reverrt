@@ -38,7 +38,7 @@ enum GPX {
     nonisolated static func writeTempFile(points: [RidePoint], startDate: Date) -> URL? {
         removeOldTempFiles()
         let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd HHmm"
+        df.dateFormat = "yyyy-MM-dd-HHmm"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Ride \(df.string(from: startDate)).gpx")
         do {
             try export(points: points, startDate: startDate).write(to: url, atomically: true, encoding: .utf8)

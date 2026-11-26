@@ -214,6 +214,9 @@ nonisolated enum RouteLink {
     static let host = "route"
     static let version = 1
     static let maxEncodedLength = 14_000
+    static let maxPoints = 20_000
+    static let maxSteps = 5_000
+    static let maxWaypoints = 256
 
     nonisolated struct LinkPoint: Codable, Sendable {
         let lat: Double
@@ -285,8 +288,23 @@ nonisolated enum RouteLink {
         while base64.count % 4 != 0 { base64 += "=" }
         guard let data = Data(base64Encoded: base64),
               let payload = try? JSONDecoder().decode(Payload.self, from: data),
-              payload.version == version, payload.points.count > 1 else { return nil }
+              payload.version == version,
+              payload.points.count > 1,
+              payload.points.count <= maxPoints,
+              payload.waypoints.count <= maxWaypoints,
+              payload.steps.count <= maxSteps,
+              (1...999).contains(payload.laps),
+              payload.points.allSatisfy(Self.isValid),
+              payload.waypoints.allSatisfy(Self.isValid),
+              payload.steps.allSatisfy({ $0.distance.isFinite && $0.distance >= 0 && $0.distance <= 5_000_000 }),
+              payload.expectedTravelTime.map({ $0.isFinite && $0 >= 0 && $0 <= 7 * 86_400 }) ?? true
+        else { return nil }
         return payload
+    }
+
+    private static func isValid(_ point: LinkPoint) -> Bool {
+        point.lat.isFinite && point.lon.isFinite
+            && abs(point.lat) <= 90 && abs(point.lon) <= 180
     }
 
     static func route(from payload: Payload) -> PlannedRoute? {

@@ -1,0 +1,95 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+//
+//  ImmersiveMapCameraPosition.swift
+//  ImmersiveMap
+//
+
+import Foundation
+
+public struct ImmersiveMapCameraPosition: Equatable, Sendable {
+    public static let `default` = ImmersiveMapCameraPosition(latitudeDegrees: 0,
+                                                             longitudeDegrees: 0,
+                                                             zoom: 0,
+                                                             bearing: 0,
+                                                             pitch: 0)
+
+    public let latitudeDegrees: Double
+    public let longitudeDegrees: Double
+    public let zoom: Double
+    public let bearing: Float
+    public let pitch: Float
+
+    public init(latitudeDegrees: Double,
+                longitudeDegrees: Double,
+                zoom: Double,
+                bearing: Float = 0,
+                pitch: Float = 0) {
+        self.latitudeDegrees = latitudeDegrees
+        self.longitudeDegrees = longitudeDegrees
+        self.zoom = zoom
+        self.bearing = bearing
+        self.pitch = pitch
+    }
+}
+
+public extension ImmersiveMapCameraPosition {
+    /// The zoom a city is seen whole from, `city(_:zoom:bearing:pitch:)`'s
+    /// default.
+    static let cityZoom: Double = 11
+
+    /// The camera over a city's centre (`ImmersiveMapCity`), from straight
+    /// above and north up unless a bearing and a pitch are given. The
+    /// default zoom shows the city whole. Raise it to open on its centre's
+    /// streets.
+    ///
+    ///     ImmersiveMapView()
+    ///         .cameraPosition(.city(.newYork))
+    static func city(_ city: ImmersiveMapCity,
+                     zoom: Double = ImmersiveMapCameraPosition.cityZoom,
+                     bearing: Float = 0,
+                     pitch: Float = 0) -> ImmersiveMapCameraPosition {
+        ImmersiveMapCameraPosition(latitudeDegrees: city.coordinate.latitude,
+                                   longitudeDegrees: city.coordinate.longitude,
+                                   zoom: zoom,
+                                   bearing: bearing,
+                                   pitch: pitch)
+    }
+}
+
+public enum CameraFlightRouteStyle: Sendable, Equatable {
+    case automatic
+    case mercatorShortestPath
+    case greatCircle
+}
+
+public enum CameraFlightAltitudeStyle: Sendable, Equatable {
+    /// Zoom interpolates directly from the start value to the target.
+    case direct
+    /// The cinematic van Wijk and Nuij arc: the camera first gains altitude
+    /// (the farther the target, the higher the apex, up to a globe view),
+    /// covers most of the distance from above, and dives toward the target.
+    case overviewFirst
+}
+
+public struct CameraFlightOptions: Sendable, Equatable {
+    public static let `default` = CameraFlightOptions(duration: 1.35,
+                                                      routeStyle: .automatic,
+                                                      altitudeStyle: .direct)
+    private static let defaultDuration: TimeInterval = 1.35
+
+    public let duration: TimeInterval
+    public let routeStyle: CameraFlightRouteStyle
+    public let altitudeStyle: CameraFlightAltitudeStyle
+
+    public init(duration: TimeInterval,
+                routeStyle: CameraFlightRouteStyle = .automatic,
+                altitudeStyle: CameraFlightAltitudeStyle = .direct) {
+        let fallbackDuration = Self.defaultDuration
+        let sanitizedDuration = duration.isFinite ? duration : fallbackDuration
+        self.duration = max(0, sanitizedDuration)
+        self.routeStyle = routeStyle
+        self.altitudeStyle = altitudeStyle
+    }
+}

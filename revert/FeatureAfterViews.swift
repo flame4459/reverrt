@@ -950,7 +950,7 @@ struct PlatformFeatureView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     RevertSectionLabel(title: "Widget", detail: "Dashboard")
-                    Text("The Revert widget shows the active Dashboard drive, or “Start a loop” when parked. Add it from the CarPlay Dashboard widget strip or the iPhone Home Screen.")
+                    Text("The Revert widget shows the active drive, or “Start a loop” when parked. Add it from the iPhone Home Screen; on cars that show iPhone widgets it can appear there too.")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(Pulse.muted)
                         .fixedSize(horizontal: false, vertical: true)

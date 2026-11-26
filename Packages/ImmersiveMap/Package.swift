@@ -1,0 +1,174 @@
+// swift-tools-version: 6.1
+
+import PackageDescription
+
+let package = Package(
+    name: "ImmersiveMap",
+    platforms: [
+        .iOS(.v18),
+        .macOS(.v15)
+    ],
+    products: [
+        .library(
+            name: "ImmersiveMap",
+            targets: ["ImmersiveMap"]
+        ),
+        // The debug panel, apart from the engine: linked by a development
+        // app and the tests, never by a shipping app, which carries nothing
+        // of it.
+        .library(
+            name: "ImmersiveMapDebug",
+            targets: ["ImmersiveMapDebug"]
+        ),
+        // The model tile's format, read and written. The engine links it,
+        // and so does the baker of a model archive, which lives in the
+        // project the models are made in: the layout, its version and its
+        // reference are in one place for both.
+        .library(
+            name: "ModelTileFormat",
+            targets: ["ModelTileFormat"]
+        ),
+        // The PMTiles module, for its writer (`PMTilesWriter`), the one
+        // public thing in it: the same baker writes its archive with it,
+        // on the header, the tile id and the limits the reader goes by.
+        .library(
+            name: "PMTiles",
+            targets: ["PMTiles"]
+        )
+    ],
+    targets: [
+        // The ear-clipping triangulator, a port of mapbox/earcut. Its own
+        // module so the algorithm depends on nothing in the engine and the
+        // engine reaches it through one entry point at `package` access,
+        // so nothing of it leaks to an app that links the product.
+        .target(
+            name: "Earcut"
+        ),
+        // The Mapbox Vector Tile decoder: the wire format, the decoded model
+        // and the tile-space geometry it produces. Its own module for the same
+        // reason, everything at `package` access. `TestSupport` is the
+        // test-side encoder and fixture tiles both test targets share; it is
+        // a regular target because test targets cannot share sources.
+        .target(
+            name: "Mvt"
+        ),
+        .target(
+            name: "MvtTestSupport",
+            dependencies: ["Mvt"]
+        ),
+        // The PMTiles v3 reader: the format (the header, the directories,
+        // the Hilbert tile id and the gzip step, pure functions over bytes)
+        // and the HTTP range client that reads an archive with them. Its own
+        // module for the same reason as `Earcut`: a tool that knows nothing
+        // of the engine, reached at `package` access. Its writer alone
+        // (`PMTilesWriter`) is public and the module a product, for the
+        // baker of a model archive, which is another package. The test
+        // support target is the independent archive writer both test
+        // targets share.
+        .target(
+            name: "PMTiles"
+        ),
+        .target(
+            name: "PMTilesTestSupport",
+            dependencies: ["PMTiles"]
+        ),
+        // The ground flattener: stacked painted rings in, one layer of
+        // triangles that do not overlap out, cut to a grid for a heightmap.
+        // Its own module for the same reason as `Earcut`: pure geometry that
+        // knows nothing of the engine, reached at `package` access.
+        .target(
+            name: "TileFlattening"
+        ),
+        // The model tile as bytes: the decoder the engine reads a tile
+        // with and the writer a baker makes one with, on Foundation and
+        // simd alone. A product, so its API is public: the baker is another
+        // package. The test support target is the independent writer of
+        // fixture tiles both test targets share.
+        .target(
+            name: "ModelTileFormat"
+        ),
+        .target(
+            name: "ModelTileFormatTestSupport"
+        ),
+        .target(
+            name: "ImmersiveMap",
+            dependencies: ["Earcut", "Mvt", "PMTiles", "TileFlattening", "ModelTileFormat"],
+            // The shaders and their headers: not resources, so no build
+            // system makes a library of its own from them. `MetalLibraryPlugin`
+            // compiles every .metal file of the target into the one
+            // default.metallib of the resource bundle, under Xcode and under
+            // `swift build` alike. A new shader folder goes here.
+            exclude: [
+                "Pins/Shaders",
+                "Globe/Shaders",
+                "Horizon/Shaders",
+                "Labels/Shaders",
+                "Layers/Shaders",
+                "Render/Debug/Shaders",
+                "Render/PostProcessing/Shaders",
+                "Render/Shaders",
+                "SceneModels/Shaders",
+                "Shadows/Shaders",
+                "Starfield/Shaders",
+                "Text/Shaders",
+                "Tile/Relief/Shaders",
+                "Tile/Shaders",
+            ],
+            resources: [
+                .process("Pins/Resources/pin_sdf.json"),
+                .process("Pins/Resources/pin_sdf.png"),
+                .process("Text/Resources"),
+                // The overview of the globe laid into the tiles of zooms 0 to 5
+                // (`OverviewTileSource`): copied whole, a PMTiles archive.
+                .copy("Tile/Overview/Resources/overview.pmtiles"),
+                // The tree model the woods and the parks stand
+                // (`TreeModelContents`): copied whole, as the GPU reads it.
+                .copy("Tile/Trees/Resources/tree_broadleaf.immtree"),
+            ],
+            plugins: ["MetalLibraryPlugin"]
+        ),
+        // Compiles the engine's shaders into its resource bundle's
+        // default.metallib with `xcrun metal`, the same way for Xcode and for
+        // SwiftPM's command line, which on its own copies .metal files into
+        // the bundle uncompiled.
+        .plugin(
+            name: "MetalLibraryPlugin",
+            capability: .buildTool()
+        ),
+        // The debug panel over the map (`ImmersiveMapDebugPanel.hud`). The
+        // engine holds what the panel reads and drags and the slot it fills,
+        // at `package` access, and this target fills it from outside, so an
+        // app that links `ImmersiveMap` alone compiles none of the panel.
+        .target(
+            name: "ImmersiveMapDebug",
+            dependencies: ["ImmersiveMap"]
+        ),
+        .testTarget(
+            name: "EarcutTests",
+            dependencies: ["Earcut"],
+            resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "MvtTests",
+            dependencies: ["Mvt", "MvtTestSupport"]
+        ),
+        .testTarget(
+            name: "TileFlatteningTests",
+            dependencies: ["TileFlattening"]
+        ),
+        .testTarget(
+            name: "PMTilesTests",
+            dependencies: ["PMTiles", "PMTilesTestSupport"]
+        ),
+        .testTarget(
+            name: "ModelTileFormatTests",
+            dependencies: ["ModelTileFormat", "ModelTileFormatTestSupport"]
+        ),
+        .testTarget(
+            name: "ImmersiveMapTests",
+            dependencies: ["ImmersiveMap", "ImmersiveMapDebug", "Mvt", "MvtTestSupport", "PMTilesTestSupport",
+                           "ModelTileFormat", "ModelTileFormatTestSupport"]
+        )
+    ],
+    swiftLanguageModes: [.v6]
+)

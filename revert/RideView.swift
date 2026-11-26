@@ -29,21 +29,20 @@ struct RideView: View {
     @State private var lean = LeanAngleManager()
     @State private var gForce = GForceModel()
     @State private var voice = VoiceCommandRecognizer()
-    @State private var remote = HandlebarRemote()
     @State private var companion = CompanionDirector.shared
     @State private var audioRoute = AudioRouteMonitor.shared
     @State private var companionWeather: CompanionWeather?
     @State private var gpsStale = false
-    @State private var camera: MapCameraPosition = .userLocation(followsHeading: true, fallback: .automatic)
     @State private var cameraDriver = RideCameraDriver()
     @State private var matchedPuck: CLLocationCoordinate2D?
-    @State private var mapStyle: MapStyle = MapConfig.style
-    @State private var mapStyleName = "muted"
     @State private var showingStopConfirmation = false
     @State private var showingHandoffPrompt = false
     @State private var handoffRoute: PlannedRoute?
     @State private var handoffChipDismissed = false
     @State private var showingSettings = false
+    @State private var showingMapRegions = false
+    @State private var coverageNoticeDismissed = false
+    @State private var routeCoverage: MapRouteCoverage?
     @State private var rideError: String?
     @State private var trackCoordinates: [CLLocationCoordinate2D] = []
     @State private var hazardLoadTask: Task<Void, Never>?
@@ -64,8 +63,6 @@ struct RideView: View {
     @State private var showsBackgroundLocationWarning = false
     @State private var lapNotice: Int?
     @State private var lapNoticeTask: Task<Void, Never>?
-    @State private var simulator = RouteSimulator.shared
-    @State private var showingSimulator = false
     @State private var lastPublishedCarMode: CarWidgetSnapshot.Mode = .parked
     @State private var lastWidgetTurnKey = ""
     @AppStorage("ride.cameraMode") private var cameraMode: RideCameraMode = .cockpit
@@ -73,9 +70,7 @@ struct RideView: View {
     @AppStorage("units.system") private var unitSystem = UnitSystemPreference.automatic.rawValue
     @AppStorage("voice.commands") private var voiceCommands = false
     @AppStorage("companion.wakeWord") private var wakeWord = true
-    @AppStorage("map.renderer") private var mapRenderer = MapRendererKind.immersive.rawValue
     @AppStorage("helmet.binaural") private var binaural = true
-    @AppStorage("remote.enabled") private var remoteEnabled = true
     @AppStorage("voice.muted") private var voiceMuted = false
     @AppStorage("ride.launchCountdown") private var launchCountdown = true
     @AppStorage("ride.ghostEnabled") private var ghostEnabled = false
@@ -148,9 +143,6 @@ struct RideView: View {
         // the speedometer and lean gauge run into the map controls.
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .modifier(RideDebugHooks(recorder: recorder, nav: nav))
-        .onChange(of: mapStyleName) { _, value in
-            RideDebug.shared.event("SETTING", [("key", "ride.mapStyle"), ("value", value)])
-        }
     }
 
     /// Sheets, covers and alerts. Kept out of `body` so the SwiftUI type
@@ -160,8 +152,10 @@ struct RideView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
-        .sheet(isPresented: $showingSimulator) {
-            RouteSimulatorView(holdAtStart: launchCountdown ? 3.4 : 0.6)
+        .sheet(isPresented: $showingMapRegions) {
+            NavigationStack {
+                MapRegionsView()
+            }
         }
         .fullScreenCover(item: $savedSummary, onDismiss: {
             exitCockpit()
@@ -288,9 +282,6 @@ struct RideView: View {
         .onChange(of: binaural) { _, enabled in
             if enabled, !isCar { HelmetAudio.shared.start() } else { HelmetAudio.shared.stop() }
         }
-        .onChange(of: remoteEnabled) { _, enabled in
-            if enabled { remote.start() } else { remote.stop() }
-        }
         .onChange(of: lean.angle) { _, angle in
             recorder.currentLean = angle ?? 0
         }
@@ -317,10 +308,6 @@ struct RideView: View {
             matchedPuck = nil
             cameraDriver.clearOverview()
             cameraDriver.start()
-            if (simulator.isRunning || simulator.isPaused),
-               simulator.route?.id != nav.route?.id {
-                simulator.stop()
-            }
             if let route = nav.route {
                 applyCameraMode()
                 loadGhost()
@@ -364,6 +351,8 @@ struct RideView: View {
             }
         }
         .onChange(of: nav.route?.id) { _, _ in
+            refreshRouteCoverage()
+
             lastInteraction = Date()
             dimmed = false
         }
@@ -406,7 +395,6 @@ struct RideView: View {
             // than leading the road ahead.
             let centered = northUp || !cameraMode.usesLookAhead
             if reduceMotion {
-                camera = cameraMode.camera(for: pose)
                 cameraDriver.present(staticFrame: stillFrame(for: pose, northUp: northUp))
             } else {
                 cameraDriver.update(route: nav.route,
@@ -418,13 +406,6 @@ struct RideView: View {
                                     mode: cameraMode)
             }
             updateMatchedPuck(pose)
-        }
-        .onChange(of: cameraDriver.frame) { _, frame in
-            guard !reduceMotion, let frame else { return }
-            camera = .camera(MapCamera(centerCoordinate: frame.coordinate,
-                                       distance: frame.distance,
-                                       heading: frame.heading,
-                                       pitch: frame.pitch))
         }
     }
 
@@ -587,29 +568,6 @@ struct RideView: View {
                 nav.handle(CLLocation(latitude: first.lat, longitude: first.lon))
             }
         }
-        if CommandLine.arguments.contains("-debugSimulate")
-            || CommandLine.arguments.contains("-debugSimulatePanel") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                guard let route = nav.route else { return }
-                let arguments = CommandLine.arguments
-                if let index = arguments.firstIndex(of: "-debugSimSpeed"),
-                   arguments.indices.contains(index + 1),
-                   let value = Double(arguments[index + 1]) {
-                    RouteSimulator.shared.setMultiplier(value)
-                }
-                RouteSimulator.shared.start(route: route, holdAtStart: 3.4)
-                if arguments.contains("-debugSimulatePanel") {
-                    showingSimulator = true
-                }
-                if let index = arguments.firstIndex(of: "-debugSimulateStop"),
-                   arguments.indices.contains(index + 1),
-                   let seconds = Double(arguments[index + 1]) {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
-                        RouteSimulator.shared.stop()
-                    }
-                }
-            }
-        }
         if CommandLine.arguments.contains("-debugAlert") {
             let route = DebugScreens.samplePlannedRoute()
             nav.start(route, roads: [])
@@ -720,7 +678,7 @@ struct RideView: View {
                 ("remaining", "\(Int(nav.remaining))"),
                 ("lap", "\(nav.lap)/\(nav.totalLaps)"),
                 ("offRoute", nav.offRoute ? "yes" : "no"),
-                ("limit", alerts.speedLimitMph.map { "\($0) mph" } ?? "—")
+                ("limit", alerts.speedLimitMph.map { Units.speedTextFromMph(Double($0)) } ?? "—")
             ])
             companion.rideStarted(context: companionContext())
             // "While Using" stops delivering fixes when the screen locks, so a
@@ -735,7 +693,6 @@ struct RideView: View {
         MapHangMonitor.shared.start()
         if !isCar {
             lean.start()
-            configureRemote()
         }
         applyCameraMode()
         autoStartTimedRunIfNeeded()
@@ -787,13 +744,11 @@ struct RideView: View {
         lean.stop()
         gForce.stop()
         voice.stop()
-        remote.stop()
         AudioRouteMonitor.shared.stop()
         cameraDriver.stop()
         MapHangMonitor.shared.stop()
         hazardLoadTask?.cancel()
         hazardLoadTask = nil
-        RouteSimulator.shared.stop()
         LiveRideActivity.shared.end()
         WidgetBridge.setRideActive(false)
         var parked = CarWidgetSnapshot.parked
@@ -807,11 +762,7 @@ struct RideView: View {
         // Leaving the screen stops the clock but must not delete the journal: a
         // ride that was still running when the cockpit went away is offered by
         // the recovery prompt instead of vanishing.
-        if recorder.wasSimulated {
-            recorder.discard()
-        } else {
-            recorder.suspend()
-        }
+        recorder.suspend()
         // These closures capture this view, and the view owns the recorder and
         // the alert engine, so leaving them installed leaks a recorder (and its
         // whole track) per cockpit session.
@@ -824,101 +775,22 @@ struct RideView: View {
 
     // MARK: Map
 
-    @ViewBuilder
     private var map: some View {
-        if mapRenderer == MapRendererKind.immersive.rawValue {
-            RideImmersiveMapView(route: nav.route,
-                                 progress: nav.routeProgress,
-                                 cameraFrame: cameraDriver.frame,
-                                 puck: puckCoordinate,
-                                 driver: cameraDriver)
-                .ignoresSafeArea()
-        } else if mapRenderer == MapRendererKind.mapKit.rawValue {
-            RideMapKitView(route: nav.route,
-                           progress: nav.routeProgress,
-                           cameraFrame: cameraDriver.frame,
-                           puck: puckCoordinate,
-                           heading: cameraIsCockpit ? 0 : nav.userHeading,
-                           speed: nav.currentSpeedMps,
-                           track: trackCoordinates,
-                           approach: nav.approachCoordinates,
-                           ghost: ghostCoordinate,
-                           hazards: marks.hazards)
-                .ignoresSafeArea()
-        } else {
-            swiftUIMap
-        }
+        RevertMapView(scene: RevertMapScene.cockpit(
+            route: nav.route,
+            progress: nav.routeProgress,
+            puck: puckCoordinate,
+            approach: nav.approachCoordinates,
+            track: trackCoordinates,
+            ghost: ghostCoordinate,
+            hazards: marks.hazards.map(\.coordinate)
+        ), driver: cameraDriver)
+        .ignoresSafeArea()
     }
 
     private var ghostCoordinate: CLLocationCoordinate2D? {
         guard ghostEnabled, let ghost else { return nil }
         return ghost.coordinate(at: recorder.elapsed(at: Date()))
-    }
-
-    private var swiftUIMap: some View {
-        Map(position: $camera) {
-            if nav.approachCoordinates.count > 1 {
-                MapPolyline(coordinates: nav.approachCoordinates)
-                    .stroke(MapUI.amber.opacity(0.85),
-                            style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round,
-                                               dash: [10, 8]))
-            }
-            if let ribbon {
-                if ribbon.travelled.count > 1 {
-                    MapPolyline(coordinates: ribbon.travelled)
-                        .stroke(MapConfig.casing, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                    MapPolyline(coordinates: ribbon.travelled)
-                        .stroke(MapConfig.accent.opacity(0.35),
-                                style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-                }
-                if ribbon.remaining.count > 1 {
-                    MapPolyline(coordinates: ribbon.remaining)
-                        .stroke(MapConfig.casing, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                    ForEach(ribbon.remainingSegments) { segment in
-                        MapPolyline(coordinates: segment.coordinates)
-                            .stroke(MapConfig.paceColor(segment.merit),
-                                    style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-                    }
-                }
-            }
-            if trackCoordinates.count > 1 {
-                MapPolyline(coordinates: trackCoordinates)
-                    .stroke(MapUI.emerald.opacity(0.85), lineWidth: 5)
-            }
-            if let coordinate = puckCoordinate {
-                Annotation("", coordinate: coordinate, anchor: .center) {
-                    // In heading-up modes the map already rotates, so the puck
-                    // must point straight up. Rotating it by absolute heading
-                    // as well is what made it sit diagonally.
-                    NavigationPuck(heading: cameraIsCockpit ? 0 : nav.userHeading,
-                                   speed: nav.currentSpeedMps)
-                }
-            }
-            if ghostEnabled, let ghost,
-               let coordinate = ghost.coordinate(at: recorder.elapsed(at: Date())) {
-                Annotation("Ghost", coordinate: coordinate, anchor: .center) {
-                    Image(systemName: "figure.run")
-                        .accessibilityLabel("Ghost of the reference ride")
-                        .font(.scaledSystem(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(5)
-                        .background(MapUI.magenta, in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
-                }
-            }
-            ForEach(marks.hazards) { mark in
-                Annotation("Rider mark", coordinate: mark.coordinate, anchor: .center) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.scaledSystem(size: 9, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(3)
-                        .background(MapUI.amber, in: Circle())
-                }
-            }
-        }
-        .mapStyle(mapStyle)
-        .mapControlVisibility(.hidden)
-        .ignoresSafeArea()
     }
 
     private var mapControls: some View {
@@ -970,89 +842,6 @@ struct RideView: View {
                         Label("Send to car screen", systemImage: "car.side.fill")
                     }
                 }
-                Divider()
-                Button {
-                    mapStyle = .standard(elevation: .flat)
-                    mapStyleName = "standard"
-                } label: {
-                    mapStyleLabel("Standard", id: "standard")
-                }
-                Button {
-                    mapStyle = .standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll)
-                    mapStyleName = "muted"
-                } label: {
-                    mapStyleLabel("OLED muted", id: "muted")
-                }
-                Divider()
-                Menu {
-                    ForEach(MapRendererKind.allCases) { renderer in
-                        Button {
-                            guard renderer.isAvailable else { return }
-                            mapRenderer = renderer.rawValue
-                        } label: {
-                            if mapRenderer == renderer.rawValue {
-                                Label(renderer.title, systemImage: "checkmark")
-                            } else {
-                                Label(renderer.title, systemImage: renderer.isAvailable ? "map" : "lock")
-                            }
-                        }
-                        .disabled(!renderer.isAvailable)
-                    }
-                } label: {
-                    Label("Map renderer", systemImage: "square.stack.3d.up")
-                }
-
-                Divider()
-                Menu {
-                    ForEach(UnitSystemPreference.allCases) { preference in
-                        Button {
-                            setUnitPreference(preference)
-                        } label: {
-                            if Units.preference == preference {
-                                Label(preference.title, systemImage: "checkmark")
-                            } else {
-                                Label(preference.title, systemImage: preference.icon)
-                            }
-                        }
-                    }
-                } label: {
-                    Label("Units: \(Units.preference.shortTitle)", systemImage: "ruler")
-                }
-
-                Divider()
-                Button {
-                    markHazard()
-                } label: {
-                    Label("Mark hazard here", systemImage: "exclamationmark.triangle")
-                }
-                Button {
-                    avoidCurrentRoad()
-                } label: {
-                    Label("Avoid this road", systemImage: "nosign")
-                }
-                Button {
-                    ghostEnabled.toggle()
-                    loadGhost()
-                } label: {
-                    Label(ghostEnabled ? "Ghost on" : "Ghost off", systemImage: ghostEnabled ? "figure.run.circle.fill" : "figure.run.circle")
-                }
-                Button {
-                    longRideMode.toggle()
-                    if !longRideMode { dimmed = false }
-                } label: {
-                    Label(longRideMode ? "Battery mode on" : "Battery mode off", systemImage: "battery.25percent")
-                }
-
-                #if DEBUG
-                if nav.route != nil {
-                    Divider()
-                    Button {
-                        showingSimulator = true
-                    } label: {
-                        Label("Route simulator", systemImage: "play.circle")
-                    }
-                }
-                #endif
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.scaledSystem(size: 16, weight: .bold))
@@ -1100,15 +889,6 @@ struct RideView: View {
         .padding(.leading, 16)
     }
 
-    @ViewBuilder
-    private func mapStyleLabel(_ title: String, id: String) -> some View {
-        if mapStyleName == id {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Text(title)
-        }
-    }
-
     /// The controls rail sits below the banner stack instead of guessing at
     /// banner heights: navigation, curve and hazard banners can stack two or
     /// three deep, and a fixed offset used to push the last button into the
@@ -1125,7 +905,6 @@ struct RideView: View {
 
     private func applyCameraMode() {
         guard cameraIsCockpit else {
-            camera = .userLocation(followsHeading: false, fallback: .automatic)
             // The map renderer needs a pose too: stopping the driver used to
             // freeze the last heading-up frame, so "North up" appeared to do
             // nothing on the vector renderer.
@@ -1138,7 +917,6 @@ struct RideView: View {
         }
         if reduceMotion {
             if let pose = nav.cameraPose {
-                camera = cameraMode.camera(for: pose)
                 cameraDriver.present(staticFrame: stillFrame(for: pose, northUp: false))
             } else {
                 cameraDriver.stop()
@@ -1241,17 +1019,19 @@ struct RideView: View {
                 handoffChip
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            if let notice = coverageNotice, !coverageNoticeDismissed {
+                MapCoverageNotice(title: notice.title,
+                                  detail: notice.detail,
+                                  isOffline: notice.isOffline,
+                                  onOpenRegions: { showingMapRegions = true },
+                                  onDismiss: { coverageNoticeDismissed = true })
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             if let lapNotice {
                 LapNoticeBanner(lap: lapNotice,
                                 total: nav.totalLaps,
                                 lastLap: nav.lastLapDuration)
                     .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            if simulator.isRunning || simulator.isPaused {
-                SimulationHUD(simulator: simulator) {
-                    showingSimulator = true
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
             if ghostEnabled, let ghost {
                 GhostDeltaChip(delta: recorder.distanceMeters - ghost.distance(at: recorder.elapsed(at: Date())))
@@ -1869,7 +1649,6 @@ struct RideView: View {
         let hazard = alerts.activeAlert?.hazard.kind.title
             ?? alerts.curveAlert?.title
             ?? alerts.surfaceAlert?.text
-        let simulation = simulator.isRunning || simulator.isPaused
         let vehicle = isCar ? "car" : "motorcycle"
         let progressValue = route.length > 0
             ? min(max(1 - nav.remaining / route.length, 0), 1)
@@ -1885,7 +1664,7 @@ struct RideView: View {
         }
         let mode: CarWidgetSnapshot.Mode = nav.arrived
             ? .arrived
-            : (simulation ? .simulation : (recorder.isPaused ? .paused : .driving))
+            : (recorder.isPaused ? .paused : .driving)
 
         LiveRideActivity.shared.update(
             title: title,
@@ -1899,7 +1678,6 @@ struct RideView: View {
             lap: nav.totalLaps > 1 ? nav.lap : 0,
             totalLaps: nav.totalLaps > 1 ? nav.totalLaps : 0,
             hazard: hazard,
-            isSimulation: simulation,
             vehicleKind: vehicle,
             mapImage: liveMapImage,
             progress: progressValue,
@@ -1922,7 +1700,6 @@ struct RideView: View {
             lap: nav.totalLaps > 1 ? nav.lap : 0,
             totalLaps: nav.totalLaps > 1 ? nav.totalLaps : 0,
             hazard: hazard,
-            isSimulation: simulation,
             mapImage: overviewImage ?? liveMapImage,
             progress: progressValue,
             stepID: nav.step?.id ?? -1,
@@ -1994,15 +1771,19 @@ struct RideView: View {
             if wakeWord, !voiceStartedManually {
                 guard let wakeQuery = CompanionWakeWord.query(from: text) else { return }
                 query = wakeQuery
+            } else if !wakeWord, !voiceStartedManually, !pushToTalk {
+                // Wake word off and the mic was armed by voice commands:
+                // overheard speech must not become a spoken answer.
+                return
             }
             let context = companionContext()
             if let answer = companion.answer(query, context: context) {
-                Speaker.shared.say(answer, kind: .alert)
+                Speaker.shared.say(answer, kind: .companion)
                 return
             }
             Task { @MainActor in
                 guard let generated = await companion.freeFormAnswer(query, context: context) else { return }
-                Speaker.shared.say(generated, kind: .alert)
+                Speaker.shared.say(generated, kind: .companion)
             }
         }
         voice.onCommand = { command in
@@ -2016,11 +1797,9 @@ struct RideView: View {
             case .saveRide:
                 if recorder.isRecording { finishRide(save: true) }
             case .endRoute:
-                nav.stop()
+                nav.endNavigation()
             case .repeatInstruction:
-                if let step = nav.step {
-                    Speaker.shared.say(Narrator.instruction(step, distance: nil), kind: .navigation)
-                }
+                _ = nav.repeatLastInstruction()
             case .calibrate:
                 lean.calibrate()
             case .nextCamera:
@@ -2040,6 +1819,42 @@ struct RideView: View {
 
     private var puckCoordinate: CLLocationCoordinate2D? {
         matchedPuck ?? nav.userCoordinate
+    }
+
+    /// True when this ride's map is coming from the hosted archive rather than
+    /// an installed region or the bundled starter.
+    private var usesStreamedMap: Bool {
+        MapRegionStore.shared.archive(for: puckCoordinate).source == .hosted
+    }
+
+    /// What the rider needs to know about offline readiness for this route:
+    /// whole-route tiles first, then the road data routing needs, then the
+    /// no-route case for the current position.
+    private var coverageNotice: (title: String, detail: String, isOffline: Bool)? {
+        let offline = !NetworkMonitor.shared.isOnline
+        if let coverage = routeCoverage {
+            if !coverage.isFullyTileCovered {
+                return ("Part of this route is outside your offline maps",
+                        "Download the missing area for no-signal riding.", offline)
+            }
+            if !coverage.isFullyRoadCovered {
+                return ("Offline routing data is missing",
+                        "Map tiles are installed; road data is not.", offline)
+            }
+            return nil
+        }
+        guard usesStreamedMap else { return nil }
+        return offline
+            ? ("No offline map for this area", "Tiles were not downloaded.", true)
+            : ("Online map", "No offline region covers this area.", false)
+    }
+
+    private func refreshRouteCoverage() {
+        guard let route = nav.route, route.coordinates.count > 1 else {
+            routeCoverage = nil
+            return
+        }
+        routeCoverage = MapRegionStore.shared.coverage(forRoute: route.coordinates)
     }
 
     private func updateMatchedPuck(_ pose: RideCameraPose) {
@@ -2081,8 +1896,9 @@ struct RideView: View {
             remainingMeters: nav.remaining,
             estimatedSeconds: nav.estimatedTimeRemaining,
             nextManeuverMeters: nav.step == nil ? 9_999 : nav.stepDistance,
-            nearestHazardMeters: alerts.activeAlert?.distance,
-            hazardName: alerts.activeAlert?.hazard.kind.approachName,
+            nearestHazardMeters: alerts.activeAlert?.distance ?? alerts.upcomingHazard?.meters,
+            hazardName: alerts.activeAlert?.hazard.kind.approachName
+                ?? alerts.upcomingHazard?.kind.approachName,
             routeName: route?.displayName,
             routeKey: routeKey,
             routeIsLoop: route?.kind.isLoop ?? false,
@@ -2215,60 +2031,22 @@ struct RideView: View {
         RideDebug.shared.event("RIDE-AVOID", [("road", road)])
     }
 
-    private func configureRemote() {
-        remote.onAction = { action in
-            switch action {
-            case .pauseResume:
-                guard recorder.isRecording else { return }
-                recorder.isPaused ? recorder.resume() : recorder.pause()
-            case .repeatInstruction:
-                if let step = nav.step {
-                    Speaker.shared.say(Narrator.instruction(step, distance: nil), kind: .navigation)
-                }
-            case .endRoute:
-                nav.stop()
-            case .calibrate:
-                lean.calibrate()
-            case .nextCamera:
-                cameraMode = nextMode
-            case .companionState:
-                companion.cycleState()
-            case .pushToTalkStart:
-                guard companion.state != .off else { return }
-                Speaker.shared.stop()
-                pushToTalk = true
-                voiceStartedManually = true
-                if !voice.isListening { voice.start(requestingPermission: true) }
-            case .pushToTalkEnd:
-                pushToTalk = false
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    guard !pushToTalk else { return }
-                    voiceStartedManually = false
-                    if !wantsVoiceListening {
-                        voice.stop()
-                    }
-                }
-            }
-        }
-        remote.start()
-    }
-
     // MARK: Ride lifecycle
 
     private func finishRide(save: Bool) {
-        if save, recorder.wasSimulated {
-            RouteSimulator.shared.stop()
-            recorder.discard()
-            nav.stop()
-            RevertDiagnostics.log("sim.ride.discard route=\(nav.route?.displayName ?? "—")")
-            rideError = "Simulation finished. This ride was not saved to History — its SIMULATION transcript and Simulation report are in the Ride debug folder."
-            return
-        }
         guard save else {
             recorder.discard()
             nav.stop()
             exitCockpit()
+            return
+        }
+
+        guard RevertServices.shared.canPersist else {
+            // The store did not open this launch. Keep the journal so the ride
+            // is offered again, and do not claim it was saved.
+            recorder.suspend()
+            nav.stop()
+            rideError = "This ride can't be saved: the ride store on this iPhone could not be opened. It is kept and will be offered again next time you launch Revert."
             return
         }
 
@@ -2304,7 +2082,7 @@ struct RideView: View {
             ride.savedRouteID = route.savedRouteID
         }
         // A loop can be re-planned from a saved route without carrying the
-        // saved id (older plans, CarPlay starts); match it by fingerprint so
+        // saved id (older plans, widget starts); match it by fingerprint so
         // the time still joins the right leaderboard.
         if ride.savedRouteID == nil, let key = ride.routeKey, !key.isEmpty {
             ride.savedRouteID = savedRoutes.first(where: { $0.fingerprintKey == key })?.id
@@ -2437,6 +2215,50 @@ struct RideView: View {
         } else {
             dismiss()
         }
+    }
+}
+
+/// One notice for the one map: streaming, a partial route, or missing road
+/// data. The wording is supplied by the caller so the rider is told exactly
+/// which offline capability is missing.
+private struct MapCoverageNotice: View {
+    let title: String
+    let detail: String
+    let isOffline: Bool
+    let onOpenRegions: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: isOffline ? "wifi.slash" : "antenna.radiowaves.left.and.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isOffline ? MapUI.amber : MapUI.cyan)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MapUI.ink)
+                Text(detail)
+                    .font(.system(size: 9, design: .rounded))
+                    .foregroundStyle(MapUI.textSecondary)
+            }
+            Spacer(minLength: 4)
+            Button("Get maps", action: onOpenRegions)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(MapUI.accent)
+                .buttonStyle(.plain)
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(MapUI.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(MapUI.panel.opacity(0.92), in: Capsule())
+        .overlay(Capsule().stroke((isOffline ? MapUI.amber : MapUI.cyan).opacity(0.35), lineWidth: 0.8))
     }
 }
 
@@ -2850,7 +2672,6 @@ private struct RideDebugHooks: ViewModifier {
     @AppStorage("navigation.voice") private var navigationVoice = true
     @AppStorage("alert.voice") private var alertVoice = true
     @AppStorage("helmet.binaural") private var binaural = true
-    @AppStorage("remote.enabled") private var remoteEnabled = true
     @AppStorage("rider.selectedBike") private var selectedBike = BikeCatalog.defaultBike
     @AppStorage("units.system") private var unitSystem = UnitSystemPreference.automatic.rawValue
 
@@ -2885,9 +2706,6 @@ private struct RideDebugHooks: ViewModifier {
             }
             .onChange(of: binaural) { _, value in
                 RideDebug.shared.event("SETTING", [("key", "helmet.binaural"), ("value", value ? "yes" : "no")])
-            }
-            .onChange(of: remoteEnabled) { _, value in
-                RideDebug.shared.event("SETTING", [("key", "remote.enabled"), ("value", value ? "yes" : "no")])
             }
             .onChange(of: selectedBike) { _, value in
                 RideDebug.shared.event("SETTING", [("key", "rider.selectedBike"), ("value", value)])

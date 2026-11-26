@@ -1,0 +1,809 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+struct TileLoadingPhaseSnapshot: Equatable {
+    let inFlight: Int
+    let completed: Int
+    let failed: Int
+}
+
+package enum TileLoadingTileStatus: Equatable {
+    case queued
+    case loading
+    case parsing
+    case ready
+    case failed
+}
+
+package struct TileLoadingStatusTileSnapshot: Equatable {
+    package let tile: Tile
+    package let status: TileLoadingTileStatus
+    package let progress: Double
+    package let detail: String
+    package let preparationStages: [TilePreparationStageSnapshot]
+    /// How long the row has shown its current detail, in whole seconds, for
+    /// a record whose status is live work (`.loading`, `.parsing`); zero
+    /// otherwise. A stage that stays put grows old in the HUD instead of
+    /// looking like it started a moment ago.
+    package let stageAgeSeconds: Int
+
+    package init(tile: Tile,
+         status: TileLoadingTileStatus,
+         progress: Double,
+         detail: String,
+         preparationStages: [TilePreparationStageSnapshot] = [],
+         stageAgeSeconds: Int = 0) {
+        self.tile = tile
+        self.status = status
+        self.progress = progress
+        self.detail = detail
+        self.preparationStages = preparationStages
+        self.stageAgeSeconds = stageAgeSeconds
+    }
+}
+
+package struct TilePreparationStageSnapshot: Equatable {
+    package let name: String
+    package let duration: TimeInterval?
+    package let layerTimings: [TileParseLayerTiming]
+
+    package init(name: String,
+         duration: TimeInterval?,
+         layerTimings: [TileParseLayerTiming] = []) {
+        self.name = name
+        self.duration = duration
+        self.layerTimings = layerTimings
+    }
+}
+
+package struct TileLoadingStatusSnapshot: Equatable {
+    package let requested: Int
+    package let deduplicated: Int
+    package let activeLoads: Int
+    package let scheduled: Int
+    let disk: TileLoadingPhaseSnapshot
+    let network: TileLoadingPhaseSnapshot
+    let parsing: TileLoadingPhaseSnapshot
+    package let totalCompleted: Int
+    package let totalFailed: Int
+    package let networkBytes: Int
+    package let latestDiskTile: Tile?
+    package let latestNetworkTile: Tile?
+    package let latestParsingTile: Tile?
+    package let latestFailure: String?
+    package let latestParseLayerTimingTile: Tile?
+    let latestParseLayerTimings: [TileParseLayerTiming]
+    package let tiles: [TileLoadingStatusTileSnapshot]
+
+    package var lines: [String] {
+        guard requested > 0 || activeLoads > 0 || scheduled > 0 || totalCompleted > 0 || totalFailed > 0 else {
+            return []
+        }
+
+        // One value a line, so a reader finds the one they watch.
+        var output = [
+            "requested:\(requested)",
+            "deduplicated:\(deduplicated)",
+            "active:\(activeLoads)",
+            "scheduled:\(scheduled)",
+            "disk in:\(disk.inFlight)",
+            "disk hit:\(disk.completed)",
+            "disk miss:\(disk.failed)",
+            "network in:\(network.inFlight)",
+            "network done:\(network.completed)",
+            "network fail:\(network.failed)",
+            "network bytes:\(networkBytes)",
+            "parse in:\(parsing.inFlight)",
+            "parse done:\(parsing.completed)",
+            "parse fail:\(parsing.failed)",
+            "total done:\(totalCompleted)",
+            "total fail:\(totalFailed)"
+        ]
+
+        if let latestDiskTile {
+            output.append("current disk:\(Self.tileDescription(latestDiskTile))")
+        }
+        if let latestNetworkTile {
+            output.append("current net:\(Self.tileDescription(latestNetworkTile))")
+        }
+        if let latestParsingTile {
+            output.append("current parse:\(Self.tileDescription(latestParsingTile))")
+        }
+        if let latestFailure {
+            output.append("last failure: \(latestFailure)")
+        }
+        if let timingLine = Self.parseLayerTimingLine(tile: latestParseLayerTimingTile,
+                                                      timings: latestParseLayerTimings) {
+            output.append(timingLine)
+        }
+        return output
+    }
+
+    private static func tileDescription(_ tile: Tile) -> String {
+        "z\(tile.z)/\(tile.x)/\(tile.y)"
+    }
+
+    private static func parseLayerTimingLine(tile: Tile?, timings: [TileParseLayerTiming]) -> String? {
+        guard let tile, timings.isEmpty == false else {
+            return nil
+        }
+        let items = timings
+            .filter { $0.duration > 0 }
+            .sorted { lhs, rhs in
+                if lhs.duration != rhs.duration {
+                    return lhs.duration > rhs.duration
+                }
+                return lhs.layerName < rhs.layerName
+            }
+            .prefix(3)
+            .map { "\($0.layerName) \(Self.millisecondsDescription($0.duration))" }
+        guard items.isEmpty == false else {
+            return nil
+        }
+        return "parse layers \(tileDescription(tile)): \(items.joined(separator: ", "))"
+    }
+
+    private static func millisecondsDescription(_ duration: TimeInterval) -> String {
+        let milliseconds = Int((duration * 1000).rounded())
+        return "\(milliseconds)ms"
+    }
+}
+
+/// `@unchecked Sendable`: every read and write goes through the serial
+/// `queue`, so the reporter is handed to the loader's tasks and to the HUD's
+/// timer alike.
+final class TileLoadingStatusReporter: @unchecked Sendable {
+    private struct PhaseCounters {
+        var inFlight = 0
+        var completed = 0
+        var failed = 0
+
+        var snapshot: TileLoadingPhaseSnapshot {
+            TileLoadingPhaseSnapshot(inFlight: inFlight,
+                                     completed: completed,
+                                     failed: failed)
+        }
+    }
+
+    private struct TileRecord {
+        var status: TileLoadingTileStatus
+        var progress: Double
+        var detail: String
+        var preparationStages: [TilePreparationStageSnapshot] = []
+        var stageStartTimes: [String: TimeInterval] = [:]
+        var sequence: UInt64
+        /// When `detail` last changed, for the row's stage age.
+        var detailSince: TimeInterval
+    }
+
+    private let queue = DispatchQueue(label: "ImmersiveMap.TileLoadingStatusReporter")
+    private let now: () -> TimeInterval
+    private var requested = 0
+    private var deduplicated = 0
+    private var activeLoads = 0
+    private var activeLoadTiles: Set<Tile> = []
+    private var scheduled = 0
+    private var disk = PhaseCounters()
+    private var network = PhaseCounters()
+    private var parsing = PhaseCounters()
+    private var totalCompleted = 0
+    private var totalFailed = 0
+    private var networkBytes = 0
+    private var activeDiskTiles: Set<Tile> = []
+    private var activeNetworkTiles: Set<Tile> = []
+    private var activeParsingTiles: Set<Tile> = []
+    private var latestDiskTile: Tile?
+    private var latestNetworkTile: Tile?
+    private var latestParsingTile: Tile?
+    private var latestFailure: String?
+    private var latestParseLayerTimingTile: Tile?
+    private var latestParseLayerTimings: [TileParseLayerTiming] = []
+    private var currentDemand: Set<Tile> = []
+    private var displayedTiles: Set<Tile> = []
+    private var tileRecords: [Tile: TileRecord] = [:]
+    private var recentPreparationStagesByTile: [Tile: [TilePreparationStageSnapshot]] = [:]
+    private var sequence: UInt64 = 0
+
+    /// Called after every change, on the thread that made it: the debug
+    /// panel reads the rows again. Set and cleared by the engine.
+    var onChange: (@Sendable () -> Void)? {
+        get { queue.sync { onChangeStorage } }
+        set { queue.sync { onChangeStorage = newValue } }
+    }
+    private var onChangeStorage: (@Sendable () -> Void)?
+
+    init(now: @escaping () -> TimeInterval = { Date().timeIntervalSinceReferenceDate }) {
+        self.now = now
+    }
+
+    /// A change under the queue, then the word of it outside the queue, so
+    /// a listener may read the snapshot at once.
+    private func mutate(_ body: () -> Void) {
+        queue.sync(execute: body)
+        onChange?()
+    }
+
+    func recordDemand(input: Int, deduplicated: Int, tiles: [Tile]) {
+        mutate {
+            self.requested = input
+            self.deduplicated = deduplicated
+            currentDemand = Set(tiles)
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    func recordDisplayedTiles(_ tiles: [Tile]) {
+        mutate {
+            displayedTiles = Set(tiles)
+            for tile in tiles {
+                guard shouldCreateDisplayedRecord(for: tile) else {
+                    continue
+                }
+                restoreRecentPreparationStages(for: tile)
+                updateTile(tile,
+                           status: .ready,
+                           progress: 1,
+                           detail: "displayed")
+            }
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    func recordLoadScheduled(tile: Tile) {
+        mutate {
+            scheduled += 1
+            updateTile(tile,
+                       status: .queued,
+                       progress: 0.1,
+                       detail: "queued")
+        }
+    }
+
+    func recordLoadStarted(tile: Tile) {
+        mutate {
+            activeLoadTiles.insert(tile)
+            activeLoads = activeLoadTiles.count
+            updateTile(tile,
+                       status: .loading,
+                       progress: 0.35,
+                       detail: "network")
+        }
+    }
+
+    func recordLoadCompleted(tile: Tile) {
+        mutate {
+            activeLoadTiles.remove(tile)
+            activeLoads = activeLoadTiles.count
+            totalCompleted += 1
+            appendInstantStage("ready", for: tile)
+            storeRecentPreparationStages(for: tile)
+            updateTile(tile,
+                       status: .ready,
+                       progress: 1,
+                       detail: "ready")
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    func recordLoadFailed(tile: Tile, reason: String) {
+        mutate {
+            activeLoadTiles.remove(tile)
+            activeLoads = activeLoadTiles.count
+            totalFailed += 1
+            latestFailure = reason
+            updateTile(tile,
+                       status: .failed,
+                       progress: 1,
+                       detail: reason)
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    func recordLoadsCancelled(tiles: [Tile]) {
+        let cancelledTiles = Set(tiles)
+        mutate {
+            requested = 0
+            deduplicated = 0
+            currentDemand.removeAll()
+
+            activeLoadTiles.subtract(cancelledTiles)
+            activeLoads = activeLoadTiles.count
+            activeDiskTiles.subtract(cancelledTiles)
+            disk.inFlight = activeDiskTiles.count
+            activeNetworkTiles.subtract(cancelledTiles)
+            network.inFlight = activeNetworkTiles.count
+            activeParsingTiles.subtract(cancelledTiles)
+            parsing.inFlight = activeParsingTiles.count
+
+            for tile in cancelledTiles {
+                tileRecords.removeValue(forKey: tile)
+                if displayedTiles.contains(tile) {
+                    updateTile(tile,
+                               status: .ready,
+                               progress: 1,
+                               detail: "displayed")
+                }
+            }
+            refreshLatestDiskTile()
+            refreshLatestNetworkTile()
+            refreshLatestParsingTile()
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    /// A load parked between stages (past the disk stage, waiting for a
+    /// network slot) was dropped because demand left the tile: no failure, no
+    /// completion, just bookkeeping so `activeLoads` does not leak.
+    func recordLoadDropped(tile: Tile) {
+        mutate {
+            activeLoadTiles.remove(tile)
+            activeLoads = activeLoadTiles.count
+            tileRecords.removeValue(forKey: tile)
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    /// The loader's watchdog retired the load: its stage held a lane slot
+    /// past the stage's deadline. The row says so, the phase it was in is
+    /// closed, and the failure counts like any other so the retry backoff
+    /// owns the next attempt.
+    func recordLoadStalled(tile: Tile, stage: String) {
+        mutate {
+            endActiveWork(for: tile)
+            totalFailed += 1
+            let reason = "stalled in \(stage)"
+            latestFailure = reason
+            updateTile(tile,
+                       status: .failed,
+                       progress: 1,
+                       detail: reason)
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    /// The load's task ended (the loader dropped its entry) while the row
+    /// still showed live work: no completion, failure, cancellation or drop
+    /// was recorded on the way out. Nothing on the happy paths reaches here.
+    /// The row stops claiming a stage nobody is in, so the HUD never carries
+    /// a stage past the death of its task.
+    func recordLoadEnded(tile: Tile) {
+        mutate {
+            guard let record = tileRecords[tile],
+                  Self.isActiveResourceStatus(record.status) else {
+                return
+            }
+            endActiveWork(for: tile)
+            updateTile(tile,
+                       status: .failed,
+                       progress: 1,
+                       detail: "ended in \(record.detail)")
+            pruneInactiveStaleTiles()
+        }
+    }
+
+    /// Takes the tile out of every live set and closes the phase it was in,
+    /// the way a cancellation does, for the two exits above.
+    private func endActiveWork(for tile: Tile) {
+        activeLoadTiles.remove(tile)
+        activeLoads = activeLoadTiles.count
+        if activeDiskTiles.remove(tile) != nil {
+            disk.inFlight = activeDiskTiles.count
+            finishStage("disk", for: tile)
+        }
+        if activeNetworkTiles.remove(tile) != nil {
+            network.inFlight = activeNetworkTiles.count
+            finishStage("network", for: tile)
+        }
+        if activeParsingTiles.remove(tile) != nil {
+            parsing.inFlight = activeParsingTiles.count
+            finishStage("parse", for: tile)
+        }
+        refreshLatestDiskTile()
+        refreshLatestNetworkTile()
+        refreshLatestParsingTile()
+    }
+
+    func recordDiskStarted(tile: Tile) {
+        mutate {
+            disk.inFlight += 1
+            activeDiskTiles.insert(tile)
+            latestDiskTile = tile
+            startStage("disk", for: tile)
+            updateTile(tile,
+                       status: .loading,
+                       progress: 0.2,
+                       detail: "disk")
+        }
+    }
+
+    /// The prepared cache answered the load: the read and its materialize
+    /// count as one served disk stage.
+    func recordDiskServed(tile: Tile) {
+        mutate {
+            guard activeDiskTiles.remove(tile) != nil else {
+                return
+            }
+            disk.inFlight = max(0, disk.inFlight - 1)
+            disk.completed += 1
+            finishStage("disk", for: tile)
+            updateTile(tile,
+                       status: .loading,
+                       progress: 0.3,
+                       detail: "disk hit")
+            refreshLatestDiskTile()
+        }
+    }
+
+    /// The disk could not answer (no entry, or an entry that would not
+    /// materialize): the load continues to the network stage.
+    func recordDiskMissed(tile: Tile) {
+        mutate {
+            guard activeDiskTiles.remove(tile) != nil else {
+                return
+            }
+            disk.inFlight = max(0, disk.inFlight - 1)
+            disk.failed += 1
+            finishStage("disk", for: tile)
+            updateTile(tile,
+                       status: .queued,
+                       progress: 0.25,
+                       detail: "disk miss")
+            refreshLatestDiskTile()
+        }
+    }
+
+    func recordNetworkStarted(tile: Tile) {
+        mutate {
+            network.inFlight += 1
+            activeNetworkTiles.insert(tile)
+            latestNetworkTile = tile
+            startStage("network", for: tile)
+            updateTile(tile,
+                       status: .loading,
+                       progress: 0.35,
+                       detail: "network")
+        }
+    }
+
+    func recordNetworkSucceeded(tile: Tile, bytes: Int) {
+        mutate {
+            network.inFlight = max(0, network.inFlight - 1)
+            network.completed += 1
+            networkBytes += bytes
+            activeNetworkTiles.remove(tile)
+            finishStage("network", for: tile)
+            updateTile(tile,
+                       status: .loading,
+                       progress: 0.55,
+                       detail: "\(bytes) bytes")
+            refreshLatestNetworkTile()
+        }
+    }
+
+    func recordNetworkFailed(tile: Tile, reason: String) {
+        mutate {
+            network.inFlight = max(0, network.inFlight - 1)
+            network.failed += 1
+            activeNetworkTiles.remove(tile)
+            latestFailure = reason
+            finishStage("network", for: tile)
+            updateTile(tile,
+                       status: .failed,
+                       progress: 1,
+                       detail: reason)
+            refreshLatestNetworkTile()
+        }
+    }
+
+    func recordParsingStarted(tile: Tile) {
+        mutate {
+            parsing.inFlight += 1
+            activeParsingTiles.insert(tile)
+            latestParsingTile = tile
+            startStage("parse", for: tile)
+            updateTile(tile,
+                       status: .parsing,
+                       progress: 0.7,
+                       detail: "parse")
+        }
+    }
+
+    func recordParsingSucceeded(tile: Tile, layerTimings: [TileParseLayerTiming] = []) {
+        mutate {
+            parsing.inFlight = max(0, parsing.inFlight - 1)
+            parsing.completed += 1
+            activeParsingTiles.remove(tile)
+            latestParseLayerTimingTile = tile
+            latestParseLayerTimings = Self.sortedLayerTimings(layerTimings)
+            finishStage("parse", for: tile, layerTimings: latestParseLayerTimings)
+            updateTile(tile,
+                       status: .parsing,
+                       progress: 0.85,
+                       detail: "materialize")
+            refreshLatestParsingTile()
+        }
+    }
+
+    func recordParsingFailed(tile: Tile, reason: String) {
+        mutate {
+            parsing.inFlight = max(0, parsing.inFlight - 1)
+            parsing.failed += 1
+            activeParsingTiles.remove(tile)
+            latestFailure = reason
+            finishStage("parse", for: tile)
+            updateTile(tile,
+                       status: .failed,
+                       progress: 1,
+                       detail: reason)
+            refreshLatestParsingTile()
+        }
+    }
+
+    func recordMaterializationStarted(tile: Tile) {
+        mutate {
+            startStage("materialize", for: tile)
+            updateTile(tile,
+                       status: .parsing,
+                       progress: 0.9,
+                       detail: "materialize")
+        }
+    }
+
+    func recordMaterializationSucceeded(tile: Tile) {
+        mutate {
+            finishStage("materialize", for: tile)
+            updateTile(tile,
+                       status: .parsing,
+                       progress: 0.95,
+                       detail: "materialized")
+        }
+    }
+
+    func recordMaterializationFailed(tile: Tile, reason: String) {
+        mutate {
+            finishStage("materialize", for: tile)
+            updateTile(tile,
+                       status: .parsing,
+                       progress: 0.95,
+                       detail: reason)
+        }
+    }
+
+    func snapshot() -> TileLoadingStatusSnapshot {
+        queue.sync {
+            let time = now()
+            let tiles = tileRecords
+                .filter { tile, record in
+                    shouldIncludeTile(tile, record: record)
+                }
+                .map { tile, record in
+                    (
+                        snapshot: TileLoadingStatusTileSnapshot(tile: tile,
+                                                                status: record.status,
+                                                                progress: record.progress,
+                                                                detail: record.detail,
+                                                                preparationStages: record.preparationStages,
+                                                                stageAgeSeconds: Self.isActiveResourceStatus(record.status)
+                                                                    ? Int(max(0, time - record.detailSince))
+                                                                    : 0),
+                        sequence: record.sequence
+                    )
+                }
+                .sorted(by: Self.shouldPlaceTileBefore)
+                .map(\.snapshot)
+            return TileLoadingStatusSnapshot(requested: requested,
+                                             deduplicated: deduplicated,
+                                             activeLoads: activeLoads,
+                                             scheduled: scheduled,
+                                             disk: disk.snapshot,
+                                             network: network.snapshot,
+                                             parsing: parsing.snapshot,
+                                             totalCompleted: totalCompleted,
+                                             totalFailed: totalFailed,
+                                             networkBytes: networkBytes,
+                                             latestDiskTile: latestDiskTile,
+                                             latestNetworkTile: latestNetworkTile,
+                                             latestParsingTile: latestParsingTile,
+                                             latestFailure: latestFailure,
+                                             latestParseLayerTimingTile: latestParseLayerTimingTile,
+                                             latestParseLayerTimings: latestParseLayerTimings,
+                                             tiles: Array(tiles))
+        }
+    }
+
+    private func updateTile(_ tile: Tile,
+                            status: TileLoadingTileStatus,
+                            progress: Double,
+                            detail: String) {
+        sequence &+= 1
+        let time = now()
+        var record = tileRecords[tile] ?? TileRecord(status: status,
+                                                     progress: progress,
+                                                     detail: detail,
+                                                     sequence: sequence,
+                                                     detailSince: time)
+        if record.detail != detail || record.status != status {
+            record.detailSince = time
+        }
+        record.status = status
+        record.progress = min(max(progress, 0), 1)
+        record.detail = detail
+        record.sequence = sequence
+        tileRecords[tile] = record
+    }
+
+    private func startStage(_ name: String, for tile: Tile) {
+        var record = tileRecords[tile] ?? TileRecord(status: .queued,
+                                                     progress: 0.1,
+                                                     detail: "queued",
+                                                     sequence: sequence,
+                                                     detailSince: now())
+        record.stageStartTimes[name] = now()
+        tileRecords[tile] = record
+    }
+
+    private func finishStage(_ name: String,
+                             for tile: Tile,
+                             layerTimings: [TileParseLayerTiming] = []) {
+        var record = tileRecords[tile] ?? TileRecord(status: .queued,
+                                                     progress: 0.1,
+                                                     detail: "queued",
+                                                     sequence: sequence,
+                                                     detailSince: now())
+        let duration = record.stageStartTimes.removeValue(forKey: name).map { max(0, now() - $0) }
+        record.preparationStages.removeAll { $0.name == name }
+        record.preparationStages.append(TilePreparationStageSnapshot(name: name,
+                                                                     duration: duration,
+                                                                     layerTimings: layerTimings))
+        tileRecords[tile] = record
+    }
+
+    private func appendInstantStage(_ name: String, for tile: Tile) {
+        var record = tileRecords[tile] ?? TileRecord(status: .queued,
+                                                     progress: 0.1,
+                                                     detail: "queued",
+                                                     sequence: sequence,
+                                                     detailSince: now())
+        record.preparationStages.removeAll { $0.name == name }
+        record.preparationStages.append(TilePreparationStageSnapshot(name: name,
+                                                                     duration: nil))
+        tileRecords[tile] = record
+    }
+
+    private func storeRecentPreparationStages(for tile: Tile) {
+        guard let stages = tileRecords[tile]?.preparationStages,
+              stages.isEmpty == false else {
+            return
+        }
+        recentPreparationStagesByTile[tile] = stages
+        pruneRecentPreparationStages()
+    }
+
+    private func restoreRecentPreparationStages(for tile: Tile) {
+        guard let stages = recentPreparationStagesByTile[tile],
+              stages.isEmpty == false else {
+            return
+        }
+        var record = tileRecords[tile] ?? TileRecord(status: .ready,
+                                                     progress: 1,
+                                                     detail: "displayed",
+                                                     sequence: sequence,
+                                                     detailSince: now())
+        record.preparationStages = stages
+        tileRecords[tile] = record
+    }
+
+    private func pruneRecentPreparationStages() {
+        let retainedTiles = currentDemand.union(displayedTiles)
+            .union(activeDiskTiles).union(activeNetworkTiles).union(activeParsingTiles)
+        let maximumRecentPreparationStageCount = 256
+        if recentPreparationStagesByTile.count <= maximumRecentPreparationStageCount {
+            return
+        }
+        recentPreparationStagesByTile = recentPreparationStagesByTile.filter { retainedTiles.contains($0.key) }
+    }
+
+    private func pruneInactiveStaleTiles() {
+        tileRecords = tileRecords.filter { tile, record in
+            shouldIncludeTile(tile, record: record)
+        }
+    }
+
+    private func refreshLatestDiskTile() {
+        latestDiskTile = latestActiveTile(in: activeDiskTiles)
+    }
+
+    private func refreshLatestNetworkTile() {
+        latestNetworkTile = latestActiveTile(in: activeNetworkTiles)
+    }
+
+    private func refreshLatestParsingTile() {
+        latestParsingTile = latestActiveTile(in: activeParsingTiles)
+    }
+
+    private func latestActiveTile(in tiles: Set<Tile>) -> Tile? {
+        tiles.max { lhs, rhs in
+            let lhsSequence = tileRecords[lhs]?.sequence ?? 0
+            let rhsSequence = tileRecords[rhs]?.sequence ?? 0
+            if lhsSequence != rhsSequence {
+                return lhsSequence < rhsSequence
+            }
+            if lhs.z != rhs.z {
+                return lhs.z < rhs.z
+            }
+            if lhs.x != rhs.x {
+                return lhs.x > rhs.x
+            }
+            return lhs.y > rhs.y
+        }
+    }
+
+    private func shouldIncludeTile(_ tile: Tile, record: TileRecord) -> Bool {
+        currentDemand.contains(tile) || displayedTiles.contains(tile) || Self.isActiveResourceStatus(record.status)
+    }
+
+    private func shouldCreateDisplayedRecord(for tile: Tile) -> Bool {
+        guard let record = tileRecords[tile] else {
+            return true
+        }
+        return Self.isActiveResourceStatus(record.status) == false
+    }
+
+    private static func isActiveResourceStatus(_ status: TileLoadingTileStatus) -> Bool {
+        switch status {
+        case .loading, .parsing:
+            return true
+        case .queued, .ready, .failed:
+            return false
+        }
+    }
+
+    private static func sortedLayerTimings(_ timings: [TileParseLayerTiming]) -> [TileParseLayerTiming] {
+        timings
+            .filter { $0.duration > 0 }
+            .sorted { lhs, rhs in
+                if lhs.duration != rhs.duration {
+                    return lhs.duration > rhs.duration
+                }
+                return lhs.layerName < rhs.layerName
+            }
+    }
+
+    private static func shouldPlaceTileBefore(
+        _ lhs: (snapshot: TileLoadingStatusTileSnapshot, sequence: UInt64),
+        _ rhs: (snapshot: TileLoadingStatusTileSnapshot, sequence: UInt64)
+    ) -> Bool {
+        let lhsPriority = priority(lhs.snapshot.status)
+        let rhsPriority = priority(rhs.snapshot.status)
+        if lhsPriority != rhsPriority {
+            return lhsPriority < rhsPriority
+        }
+        if lhs.sequence != rhs.sequence {
+            return lhs.sequence > rhs.sequence
+        }
+        if lhs.snapshot.tile.z != rhs.snapshot.tile.z {
+            return lhs.snapshot.tile.z > rhs.snapshot.tile.z
+        }
+        if lhs.snapshot.tile.x != rhs.snapshot.tile.x {
+            return lhs.snapshot.tile.x < rhs.snapshot.tile.x
+        }
+        return lhs.snapshot.tile.y < rhs.snapshot.tile.y
+    }
+
+    private static func priority(_ status: TileLoadingTileStatus) -> Int {
+        switch status {
+        case .loading:
+            return 0
+        case .parsing:
+            return 1
+        case .queued:
+            return 2
+        case .failed:
+            return 3
+        case .ready:
+            return 4
+        }
+    }
+}

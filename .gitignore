@@ -67,3 +67,7 @@ waze-voicepack-links-main/
 # it (built-in seeding is skipped and the rest of the voice-pack UI works).
 # ---------------------------------------------------------------------------
 revert/BuiltInVoicePacks/
+
+# Offline map extracts are build artifacts; host them, do not commit them
+Scripts/maps/build/
+*.pmtiles.download

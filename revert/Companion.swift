@@ -115,6 +115,8 @@ struct CompanionContext {
     var curveAlert: String?
     var homeDistanceMeters: Double?
     var workDistanceMeters: Double?
+    /// The last instruction the navigation voice actually delivered.
+    var lastInstruction: String?
     var startHome: (() -> Void)?
     var startWork: (() -> Void)?
     var setupNote: SetupNote?
@@ -245,6 +247,10 @@ nonisolated enum CompanionScript {
 
     static func service(_ distance: String) -> String {
         "Chain's due in \(distance). Worth a look when you're home."
+    }
+
+    static func serviceDueNow() -> String {
+        "Chain and fluids are due now. Worth ten minutes before the next ride."
     }
 
     static func unknown() -> String {
@@ -610,13 +616,15 @@ final class CompanionDirector {
     }
 
     func rideStarted(context: CompanionContext) {
-        guard state == .on else { return }
+        // Off means "no companion". Asked-only still remembers rides and greets
+        // on arrival; only the unprompted chatter is gated on On.
+        guard state != .off else { return }
         didStart = true
         didArrive = false
         didRecordRide = false
         lastCheckIn = Date()
         jokesThisRide = 0
-        guard !context.hasManeuverSoon, !context.hasHazardSoon else { return }
+        guard state == .on, !context.hasManeuverSoon, !context.hasHazardSoon else { return }
         let distance = Units.distanceText(context.routeLengthMeters, decimals: 1)
         let time = context.estimatedSeconds.map { Units.clock($0) } ?? "a while"
         speak(CompanionScript.start(distance: distance, time: time,
@@ -624,11 +632,13 @@ final class CompanionDirector {
     }
 
     func arrived(context: CompanionContext) {
-        guard state == .on, !didArrive, didStart else { return }
+        guard state != .off, !didArrive, didStart else { return }
         didArrive = true
         let distance = Units.distanceText(context.rideDistanceMeters, decimals: 1)
         let time = Units.clock(context.rideDurationSeconds)
-        speak(CompanionScript.arrival(distance: distance, time: time, address: addressTerm))
+        if state == .on {
+            speak(CompanionScript.arrival(distance: distance, time: time, address: addressTerm))
+        }
         recordRideIfNeeded(context)
     }
 
@@ -636,9 +646,16 @@ final class CompanionDirector {
         if didStart, !didArrive {
             recordRideIfNeeded(context)
         }
-        guard state == .on, let bike = context.bike, bike.isServiceDue else { return }
-        speak(CompanionScript.service(Units.distanceText(bike.distanceToServiceKm * 1_000, decimals: 0)))
         didStart = false
+        guard state == .on, let bike = context.bike, bike.isServiceDue else { return }
+        // distanceToServiceKm clamps at zero, so a due bike used to be told
+        // "due in 0 km".
+        let remaining = max(bike.distanceToServiceKm, 0)
+        if remaining < 1 {
+            speak(CompanionScript.serviceDueNow())
+        } else {
+            speak(CompanionScript.service(Units.distanceText(remaining * 1_000, decimals: 0)))
+        }
     }
 
     func noteRiderSpoke() {
@@ -665,6 +682,15 @@ final class CompanionDirector {
         if lower.contains("asked only") || lower.contains("only when asked") {
             setState(.askedOnly)
             return "Asked only."
+        }
+        // "Say that again" must work even as the rider approaches a turn —
+        // that is exactly when it is asked.
+        if lower.contains("repeat") || lower.contains("say that again")
+            || lower.contains("what was that turn") || lower.contains("what did you say") {
+            guard let last = context.lastInstruction, !last.isEmpty else {
+                return "I've no instruction yet."
+            }
+            return last
         }
         if context.hasManeuverSoon { return nil }
         if lower.contains("joke") {
@@ -763,7 +789,7 @@ final class CompanionDirector {
 
     private func speak(_ text: String) {
         lastLine = text
-        Speaker.shared.say(text, kind: .alert)
+        Speaker.shared.say(text, kind: .companion)
     }
 }
 
@@ -806,6 +832,8 @@ struct CompanionSettingsView: View {
     @State private var director = CompanionDirector.shared
     @AppStorage("companion.addressTerm") private var addressTerm = "boss"
     @AppStorage("companion.wakeWord") private var wakeWord = true
+    @AppStorage("companion.voice") private var aceVoice = true
+    @AppStorage("voice.muted") private var voiceMuted = false
     @AppStorage("companion.preferBluetoothMic") private var preferBluetoothMic = true
     @State private var audioRoute = AudioRouteMonitor.shared
     @State private var confirmingForget = false
@@ -837,6 +865,27 @@ struct CompanionSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                RevertSectionLabel(title: "Voice")
+                Toggle(isOn: $aceVoice) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ace speaks")
+                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                            .foregroundStyle(Pulse.ink)
+                        Text("Separate from hazard and navigation voice. The cockpit's mute switch still silences everything.")
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(Pulse.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .pulseCard()
+                if voiceMuted {
+                    RevertInfoNote(
+                        text: "Voice is muted in the cockpit. Ace's state is unchanged, but nothing will be heard until you unmute.",
+                        systemImage: "speaker.slash",
+                        tint: Pulse.warning
+                    )
+                }
 
                 RevertSectionLabel(title: "Wake word")
                 Toggle(isOn: $wakeWord) {

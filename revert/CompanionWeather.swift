@@ -66,7 +66,8 @@ actor CompanionWeatherService {
             URLQueryItem(name: "longitude", value: String(format: "%.4f", coordinate.longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,precipitation,weather_code"),
             URLQueryItem(name: "hourly", value: "precipitation_probability"),
-            URLQueryItem(name: "forecast_days", value: "1"),
+            // The next two hours, not the first two entries of a whole day.
+            URLQueryItem(name: "forecast_hours", value: "2"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
         guard let url = components?.url else { return nil }

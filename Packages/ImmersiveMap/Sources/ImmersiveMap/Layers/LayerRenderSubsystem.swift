@@ -1,0 +1,268 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Metal
+import simd
+
+/// The `Layers` folder: the layers of the app's own data drawn over the map
+/// (`ImmersiveMapLayer`), from the public model and its GeoJSON reading to
+/// the registered sources (`Sources/`, `LayerSourceLibrary`), the meshes
+/// (`LayerMeshBuilder`, `LayerMeshStore`), the pipelines and the shaders,
+/// and this subsystem. The data comes in through one seam,
+/// `LayerRenderSource`, read every frame: the app's controller behind the
+/// map view (`ImmersiveMapLayersController`), fixed layers behind an export.
+/// Nothing here knows the map's tiles, its schema or its style, and nothing
+/// of the layers is configuration: `ImmersiveMapSettings` holds none of it.
+///
+/// Draws the layers on the ground of whichever surface the frame shows, in
+/// a render layer of their own (`RenderLayer.appLayers`): after the flat
+/// map's roads and the trees' shadows, after the globe's ground, so the
+/// labels painted on the map come over them on both. A frame with no layer
+/// to draw leaves the render layer out. A layer draws its zones, then its lines
+/// and their joins, then its points, the layers in the order they are set.
+/// On the flat map a chunk draws in the copy of the world nearest the
+/// camera, and in its neighbours too at the zooms that show more than one,
+/// and a chunk outside the view is not drawn (`LayerChunkCulling`). On the
+/// globe every chunk is drawn, and the far side is cut on the GPU.
+/// A layer is not tested against the ground's depth unless it asks to be
+/// (`ImmersiveMapLayer.hidesBehindTerrain`): the buildings, the models and
+/// the trees cover it through the surface mask bit they raise in the
+/// stencil (`LayerPipeline.overGroundState`).
+final class LayerRenderSubsystem: RenderSubsystem, RenderPassAvailabilityProvider {
+    let name: String = "Layers"
+
+    private let source: LayerRenderSource
+    private let store: LayerMeshStore
+    private let pipeline: LayerPipeline
+    private let depthDisabledState: MTLDepthStencilState
+    /// The frame's layers that draw, each with whether the terrain hides it.
+    private var drawn: [(mesh: LayerMesh, hidesBehindTerrain: Bool)] = []
+
+    /// The camera zoom under which the flat map can show more than one copy
+    /// of the world across the view.
+    static let wrappedCopiesBelowZoom: Double = 4
+
+    init(source: LayerRenderSource,
+         store: LayerMeshStore,
+         pipeline: LayerPipeline,
+         depthDisabledState: MTLDepthStencilState) {
+        self.source = source
+        self.store = store
+        self.pipeline = pipeline
+        self.depthDisabledState = depthDisabledState
+    }
+
+    func update(frameContext: FrameContext) {
+        let layers = source.currentLayers
+        let zoom = frameContext.planningZoom
+        let (meshes, contents, pendingCount) = store.meshes(for: layers, zoom: zoom, library: source.sourceLibrary)
+        // For whoever waits for a settled scene (a still capture): a source
+        // is read and a mesh is built off the main thread and neither
+        // raises an activity, so nothing else says the layers are not all
+        // drawn as they were set.
+        frameContext.services.diagnostics.incrementCounter(.pendingLayerMeshes, by: pendingCount)
+        drawn = zip(layers, meshes).compactMap { layer, mesh in
+            guard layer.draws(atZoom: zoom), let mesh, mesh.chunks.isEmpty == false else {
+                return nil
+            }
+            return (mesh, layer.hidesBehindTerrain)
+        }
+        publishPickData(layers: layers, meshes: meshes, contents: contents, zoom: zoom, frameContext: frameContext)
+    }
+
+    /// What a tap can land on: the layers this frame draws whose shapes
+    /// are at hand, with the projection it draws them by.
+    private func publishPickData(layers: [ImmersiveMapLayer],
+                                 meshes: [LayerMesh?],
+                                 contents: [LayerSourceContent?],
+                                 zoom: Double,
+                                 frameContext: FrameContext) {
+        var entries: [LayerSelectionSnapshot.Entry] = []
+        for (index, layer) in layers.enumerated() {
+            guard layer.draws(atZoom: zoom), meshes[index] != nil, let content = contents[index] else { continue }
+            entries.append(LayerSelectionSnapshot.Entry(layer: layer, content: content))
+        }
+        let projection = entries.isEmpty ? nil : GeoScreenProjectionMath.FrameConstants(
+            drawSize: frameContext.drawSize,
+            cameraUniform: frameContext.cameraUniform,
+            resolvedPresentation: frameContext.resolvedPresentation)
+        // An empty snapshot too: a layer that stops being drawn stops
+        // being tappable.
+        frameContext.sharedState.selectionPickData.append(LayerSelectionSnapshot(frameIndex: frameContext.frameIndex,
+                                                                                drawSize: frameContext.drawSize,
+                                                                                projection: projection,
+                                                                                entries: entries))
+    }
+
+    func prepareGPU(frameContext _: FrameContext, resourceRegistry _: RenderResourceRegistry) {}
+
+    func contributePassAvailability(settings _: ImmersiveMapSettings,
+                                    builder: inout RenderPassAvailabilityBuilder) {
+        builder.appLayersEnabled = builder.appLayersEnabled || drawn.isEmpty == false
+    }
+
+    func encode(layer: RenderLayer, encoder: MTLRenderCommandEncoder, frameContext: FrameContext) {
+        guard layer == .appLayers, drawn.isEmpty == false else { return }
+        let surface: LayerPipeline.Surface
+        switch frameContext.renderSurfaceMode {
+        case .flat:
+            surface = .flat
+        case .spherical:
+            let globe = frameContext.globeRenderUniform
+            surface = GlobeSphereVertexPath.isPureSphere(renderSurfaceMode: frameContext.renderSurfaceMode,
+                                                          transition: globe.transition) ? .sphere : .morph
+        }
+
+        encoder.pushDebugGroup("layers")
+        var cameraUniform = frameContext.cameraUniform
+        var globe = frameContext.globeRenderUniform
+        var globeFrame = GlobeFrameConstantsUniform.make(globe: globe, cameraMatrix: cameraUniform.matrix)
+        encoder.setVertexBytes(&cameraUniform, length: MemoryLayout<CameraUniform>.stride, index: 1)
+        encoder.setVertexBytes(&globe, length: MemoryLayout<GlobeUniform>.stride, index: 8)
+        encoder.setVertexBytes(&globeFrame, length: MemoryLayout<GlobeFrameConstantsUniform>.stride, index: 10)
+        GlobeLightUniform.bind(GlobeLightUniform.resolve(frameContext: frameContext), encoder: encoder)
+        GroundFogUniform.bind(GroundFogUniform.resolve(frameContext: frameContext), encoder: encoder)
+        encoder.setStencilReferenceValue(0)
+        // A zone's triangles are counter-clockwise in render space, as the
+        // ground's: culling the back faces removes the far side of the
+        // planet. A line's and a point's quads are cut there instead.
+        encoder.setFrontFacing(.counterClockwise)
+
+        let placements = chunkPlacements(frameContext: frameContext, surface: surface)
+        let states = pipeline.states(for: surface)
+        for (mesh, hidesBehindTerrain) in drawn {
+            // Each chunk with its draws of this frame, none for a chunk
+            // outside the view.
+            let chunks = mesh.chunks.compactMap { chunk -> (chunk: LayerMeshChunk, draws: [LayerDrawUniform])? in
+                let draws = placements(chunk)
+                return draws.isEmpty ? nil : (chunk, draws)
+            }
+            guard chunks.isEmpty == false else { continue }
+            encoder.setDepthStencilState(hidesBehindTerrain ? pipeline.behindTerrainState : pipeline.overGroundState)
+            if let vertices = mesh.fillVertices, let indices = mesh.fillIndices {
+                encoder.setCullMode(.back)
+                encoder.setRenderPipelineState(states.fill)
+                encoder.setVertexBuffer(vertices, offset: 0, index: 0)
+                for (chunk, draws) in chunks where chunk.fillIndexCount > 0 {
+                    for var draw in draws {
+                        encoder.setVertexBytes(&draw, length: MemoryLayout<LayerDrawUniform>.stride, index: 2)
+                        encoder.drawIndexedPrimitives(type: .triangle,
+                                                      indexCount: chunk.fillIndexCount,
+                                                      indexType: .uint32,
+                                                      indexBuffer: indices,
+                                                      indexBufferOffset: chunk.fillIndexStart * MemoryLayout<UInt32>.stride)
+                    }
+                }
+            }
+            encoder.setCullMode(.none)
+            if let segments = mesh.lineSegments {
+                encoder.setRenderPipelineState(states.line)
+                encoder.setVertexBuffer(segments, offset: 0, index: 0)
+                for (chunk, draws) in chunks where chunk.lineCount > 0 {
+                    for var draw in draws {
+                        encoder.setVertexBytes(&draw, length: MemoryLayout<LayerDrawUniform>.stride, index: 2)
+                        encoder.drawIndexedPrimitives(type: .triangle,
+                                                      indexCount: LayerPipeline.lineTemplate.count,
+                                                      indexType: .uint16,
+                                                      indexBuffer: pipeline.lineTemplateIndices,
+                                                      indexBufferOffset: 0,
+                                                      instanceCount: chunk.lineCount,
+                                                      baseVertex: 0,
+                                                      baseInstance: chunk.lineStart)
+                    }
+                }
+            }
+            if let discs = mesh.discs {
+                encoder.setRenderPipelineState(states.point)
+                encoder.setVertexBuffer(discs, offset: 0, index: 0)
+                // The lines of a single vertex with the lines, then the
+                // points over them.
+                for pass in 0 ..< 2 {
+                    for (chunk, draws) in chunks {
+                        let start = pass == 0 ? chunk.joinStart : chunk.pointStart
+                        let count = pass == 0 ? chunk.joinCount : chunk.pointCount
+                        guard count > 0 else { continue }
+                        for var draw in draws {
+                            encoder.setVertexBytes(&draw, length: MemoryLayout<LayerDrawUniform>.stride, index: 2)
+                            encoder.drawPrimitives(type: .triangle,
+                                                   vertexStart: 0,
+                                                   vertexCount: 6,
+                                                   instanceCount: count,
+                                                   baseInstance: start)
+                        }
+                    }
+                }
+            }
+        }
+
+        encoder.setCullMode(.none)
+        encoder.setFrontFacing(.clockwise)
+        encoder.setDepthStencilState(depthDisabledState)
+        encoder.popDebugGroup()
+    }
+
+    /// The draw states of a chunk this frame: one per copy of the world it
+    /// draws in on the flat map and shows in (`LayerChunkCulling`), one on
+    /// the globe.
+    private func chunkPlacements(frameContext: FrameContext,
+                                 surface: LayerPipeline.Surface) -> (LayerMeshChunk) -> [LayerDrawUniform] {
+        let viewport = SIMD2<Float>(Float(frameContext.drawSize.width), Float(frameContext.drawSize.height))
+        let pixelsPerPoint = Float(frameContext.pixelsPerPoint)
+        guard surface == .flat else {
+            return { chunk in
+                let tileUniform = GlobeSurfaceTileUniform(tile: chunk.tile)
+                return [LayerDrawUniform(modelMatrix: matrix_identity_float4x4,
+                                         uvOrigin: tileUniform.uvOrigin,
+                                         uvScale: tileUniform.uvScale,
+                                         referenceWorldX: tileUniform.referenceWorldX,
+                                         viewportSizePx: viewport,
+                                         pixelsPerPoint: pixelsPerPoint,
+                                         depth: LayerDepth.depth)]
+            }
+        }
+        let flatRenderState = frameContext.resolvedPresentation.flatRenderState
+        let cameraX = frameContext.mapCameraState.centerWorldMercator.x
+        let copies: [Int] = frameContext.planningZoom < Self.wrappedCopiesBelowZoom ? [-1, 0, 1] : [0]
+        let cameraMatrix = frameContext.cameraUniform.matrix
+        return { chunk in
+            let count = Double(1 << chunk.tile.z)
+            let centreX = (Double(chunk.tile.x) + 0.5) / count
+            let nearest = Int((cameraX - centreX).rounded())
+            return copies.compactMap { offset in
+                let originAndSize = ImmersiveMapProjection.flatTileOriginAndSize(x: chunk.tile.x,
+                                                                                 y: chunk.tile.y,
+                                                                                 z: chunk.tile.z,
+                                                                                 worldWrap: Int8(clamping: nearest + offset),
+                                                                                 flatRenderPan: flatRenderState.pan,
+                                                                                 renderMapSize: flatRenderState.renderMapSize)
+                let scale = originAndSize.z / Float(TileCoordinateSpace.tileExtent)
+                let modelMatrix = Matrix.translationMatrix(x: originAndSize.x, y: originAndSize.y, z: 0)
+                    * Matrix.scaleMatrix(sx: scale, sy: scale, sz: 1)
+                guard LayerChunkCulling.isVisible(boundsMinimum: chunk.boundsMinimum,
+                                                  boundsMaximum: chunk.boundsMaximum,
+                                                  clipFromLocal: cameraMatrix * modelMatrix,
+                                                  reachPx: chunk.maximumReachPoints * pixelsPerPoint,
+                                                  viewportSizePx: viewport) else {
+                    return nil
+                }
+                return LayerDrawUniform(modelMatrix: modelMatrix,
+                                        uvOrigin: .zero,
+                                        uvScale: 0,
+                                        referenceWorldX: 0,
+                                        viewportSizePx: viewport,
+                                        pixelsPerPoint: pixelsPerPoint,
+                                        depth: LayerDepth.depth)
+            }
+        }
+    }
+
+    /// The layers that are not drawn give back their meshes and their
+    /// sources' shapes.
+    func handleMemoryWarning() {
+        store.releaseUndrawn()
+    }
+
+    func evict() {
+        store.releaseAll()
+    }
+}

@@ -1,0 +1,507 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+import simd
+
+/// The second stage of a parse: packs what the readers accumulated into the
+/// tile's streams, one `DrawingGeometryLayer` per bucket, with the style
+/// tables the vertices index into. The ground layer is class-split (fills,
+/// then ribbons), the roads are bucketed by
+/// structure and pass role and sorted, the buildings are one mesh.
+enum TileUnificationStage {
+    /// Bulk-appends one tessellated polygon into the unified vertex/index
+    /// streams. The buffers were sized exactly by the caller, so the writes
+    /// are raw pointer stores without per-append growth or uniqueness checks.
+    static func appendPolygon(_ polygon: ParsedPolygon,
+                              styleBufferIndex: UInt8,
+                              vertices: inout UnsafeMutableBufferPointer<TileVertexIn>,
+                              indices: inout UnsafeMutableBufferPointer<UInt32>,
+                              vertexCount: inout Int,
+                              indexCount: inout Int) {
+        #if DEBUG
+        // The winding contract of every tile triangle (counter-clockwise in
+        // render space, see ParsedPolygon.firstClockwiseTriangle) is kept by
+        // each emitter; this is the one funnel the ground, bridge and road
+        // geometry all pass through, so a new emitter that breaks it fails
+        // here in a debug build instead of vanishing under back-face
+        // culling on screen.
+        if let triangle = ParsedPolygon.firstClockwiseTriangle(vertices: polygon.vertices, indices: polygon.indices) {
+            assertionFailure("Tile geometry must be counter-clockwise in render space: triangle \(triangle) of a \(polygon.vertices.count)-vertex polygon is clockwise and back-face culling would drop it")
+        }
+        // An outline is the flattening's to consume: one here has no
+        // triangles and would vanish without a word.
+        if polygon.isOutline {
+            assertionFailure("A fill kept as its outline reached the unification unflattened")
+        }
+        #endif
+        let vertexOffset = UInt32(vertexCount)
+        let hasLineAttributes = polygon.lineDistances.count == polygon.vertices.count
+            && polygon.lineParameters.count == polygon.vertices.count
+        let hasLineNormals = hasLineAttributes && polygon.lineNormals.count == polygon.vertices.count
+        for (index, position) in polygon.vertices.enumerated() {
+            // Attribute-less polygons default to the saturated line interior
+            // (see TileVertexIn), so decoration polygons that share a line
+            // style render fully covered.
+            vertices.initializeElement(at: vertexCount,
+                                       to: TileVertexIn(position: position,
+                                                        styleIndex: styleBufferIndex,
+                                                        lineDistance: hasLineAttributes ? polygon.lineDistances[index] : 0,
+                                                        lineParameter: hasLineAttributes ? polygon.lineParameters[index] : Int16.max,
+                                                        normal: hasLineNormals ? polygon.lineNormals[index] : .zero))
+            vertexCount += 1
+        }
+        for index in polygon.indices {
+            indices.initializeElement(at: indexCount, to: index &+ vertexOffset)
+            indexCount += 1
+        }
+    }
+
+    /// - Parameter splitLinesClass: orders the unified indices as two class
+    ///   segments, fills first, then line ribbons (each by ascending style),
+    ///   and records the boundary in `DrawingPolygonBytes.fillsIndexCount`.
+    ///   The sphere's ground passes then draw one class without touching the
+    ///   other's vertices; the paint order becomes "every ribbon above every
+    ///   fill", which is also how the split flat/morph draws paint.
+    private static func unifyPolygonLayer(polygonByStyle: [UInt8: [ParsedPolygon]],
+                                          stylesByKey: [UInt8: BakedStyle],
+                                          splitLinesClass: Bool = false) -> (drawing: DrawingPolygonBytes,
+                                                                             styles: [TilePolygonStyle],
+                                                                             styleZoomFades: [SIMD2<Float>],
+                                                                             lineStyles: [TileLineStyle]) {
+        var styles: [TilePolygonStyle] = []
+        var styleZoomFades: [SIMD2<Float>] = []
+        var lineStyles: [TileLineStyle] = []
+
+        let totalPolygonVertexCount = polygonByStyle.values.reduce(0) { partial, polygons in
+            partial + polygons.reduce(0) { polygonPartial, polygon in
+                polygonPartial + polygon.vertices.count
+            }
+        }
+        let totalPolygonIndexCount = polygonByStyle.values.reduce(0) { partial, polygons in
+            partial + polygons.reduce(0) { polygonPartial, polygon in
+                polygonPartial + polygon.indices.count
+            }
+        }
+
+        let styleKeys = polygonByStyle.keys
+            .filter { polygonByStyle[$0]?.isEmpty == false }
+            .sorted()
+        var styleIndexByKey: [UInt8: UInt8] = [:]
+        styleIndexByKey.reserveCapacity(styleKeys.count)
+        styles.reserveCapacity(styleKeys.count)
+        styleZoomFades.reserveCapacity(styleKeys.count)
+        for (index, styleKey) in styleKeys.enumerated() {
+            if index > Int(UInt8.max) {
+                assertionFailure("Too many styles for tile pipeline.")
+                continue
+            }
+            styleIndexByKey[styleKey] = UInt8(index)
+        }
+
+        var unifiedIndices: [UInt32] = []
+        var fillsIndexCount: Int?
+        let unifiedVertices = [TileVertexIn](
+            unsafeUninitializedCapacity: totalPolygonVertexCount
+        ) { vertexBuffer, initializedVertexCount in
+            unifiedIndices = [UInt32](
+                unsafeUninitializedCapacity: totalPolygonIndexCount
+            ) { indexBuffer, initializedIndexCount in
+                var vertexCount = 0
+                var indexCount = 0
+                // One sweep for the unsplit layer; the split layer sweeps
+                // twice, fills then ribbons, each in ascending style order.
+                let classSweeps: [((ParsedPolygon) -> Bool)] = splitLinesClass
+                    ? [{ $0.isLineRibbon == false }, { $0.isLineRibbon }]
+                    : [{ _ in true }]
+                for (sweep, includesPolygon) in classSweeps.enumerated() {
+                    if sweep == 1 {
+                        fillsIndexCount = indexCount
+                    }
+                    for styleKey in styleKeys {
+                        let styleBufferIndex = styleIndexByKey[styleKey] ?? 0
+                        guard let polygons = polygonByStyle[styleKey] else { continue }
+                        for polygon in polygons where includesPolygon(polygon) {
+                            Self.appendPolygon(polygon,
+                                               styleBufferIndex: styleBufferIndex,
+                                               vertices: &vertexBuffer,
+                                               indices: &indexBuffer,
+                                               vertexCount: &vertexCount,
+                                               indexCount: &indexCount)
+                        }
+                    }
+                }
+                initializedVertexCount = vertexCount
+                initializedIndexCount = indexCount
+            }
+        }
+
+        for styleKey in styleKeys {
+            if let style = stylesByKey[styleKey] {
+                styles.append(TilePolygonStyle(color: style.color))
+                styleZoomFades.append(style.zoomFade)
+                lineStyles.append(Self.makeTileLineStyle(from: style.pass))
+            }
+        }
+
+        return (drawing: DrawingPolygonBytes(vertices: unifiedVertices,
+                                             indices: unifiedIndices,
+                                             fillsIndexCount: fillsIndexCount),
+                styles: styles,
+                styleZoomFades: styleZoomFades,
+                lineStyles: lineStyles)
+    }
+
+    /// The GPU-side line parameters of one style. The edge threshold derives
+    /// from the tessellated width and the tessellator's feather constant, so
+    /// the two stay one definition; a style with no line width keeps a zero
+    /// threshold, which is what tells the shader to skip line coverage.
+    static func makeTileLineStyle(from pass: LinePass) -> TileLineStyle {
+        let halfWidth = Float(pass.lineGeometry.lineWidth) * 0.5
+        let edgeThreshold = halfWidth > 0
+            ? halfWidth / ParseLine.extrudedHalfWidth(halfWidth: halfWidth)
+            : 0
+        return TileLineStyle(widthPoints: pass.lineWidthPoints,
+                             dashLengthPoints: pass.dashLengthPoints,
+                             dashGapPoints: pass.dashGapPoints,
+                             edgeThreshold: edgeThreshold,
+                             minimumWidthPoints: pass.minimumWidthPoints,
+                             dashInTileUnits: pass.dashInTileUnits,
+                             halfWidthUnits: halfWidth,
+                             worldLockZoom: pass.pointWidthWorldLockZoom,
+                             widthRamp: pass.pointWidthRamp,
+                             sphereAlpha: pass.sphereAlpha,
+                             sphereColor: pass.sphereColor ?? SIMD3<Float>(pass.color.x, pass.color.y, pass.color.z),
+                             sphereLookUntilZoom: pass.sphereLookUntilZoom ?? 0)
+    }
+
+    /// One road layer: a role of a structure. The flat drawer orders the
+    /// roads by depth, and a road's depth inside its layer's band is its
+    /// style index (`RoadRankDepth`), so the indices are handed out by class
+    /// priority, the lowest class first: a style takes the highest priority
+    /// any road draws it with, and the key breaks a tie. The indices then
+    /// go out nearest first, the highest style leading, which is the order
+    /// the roads that blend need (a pixel takes the first fragment of the
+    /// highest rank that reaches it) and the cheapest one for the opaque
+    /// roads on a GPU that tests depth in submission order. A road's
+    /// `layer` no longer orders it against another class: a depth rank per
+    /// style cannot state it.
+    ///
+    /// The index stream is two segments: the bodies of every road as
+    /// triangles, then the edge lines of every road as line segments
+    /// (`ParsedPolygon.edgeLineIndices`), each nearest first. The drawer
+    /// draws the two apart, at the boundary recorded in
+    /// `DrawingPolygonBytes.edgeLineIndexStart`.
+    ///
+    /// Expects the polygons already sorted by `OrderedRoadPolygon.sort`; the
+    /// caller buckets and sorts once per structure/pass combination.
+    static func unifyOrderedRoadLayer(sortedRoadPolygons: [OrderedRoadPolygon],
+                                              stylesByKey: [UInt8: BakedStyle]) -> (drawing: DrawingPolygonBytes,
+                                                                                      styles: [TilePolygonStyle],
+                                                                                      styleZoomFades: [SIMD2<Float>],
+                                                                                      lineStyles: [TileLineStyle]) {
+        var styles: [TilePolygonStyle] = []
+        var styleZoomFades: [SIMD2<Float>] = []
+        var lineStyles: [TileLineStyle] = []
+
+        let totalPolygonVertexCount = sortedRoadPolygons.reduce(0) { partial, polygon in
+            partial + polygon.polygon.vertices.count
+        }
+        let totalPolygonIndexCount = sortedRoadPolygons.reduce(0) { partial, polygon in
+            partial + polygon.polygon.indices.count + polygon.polygon.edgeLineIndices.count
+        }
+
+        var priorityByKey: [UInt8: Int] = [:]
+        for polygon in sortedRoadPolygons {
+            priorityByKey[polygon.styleKey] = max(priorityByKey[polygon.styleKey] ?? Int.min, polygon.classPriority)
+        }
+        let styleKeys = priorityByKey.keys.sorted { lhs, rhs in
+            let lhsPriority = priorityByKey[lhs] ?? Int.min
+            let rhsPriority = priorityByKey[rhs] ?? Int.min
+            return lhsPriority != rhsPriority ? lhsPriority < rhsPriority : lhs < rhs
+        }
+        var styleIndexByKey: [UInt8: UInt8] = [:]
+        styleIndexByKey.reserveCapacity(styleKeys.count)
+        styles.reserveCapacity(styleKeys.count)
+        styleZoomFades.reserveCapacity(styleKeys.count)
+
+        for (index, styleKey) in styleKeys.enumerated() {
+            if index > Int(UInt8.max) {
+                assertionFailure("Too many styles for tile pipeline.")
+                continue
+            }
+            styleIndexByKey[styleKey] = UInt8(index)
+            if let style = stylesByKey[styleKey] {
+                styles.append(TilePolygonStyle(color: style.color))
+                styleZoomFades.append(style.zoomFade)
+                lineStyles.append(Self.makeTileLineStyle(from: style.pass))
+            }
+        }
+
+        // Stable, so the roads of one style keep the order they were sorted
+        // in.
+        let nearestFirstPolygons = sortedRoadPolygons.enumerated().sorted { lhs, rhs in
+            let lhsIndex = styleIndexByKey[lhs.element.styleKey] ?? 0
+            let rhsIndex = styleIndexByKey[rhs.element.styleKey] ?? 0
+            return lhsIndex != rhsIndex ? lhsIndex > rhsIndex : lhs.offset < rhs.offset
+        }.map(\.element)
+
+        var unifiedIndices: [UInt32] = []
+        var edgeLineIndexStart = 0
+        let unifiedVertices = [TileVertexIn](
+            unsafeUninitializedCapacity: totalPolygonVertexCount
+        ) { vertexBuffer, initializedVertexCount in
+            unifiedIndices = [UInt32](
+                unsafeUninitializedCapacity: totalPolygonIndexCount
+            ) { indexBuffer, initializedIndexCount in
+                var vertexCount = 0
+                var indexCount = 0
+                var vertexOffsets: [UInt32] = []
+                vertexOffsets.reserveCapacity(nearestFirstPolygons.count)
+                for orderedPolygon in nearestFirstPolygons {
+                    vertexOffsets.append(UInt32(vertexCount))
+                    Self.appendPolygon(orderedPolygon.polygon,
+                                       styleBufferIndex: styleIndexByKey[orderedPolygon.styleKey] ?? 0,
+                                       vertices: &vertexBuffer,
+                                       indices: &indexBuffer,
+                                       vertexCount: &vertexCount,
+                                       indexCount: &indexCount)
+                }
+                edgeLineIndexStart = indexCount
+                for (orderedPolygon, vertexOffset) in zip(nearestFirstPolygons, vertexOffsets) {
+                    for index in orderedPolygon.polygon.edgeLineIndices {
+                        indexBuffer.initializeElement(at: indexCount, to: index &+ vertexOffset)
+                        indexCount += 1
+                    }
+                }
+                initializedVertexCount = vertexCount
+                initializedIndexCount = indexCount
+            }
+        }
+
+        return (drawing: DrawingPolygonBytes(vertices: unifiedVertices,
+                                             indices: unifiedIndices,
+                                             edgeLineIndexStart: edgeLineIndexStart),
+                styles: styles,
+                styleZoomFades: styleZoomFades,
+                lineStyles: lineStyles)
+    }
+
+    private static func makeDrawingGeometryLayer(
+        drawing: DrawingPolygonBytes,
+        styles: [TilePolygonStyle],
+        styleZoomFades: [SIMD2<Float>],
+        lineStyles: [TileLineStyle]
+    ) -> DrawingGeometryLayer {
+        DrawingGeometryLayer(drawing: drawing,
+                             styles: styles,
+                             styleZoomFades: styleZoomFades,
+                             lineStyles: lineStyles)
+    }
+
+    private static func makeEmptyDrawingGeometryLayer() -> DrawingGeometryLayer {
+        makeDrawingGeometryLayer(drawing: DrawingPolygonBytes(vertices: [], indices: []),
+                                 styles: [],
+                                 styleZoomFades: [],
+                                 lineStyles: [])
+    }
+
+    static func unify(_ readingStageResult: ReadingStageResult) -> UnificationStageResult {
+        let polygonByStyle = readingStageResult.polygonByStyle
+        let roadPolygonByStyle = readingStageResult.roadPolygonByStyle
+        let bridgePolygonByStyle = readingStageResult.bridgePolygonByStyle
+        let extrudedByStyle = readingStageResult.extrudedByStyle
+
+        let groundLayer = unifyPolygonLayer(polygonByStyle: polygonByStyle,
+                                            stylesByKey: readingStageResult.styles,
+                                            splitLinesClass: true)
+        let emptyRoadLayer = makeEmptyDrawingGeometryLayer()
+        let roadPhases: RoadStructureBuckets<RoadGeometryPhases<DrawingGeometryLayer>>
+        if readingStageResult.orderedRoadPolygons.isEmpty {
+            let unifiedRoadLayer = unifyPolygonLayer(polygonByStyle: roadPolygonByStyle,
+                                                     stylesByKey: readingStageResult.roadStyles)
+            roadPhases = RoadStructureBuckets(
+                tunnel: RoadGeometryPhases(shadow: emptyRoadLayer,
+                                           casing: emptyRoadLayer,
+                                           fill: emptyRoadLayer,
+                                           detail: emptyRoadLayer,
+                                           overlay: emptyRoadLayer),
+                ground: RoadGeometryPhases(shadow: emptyRoadLayer,
+                                           casing: emptyRoadLayer,
+                                           fill: makeDrawingGeometryLayer(drawing: unifiedRoadLayer.drawing,
+                                                                         styles: unifiedRoadLayer.styles,
+                                                                         styleZoomFades: unifiedRoadLayer.styleZoomFades,
+                                                                         lineStyles: unifiedRoadLayer.lineStyles),
+                                           detail: emptyRoadLayer,
+                                           overlay: emptyRoadLayer),
+                automobileGround: RoadGeometryPhases(shadow: emptyRoadLayer,
+                                                     casing: emptyRoadLayer,
+                                                     fill: emptyRoadLayer,
+                                                     detail: emptyRoadLayer,
+                                                     overlay: emptyRoadLayer),
+                bridge: RoadGeometryPhases(shadow: emptyRoadLayer,
+                                           casing: emptyRoadLayer,
+                                           fill: emptyRoadLayer,
+                                           detail: emptyRoadLayer,
+                                           overlay: emptyRoadLayer)
+            )
+        } else {
+            // One pass buckets every polygon by structure and pass role; the
+            // old shape filtered the full array 15 times.
+            let roleCount = RoadPassRole.allCases.count
+            var buckets = Array(repeating: [OrderedRoadPolygon](),
+                                count: RoadStructureKind.allCases.count * roleCount)
+            for orderedPolygon in readingStageResult.orderedRoadPolygons {
+                buckets[orderedPolygon.structureKind.rawValue * roleCount + orderedPolygon.passRole.rawValue]
+                    .append(orderedPolygon)
+            }
+
+            func makeStructurePhases(_ structureKind: RoadStructureKind) -> RoadGeometryPhases<DrawingGeometryLayer> {
+                func makePhase(_ role: RoadPassRole) -> DrawingGeometryLayer {
+                    let bucket = buckets[structureKind.rawValue * roleCount + role.rawValue]
+                    let layer = unifyOrderedRoadLayer(
+                        sortedRoadPolygons: bucket.sorted(by: OrderedRoadPolygon.sort),
+                        stylesByKey: readingStageResult.roadStyles
+                    )
+                    return makeDrawingGeometryLayer(drawing: layer.drawing,
+                                                    styles: layer.styles,
+                                                    styleZoomFades: layer.styleZoomFades,
+                                                    lineStyles: layer.lineStyles)
+                }
+
+                return RoadGeometryPhases(shadow: makePhase(.shadow),
+                                          casing: makePhase(.casing),
+                                          fill: makePhase(.fill),
+                                          detail: makePhase(.detail),
+                                          overlay: makePhase(.overlay))
+            }
+
+            roadPhases = RoadStructureBuckets(
+                tunnel: makeStructurePhases(.tunnel),
+                ground: makeStructurePhases(.ground),
+                automobileGround: makeStructurePhases(.automobileGround),
+                bridge: makeStructurePhases(.bridge)
+            )
+        }
+        let bridgeLayer = unifyPolygonLayer(polygonByStyle: bridgePolygonByStyle,
+                                            stylesByKey: readingStageResult.bridgeStyles)
+        var unifiedExtrudedVertices: [ExtrudedVertexIn] = []
+        var unifiedExtrudedIndices: [UInt32] = []
+        var buildingRanges: [TileBuildingRange] = []
+        var buildingAnchors: [SIMD2<Float>] = []
+        var currentExtrudedVertexOffset: UInt32 = 0
+        let totalExtrudedVertexCount = extrudedByStyle.values.reduce(0) { partial, meshes in
+            partial + meshes.reduce(0) { meshPartial, mesh in
+                meshPartial + mesh.vertices.count
+            }
+        }
+        let totalExtrudedIndexCount = extrudedByStyle.values.reduce(0) { partial, meshes in
+            partial + meshes.reduce(0) { meshPartial, mesh in
+                meshPartial + mesh.indices.count
+            }
+        }
+
+        unifiedExtrudedVertices.reserveCapacity(totalExtrudedVertexCount)
+        unifiedExtrudedIndices.reserveCapacity(totalExtrudedIndexCount)
+
+        let styleKeys = extrudedByStyle.keys
+            .filter { extrudedByStyle[$0]?.isEmpty == false }
+            .sorted()
+        var styleIndexByKey: [UInt8: UInt8] = [:]
+        var extrudedStyles: [TilePolygonStyle] = []
+        styleIndexByKey.reserveCapacity(styleKeys.count)
+        extrudedStyles.reserveCapacity(styleKeys.count)
+        for (index, styleKey) in styleKeys.enumerated() {
+            if index > Int(UInt8.max) {
+                assertionFailure("Too many styles for tile pipeline.")
+                continue
+            }
+            styleIndexByKey[styleKey] = UInt8(index)
+            if let style = readingStageResult.styles[styleKey] {
+                extrudedStyles.append(TilePolygonStyle(color: style.color))
+            }
+        }
+
+        // A tile kept by quarters lays its volumes out one quarter after
+        // another, so a quarter is one run of the indices, and keeps where
+        // each run starts.
+        let quarterPasses: [Int?] = readingStageResult.keepsQuarters ? Array(0..<TileQuarters.count) : [nil]
+        var quarterIndexStarts: [UInt32] = []
+        for quarterPass in quarterPasses {
+            if quarterPass != nil {
+                // A quarter starts at an even index, so its byte offset in
+                // a buffer of 16-bit indices is a multiple of four, as
+                // Metal wants an index offset: an odd count takes one
+                // degenerate triangle, which draws nothing.
+                if unifiedExtrudedIndices.count % 2 == 1 {
+                    unifiedExtrudedIndices.append(contentsOf: [0, 0, 0])
+                }
+                quarterIndexStarts.append(UInt32(unifiedExtrudedIndices.count))
+            }
+            for styleKey in styleKeys {
+                let styleBufferIndex = styleIndexByKey[styleKey] ?? 0
+                if let extrudedMeshes = extrudedByStyle[styleKey] {
+                    for extrudedMesh in extrudedMeshes where extrudedMesh.quarter == quarterPass {
+                        // The volume's ordinal and anchor: the centre of its
+                        // vertices' bounds. Past 65535 volumes the rest share
+                        // the last anchor.
+                        let ordinal = UInt16(clamping: buildingAnchors.count)
+                        if buildingAnchors.count <= Int(UInt16.max), extrudedMesh.vertices.isEmpty == false {
+                            var minimum = SIMD2<Float>(extrudedMesh.vertices[0].position.x, extrudedMesh.vertices[0].position.y)
+                            var maximum = minimum
+                            for vertex in extrudedMesh.vertices {
+                                let position = SIMD2<Float>(vertex.position.x, vertex.position.y)
+                                minimum = simd_min(minimum, position)
+                                maximum = simd_max(maximum, position)
+                            }
+                            buildingAnchors.append((minimum + maximum) * 0.5)
+                        }
+                        for vertex in extrudedMesh.vertices {
+                            unifiedExtrudedVertices.append(ExtrudedVertexIn(position: vertex.position,
+                                                                            normal: vertex.normal,
+                                                                            styleIndex: styleBufferIndex,
+                                                                            buildingOrdinal: ordinal))
+                        }
+                        // A mesh is one building's volume and its indices go
+                        // in as one run: the run is that building's place.
+                        let indexStart = UInt32(unifiedExtrudedIndices.count)
+                        for index in extrudedMesh.indices {
+                            unifiedExtrudedIndices.append(index + currentExtrudedVertexOffset)
+                        }
+                        if extrudedMesh.buildingID != 0, extrudedMesh.indices.isEmpty == false {
+                            buildingRanges.append(TileBuildingRange(featureID: extrudedMesh.buildingID,
+                                                                    indexStart: indexStart,
+                                                                    indexCount: UInt32(extrudedMesh.indices.count)))
+                        }
+                        currentExtrudedVertexOffset += UInt32(extrudedMesh.vertices.count)
+                    }
+                }
+            }
+        }
+        if readingStageResult.keepsQuarters {
+            quarterIndexStarts.append(UInt32(unifiedExtrudedIndices.count))
+        }
+        
+        return UnificationStageResult(
+            drawingPolygon: groundLayer.drawing,
+            drawingRoadPhases: roadPhases,
+            drawingBridgePolygon: bridgeLayer.drawing,
+            drawingExtruded: DrawingExtrudedBytes(
+                vertices: unifiedExtrudedVertices,
+                indices: unifiedExtrudedIndices,
+                styles: extrudedStyles,
+                buildingRanges: buildingRanges.sorted { lhs, rhs in
+                    lhs.featureID != rhs.featureID ? lhs.featureID < rhs.featureID : lhs.indexStart < rhs.indexStart
+                },
+                buildingAnchors: buildingAnchors,
+                quarterIndexStarts: quarterIndexStarts
+            ),
+            styles: groundLayer.styles,
+            styleZoomFades: groundLayer.styleZoomFades,
+            lineStyles: groundLayer.lineStyles,
+            bridgeStyles: bridgeLayer.styles,
+            bridgeStyleZoomFades: bridgeLayer.styleZoomFades,
+            bridgeLineStyles: bridgeLayer.lineStyles
+        )
+    }
+}

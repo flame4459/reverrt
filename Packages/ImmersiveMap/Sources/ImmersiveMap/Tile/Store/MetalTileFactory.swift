@@ -1,0 +1,547 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import MetalKit
+
+/// Turns a parsed tile into GPU state. Every buffer of the tile lives in one
+/// backing allocation whose byte layout is the canonical `TileArenaSchema`
+/// slot sequence, so a freshly parsed tile and a disk-cached arena image
+/// produce identical arenas: the parse path writes the plan into the buffer,
+/// the cache path copies (or MTLIO-loads) the stored blob, and both rebuild
+/// the same `TileBufferView`s from the span table. The reader verifies every
+/// span take against the schema slot it expects, so a traversal that drifts
+/// from the schema fails instead of binding bytes to the wrong destination.
+/// `@unchecked Sendable`: both stored properties are immutable references to
+/// thread-safe Metal objects, and concurrent tile loads already call
+/// `makeTile` from independent tasks through the render store.
+final class MetalTileFactory: @unchecked Sendable {
+    private let metalDevice: MTLDevice
+#if !targetEnvironment(simulator)
+    /// Resolved at init on Metal 3 devices (see `MetalIOCommandQueues`): tile
+    /// loads materialize concurrently from their own tasks, so lazy creation
+    /// would race. The simulator SDK has no MTLIO surface at all.
+    private let ioCommandQueue: MTLIOCommandQueue?
+#endif
+
+    init(metalDevice: MTLDevice) {
+        self.metalDevice = metalDevice
+#if !targetEnvironment(simulator)
+        self.ioCommandQueue = MTLIOPreparedTileGeometryTransport.isSupported(metalDevice: metalDevice)
+            ? MetalIOCommandQueues.shared(for: metalDevice)
+            : nil
+#endif
+    }
+
+#if !targetEnvironment(simulator)
+    /// How long one MTLIO load may take before the materialize gives up on
+    /// it. A tile's container is a few megabytes at most and a healthy load
+    /// ends in tens of milliseconds, so this is reached only by a request
+    /// the driver never answers. The load then fails transiently: the pair
+    /// on disk stays, the tile takes the network stage this once, and the
+    /// next hit tries the queue again. Nothing is remembered across loads,
+    /// because one slow answer (a saturated disk, a paused process) says
+    /// nothing about the next.
+    static let fileBlobLoadTimeout: TimeInterval = 15
+#endif
+
+    /// Whether this factory can DMA-load `.file` geometry blobs: Metal 3
+    /// support and a successfully created IO command queue. The render store
+    /// derives the geometry transport from this one answer, so a
+    /// queue-creation failure degrades the whole session to the inline
+    /// transport before any file entry exists, instead of saving entries no
+    /// hit could ever load.
+    var loadsFileBlobs: Bool {
+#if targetEnvironment(simulator)
+        return false
+#else
+        return ioCommandQueue != nil
+#endif
+    }
+
+    /// nil when the backing allocation fails (memory pressure) or the arena
+    /// traversal does not match the schema (a programming error, asserted):
+    /// the caller fails the materialize so the load records a retryable
+    /// failure instead of caching a permanently blank tile.
+    ///
+    /// `plan` is the arena plan of this exact tile when the caller already
+    /// built one (the loader shares it with the disk save); nil computes it.
+    func makeTile(from preparedTile: PreparedTileCPU,
+                  plan providedPlan: TileArenaImagePlan? = nil) -> MetalTile? {
+        let plan = providedPlan ?? TileArenaImageMath.plan(for: preparedTile)
+
+        var backingBuffer: MTLBuffer?
+        if plan.totalByteCount > 0 {
+            guard let buffer = metalDevice.makeBuffer(length: plan.totalByteCount) else {
+                return nil
+            }
+            TileArenaImageMath.writeBlob(plan: plan, into: buffer.contents())
+            backingBuffer = buffer
+        }
+
+        guard let tileBuffers = Self.buildTileBuffers(
+            spans: plan.spans,
+            backingBuffer: backingBuffer,
+            groundStyleRuns: GroundStyleRunScanner.scan(ground: preparedTile.ground),
+            roadEdgeLineIndexStarts: preparedTile.roadEdgeLineIndexStarts,
+            buildingRanges: preparedTile.extruded.buildingRanges,
+            buildingAnchors: preparedTile.extruded.buildingAnchors,
+            buildingQuarterIndexStarts: preparedTile.extruded.quarterIndexStarts,
+            treeQuarterStarts: preparedTile.treeQuarterStarts,
+            textLabels: Self.textLabelSetMeta(from: preparedTile.textLabels),
+            roadLabels: Self.roadLabelsMeta(from: preparedTile.roadLabels),
+            surfaceLabels: preparedTile.surfaceLabels.labels
+        ) else {
+            // The plan and the reader both walk the schema's slot sequence,
+            // so a mismatch here is a programming error, but failing into
+            // the retry path beats publishing a blank tile.
+            assertionFailure("The arena reader disagreed with the schema slot sequence")
+            return nil
+        }
+        return MetalTile(tile: preparedTile.tile, tileBuffers: tileBuffers)
+    }
+
+    /// Outcome of materializing a disk-cached arena image. The split matters
+    /// for cleanup: an unreadable image is corrupt on disk and the caller
+    /// removes it, while an allocation failure is transient memory pressure
+    /// and the entry stays for the retry.
+    enum ArenaImageMaterializeResult {
+        case tile(MetalTile)
+        case allocationFailed
+        case imageUnreadable
+    }
+
+    /// Materializes a disk-cached arena image: allocates the arena, fills it
+    /// from the blob (CPU copy for inline blobs, `MTLIOCommandQueue` load for
+    /// file blobs), verifies the file blob against the checksum stored in the
+    /// metadata, and rebuilds the buffer views from the span table.
+    func makeTile(fromImage image: PreparedTileArenaImage) async -> ArenaImageMaterializeResult {
+        var backingBuffer: MTLBuffer?
+        if image.arenaByteCount > 0 {
+            guard let buffer = metalDevice.makeBuffer(length: image.arenaByteCount) else {
+                return .allocationFailed
+            }
+            switch image.blob {
+            case .inline(let blob):
+                guard blob.count == image.arenaByteCount else {
+                    return .imageUnreadable
+                }
+                blob.withUnsafeBytes { bytes in
+                    buffer.contents().copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
+                }
+            case .file(let url, let format, let checksum):
+#if targetEnvironment(simulator)
+                // The simulator writes and reads inline entries only (its own
+                // cache namespace); a file blob here is foreign data.
+                _ = url
+                _ = format
+                _ = checksum
+                return .imageUnreadable
+#else
+                guard let queue = ioCommandQueue else {
+                    // Unreachable through production wiring: the store selects
+                    // the file transport from `loadsFileBlobs`, so a session
+                    // without a queue never sees file entries. Kept transient
+                    // so an exotic caller cannot delete a healthy entry.
+                    return .allocationFailed
+                }
+                // A load the queue never answers fails transiently: the
+                // entry is left alone (it is healthy as far as anyone
+                // knows) and the tile takes the network stage instead of
+                // holding its disk slot on a continuation.
+                guard let loaded = await loadFileBlob(from: url,
+                                                      format: format,
+                                                      into: buffer,
+                                                      byteCount: image.arenaByteCount,
+                                                      queue: queue) else {
+#if DEBUG
+                    print("MTLIO load of \(image.tile) did not complete within \(Self.fileBlobLoadTimeout) s")
+#endif
+                    return .allocationFailed
+                }
+                guard loaded else {
+                    return .imageUnreadable
+                }
+                // A .complete status proves the DMA finished, not that these
+                // are the bytes the metadata describes: a bit-flipped or
+                // truncated container still loads "complete", and a crash (or
+                // a second engine writing the same namespace) can pair old
+                // metadata with a newer container. The checksum stored in the
+                // metadata binds the pair; a mismatch fails into removal and
+                // a clean re-parse.
+                let loadedChecksum = PreparedTileBlobChecksum.checksum(
+                    UnsafeRawBufferPointer(start: buffer.contents(), count: image.arenaByteCount)
+                )
+                guard loadedChecksum == checksum else {
+                    return .imageUnreadable
+                }
+#endif
+            }
+            backingBuffer = buffer
+        } else if case .inline(let blob) = image.blob, blob.isEmpty == false {
+            return .imageUnreadable
+        }
+
+        guard let tileBuffers = Self.buildTileBuffers(spans: image.spans,
+                                                      backingBuffer: backingBuffer,
+                                                      groundStyleRuns: image.groundStyleRuns,
+                                                      roadEdgeLineIndexStarts: image.roadEdgeLineIndexStarts,
+                                                      buildingRanges: image.buildingRanges,
+                                                      buildingAnchors: image.buildingAnchors,
+                                                      buildingQuarterIndexStarts: image.buildingQuarterIndexStarts,
+                                                      treeQuarterStarts: image.treeQuarterStarts,
+                                                      textLabels: image.textLabels,
+                                                      roadLabels: image.roadLabels,
+                                                      surfaceLabels: image.surfaceLabels) else {
+            return .imageUnreadable
+        }
+        return .tile(MetalTile(tile: image.tile, tileBuffers: tileBuffers))
+    }
+
+    // MARK: - Shared structure builder
+
+    private static func textLabelSetMeta(from set: PreparedTileCPU.TextLabelSet)
+        -> PreparedTileArenaImage.TextLabelSetMeta {
+        PreparedTileArenaImage.TextLabelSetMeta(placementInputs: set.placementInputs,
+                                                glyphRunStyles: set.glyphRuns.map(\.style),
+                                                poiIconRunStyles: set.poiIconRuns.map(\.style),
+                                                routeShieldRunStyles: set.routeShieldRuns.map(\.style))
+    }
+
+    private static func roadLabelsMeta(from roadLabels: PreparedTileCPU.RoadLabels)
+        -> PreparedTileArenaImage.RoadLabelsMeta {
+        PreparedTileArenaImage.RoadLabelsMeta(pathInputs: roadLabels.pathInputs,
+                                              pathRanges: roadLabels.pathRanges,
+                                              pathLabels: roadLabels.pathLabels,
+                                              labelStyle: roadLabels.labelStyle,
+                                              glyphBounds: roadLabels.glyphBounds,
+                                              glyphBoundRanges: roadLabels.glyphBoundRanges,
+                                              sizes: roadLabels.sizes,
+                                              anchorRanges: roadLabels.anchorRanges,
+                                              anchors: roadLabels.anchors)
+    }
+
+    /// Rebuilds `TileBuffers` by walking the span table against the schema's
+    /// slot sequence (derived from the same metadata). nil when the table
+    /// does not match (wrong span count, out-of-bounds span, wrong stride,
+    /// a take out of schema order): cached tables are untrusted input, and
+    /// the parse path shares the check as its final defense.
+    private static func buildTileBuffers(spans: [TileArenaSpan],
+                                         backingBuffer: MTLBuffer?,
+                                         groundStyleRuns: [GroundStyleRun],
+                                         roadEdgeLineIndexStarts: [UInt32],
+                                         buildingRanges: [TileBuildingRange],
+                                         buildingAnchors: [SIMD2<Float>],
+                                         buildingQuarterIndexStarts: [UInt32] = [],
+                                         treeQuarterStarts: [UInt32] = [],
+                                         textLabels: PreparedTileArenaImage.TextLabelSetMeta,
+                                         roadLabels: PreparedTileArenaImage.RoadLabelsMeta,
+                                         surfaceLabels: [SurfaceLabelRecord]) -> TileBuffers? {
+        let expectedSlots = TileArenaSchema.slots(text: TileArenaSchema.runCounts(of: textLabels))
+        var cursor = SpanCursor(spans: spans,
+                                expectedSlots: expectedSlots,
+                                backingBuffer: backingBuffer)
+
+        var ground = takeGeometryLayer(.ground, cursor: &cursor)
+        ground = TileBuffers.GeometryLayer(vertices: ground.vertices,
+                                           indices: ground.indices,
+                                           styles: ground.styles,
+                                           styleZoomFade: ground.styleZoomFade,
+                                           lineStyles: ground.lineStyles,
+                                           indexType: ground.indexType,
+                                           styleRuns: groundStyleRuns)
+        // The stored boundaries are in the arena's layer order, the order
+        // the layers are taken in here.
+        var edgeLineIndexStarts = roadEdgeLineIndexStarts.makeIterator()
+        let roads = RoadStructureBuckets(
+            tunnel: takeRoadPhases(.tunnel, edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor),
+            ground: takeRoadPhases(.ground, edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor),
+            automobileGround: takeRoadPhases(.automobileGround, edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor),
+            bridge: takeRoadPhases(.bridge, edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor)
+        )
+        let bridgeOverlay = takeGeometryLayer(.bridgeOverlay, cursor: &cursor)
+
+        let extrudedVertices = cursor.takeView(.extrudedVertices)
+        let extrudedIndices = cursor.takeIndexView(.extrudedIndices)
+        // A range past the indices would have the drawer skip or draw what
+        // is not there: the ranges of a cached image are untrusted input.
+        let extrudedIndexCount = extrudedIndices.view?.count ?? 0
+        guard buildingRanges.allSatisfy({ range in
+            Int(range.indexStart) + Int(range.indexCount) <= extrudedIndexCount
+        }) else {
+            return nil
+        }
+        // So are the quarter starts: none, or five running up to the count.
+        guard let quarterIndexStarts = Self.quarterStarts(buildingQuarterIndexStarts, count: extrudedIndexCount) else {
+            return nil
+        }
+        let extruded = TileBuffers.Extruded(vertices: extrudedVertices,
+                                            indices: extrudedIndices.view,
+                                            styles: cursor.takeView(.extrudedStyles),
+                                            indexType: extrudedIndices.indexType,
+                                            buildingRanges: buildingRanges,
+                                            buildingAnchors: buildingAnchors,
+                                            quarterIndexStarts: quarterIndexStarts)
+        let trees = cursor.takeView(.treeInstances)
+        guard let treeQuarterStarts = Self.quarterStarts(treeQuarterStarts, count: trees?.count ?? 0) else {
+            return nil
+        }
+
+        let textLabelBuffers = takeTextLabelSet(textLabels, cursor: &cursor)
+        let roadGlyphVertices = cursor.takeView(.roadLabelGlyphVertices)
+        let roadLabelBuffers = TileBuffers.RoadLabels(pathInputs: roadLabels.pathInputs,
+                                                      pathRanges: roadLabels.pathRanges,
+                                                      pathLabels: roadLabels.pathLabels,
+                                                      labelStyle: roadLabels.labelStyle,
+                                                      localGlyphVertices: roadGlyphVertices,
+                                                      glyphBounds: roadLabels.glyphBounds,
+                                                      glyphBoundRanges: roadLabels.glyphBoundRanges,
+                                                      sizes: roadLabels.sizes,
+                                                      anchorRanges: roadLabels.anchorRanges,
+                                                      anchors: roadLabels.anchors)
+
+        let surfaceLabelVertices = cursor.takeView(.surfaceLabelVertices)
+
+        // Every record's span must lie inside the vertices: the records of a
+        // cached image are untrusted input like its span table.
+        let surfaceVertexCount = surfaceLabelVertices?.count ?? 0
+        guard cursor.isConsistent,
+              surfaceLabels.allSatisfy({ record in
+                  record.vertexStart >= 0
+                      && record.vertexCount >= 0
+                      && record.vertexStart <= surfaceVertexCount - record.vertexCount
+              }) else {
+            return nil
+        }
+        return TileBuffers(backingBuffer: backingBuffer,
+                           ground: ground,
+                           roads: roads,
+                           bridgeOverlay: bridgeOverlay,
+                           extruded: extruded,
+                           textLabels: textLabelBuffers,
+                           roadLabels: roadLabelBuffers,
+                           surfaceLabels: SurfaceLabels(labels: surfaceLabels,
+                                                        vertices: surfaceLabelVertices),
+                           trees: trees,
+                           treeQuarterStarts: treeQuarterStarts)
+    }
+
+    /// A tile's quarter starts as the drawers read them
+    /// (`TileQuarters.runs`): none for a tile kept whole, or five that
+    /// start at zero, never go down and end at `count`. Nil for anything
+    /// else: the starts of a cached image are untrusted input.
+    static func quarterStarts(_ starts: [UInt32], count: Int) -> [Int]? {
+        guard starts.isEmpty == false else { return [] }
+        let values = starts.map(Int.init)
+        guard values.count == TileQuarters.count + 1,
+              values.first == 0,
+              values.last == count,
+              zip(values, values.dropFirst()).allSatisfy({ $0 <= $1 }) else {
+            return nil
+        }
+        return values
+    }
+
+    private static func takeGeometryLayer(_ layerID: TileArenaGeometryLayerID,
+                                          cursor: inout SpanCursor) -> TileBuffers.GeometryLayer {
+        let vertices = cursor.takeView(.geometryVertices(layerID))
+        let indices = cursor.takeIndexView(.geometryIndices(layerID))
+        return TileBuffers.GeometryLayer(vertices: vertices,
+                                         indices: indices.view,
+                                         styles: cursor.takeView(.geometryStyles(layerID)),
+                                         styleZoomFade: cursor.takeView(.geometryStyleZoomFades(layerID)),
+                                         lineStyles: cursor.takeView(.geometryLineStyles(layerID)),
+                                         indexType: indices.indexType)
+    }
+
+    private static func takeRoadPhases(_ structureKind: RoadStructureKind,
+                                       edgeLineIndexStarts: inout IndexingIterator<[UInt32]>,
+                                       cursor: inout SpanCursor) -> RoadGeometryPhases<TileBuffers.GeometryLayer> {
+        // Taken in `RoadPassRole.drawOrder`, the arena's span order and the
+        // order of the stored boundaries.
+        let shadow = takeRoadLayer(.road(structureKind, .shadow), edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor)
+        let casing = takeRoadLayer(.road(structureKind, .casing), edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor)
+        let fill = takeRoadLayer(.road(structureKind, .fill), edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor)
+        let detail = takeRoadLayer(.road(structureKind, .detail), edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor)
+        let overlay = takeRoadLayer(.road(structureKind, .overlay), edgeLineIndexStarts: &edgeLineIndexStarts, cursor: &cursor)
+        return RoadGeometryPhases(shadow: shadow, casing: casing, fill: fill, detail: detail, overlay: overlay)
+    }
+
+    /// A road layer, with what its styles say about the pass it draws in
+    /// (`RoadLayerStyles`) and where its edge lines start. The boundary of
+    /// a cached image is untrusted input like its span table: it is kept
+    /// inside the indices, on a whole triangle, with a whole number of
+    /// line segments after it, or the layer draws whole as bodies.
+    private static func takeRoadLayer(_ layerID: TileArenaGeometryLayerID,
+                                      edgeLineIndexStarts: inout IndexingIterator<[UInt32]>,
+                                      cursor: inout SpanCursor) -> TileBuffers.GeometryLayer {
+        let layer = takeGeometryLayer(layerID, cursor: &cursor)
+        let indexCount = layer.indicesCount
+        var edgeLineIndexStart = edgeLineIndexStarts.next().map(Int.init) ?? indexCount
+        if edgeLineIndexStart > indexCount
+            || edgeLineIndexStart % 3 != 0
+            || (indexCount - edgeLineIndexStart) % 2 != 0 {
+            edgeLineIndexStart = indexCount
+        }
+        return TileBuffers.GeometryLayer(vertices: layer.vertices,
+                                         indices: layer.indices,
+                                         styles: layer.styles,
+                                         styleZoomFade: layer.styleZoomFade,
+                                         lineStyles: layer.lineStyles,
+                                         indexType: layer.indexType,
+                                         roadStyles: RoadLayerStyles(styles: layer.styles,
+                                                                     styleZoomFades: layer.styleZoomFade,
+                                                                     lineStyles: layer.lineStyles),
+                                         roadEdgeLineIndexStart: edgeLineIndexStart)
+    }
+
+    private static func takeTextLabelSet(_ meta: PreparedTileArenaImage.TextLabelSetMeta,
+                                         cursor: inout SpanCursor) -> TileBuffers.TextLabelSet {
+        let glyphRuns = meta.glyphRunStyles.enumerated().map { run, style in
+            LabelsByStyleRun(style: style,
+                             localGlyphVertices: cursor.takeView(.glyphRunVertices(run: run)))
+        }
+        let poiIconRuns = meta.poiIconRunStyles.enumerated().map { run, style in
+            PoiIconRunBuffer(style: style,
+                             localVertices: cursor.takeView(.poiIconRunVertices(run: run)))
+        }
+        let routeShieldRuns = meta.routeShieldRunStyles.enumerated().map { run, style in
+            RouteShieldRunBuffer(style: style,
+                                 localVertices: cursor.takeView(.routeShieldRunVertices(run: run)))
+        }
+        return TileBuffers.TextLabelSet(placementInputs: meta.placementInputs,
+                                        labelsByStyleRuns: glyphRuns,
+                                        poiIconRuns: poiIconRuns,
+                                        routeShieldRuns: routeShieldRuns)
+    }
+
+    /// Sequential reader over the span table, pinned to the schema's slot
+    /// sequence: every take names the slot it is reading for and the cursor
+    /// verifies the claim, so bytes can only bind to the destination the
+    /// schema says they belong to. Any violation (a take out of order, a span
+    /// outside the arena, a stride mismatch) latches `failed`; the builder
+    /// checks `isConsistent` once at the end so the traversal stays linear.
+    private struct SpanCursor {
+        private let spans: [TileArenaSpan]
+        private let expectedSlots: [TileArenaSlot]
+        private let backingBuffer: MTLBuffer?
+        private var index = 0
+        private var failed = false
+
+        init(spans: [TileArenaSpan],
+             expectedSlots: [TileArenaSlot],
+             backingBuffer: MTLBuffer?) {
+            self.spans = spans
+            self.expectedSlots = expectedSlots
+            self.backingBuffer = backingBuffer
+        }
+
+        var isConsistent: Bool {
+            failed == false && index == spans.count && index == expectedSlots.count
+        }
+
+        mutating func takeView(_ slot: TileArenaSlot) -> TileBufferView? {
+            guard let span = takeSpan(claiming: slot) else {
+                return nil
+            }
+            guard let elementStride = TileArenaSchema.elementStride(of: slot),
+                  span.indexWidth == nil else {
+                failed = true
+                return nil
+            }
+            return makeView(from: span, elementStride: elementStride)
+        }
+
+        mutating func takeIndexView(_ slot: TileArenaSlot) -> (view: TileBufferView?, indexType: MTLIndexType) {
+            guard let span = takeSpan(claiming: slot) else {
+                return (nil, .uint32)
+            }
+            guard TileArenaSchema.elementStride(of: slot) == nil,
+                  let indexWidth = span.indexWidth else {
+                failed = true
+                return (nil, .uint32)
+            }
+            switch indexWidth {
+            case .uint16:
+                return (makeView(from: span, elementStride: MemoryLayout<UInt16>.stride), .uint16)
+            case .uint32:
+                return (makeView(from: span, elementStride: MemoryLayout<UInt32>.stride), .uint32)
+            }
+        }
+
+        private mutating func takeSpan(claiming slot: TileArenaSlot) -> TileArenaSpan? {
+            guard index < spans.count,
+                  index < expectedSlots.count,
+                  expectedSlots[index] == slot else {
+                failed = true
+                return nil
+            }
+            let span = spans[index]
+            index += 1
+            return span
+        }
+
+        private mutating func makeView(from span: TileArenaSpan,
+                                       elementStride: Int) -> TileBufferView? {
+            guard span.elementCount > 0 else {
+                return nil
+            }
+            // The stride check pins byteCount to the slot's element type, so a
+            // corrupt element count cannot make a draw read past its span.
+            guard let backingBuffer,
+                  span.byteOffset >= 0,
+                  span.byteCount == span.elementCount * elementStride,
+                  span.byteOffset % TileArenaImageMath.spanAlignment == 0,
+                  span.byteCount <= backingBuffer.length - span.byteOffset else {
+                failed = true
+                return nil
+            }
+            return TileBufferView(buffer: backingBuffer, offset: span.byteOffset, count: span.elementCount)
+        }
+    }
+
+    // MARK: - MTLIO blob load
+
+#if !targetEnvironment(simulator)
+    /// Whether the load completed with the whole blob, false when the file
+    /// could not be opened or the load ended in error, nil when the queue
+    /// did not answer within `fileBlobLoadTimeout`. The completion handler
+    /// is the only thing that resumes this await, and a load awaited without
+    /// a deadline would hold its tile's disk slot for the rest of the
+    /// process if the handler never ran; the loader's stage watchdog is the
+    /// second line behind this one.
+    private func loadFileBlob(from url: URL,
+                              format: PreparedTileFileBlobFormat,
+                              into buffer: MTLBuffer,
+                              byteCount: Int,
+                              queue: MTLIOCommandQueue) async -> Bool? {
+        let fileHandle: MTLIOFileHandle?
+        switch format {
+        case .raw:
+            fileHandle = try? metalDevice.makeIOFileHandle(url: url)
+        case .lzfseContainer:
+            fileHandle = try? metalDevice.makeIOFileHandle(url: url, compressionMethod: .lzfse)
+        }
+        guard let fileHandle else {
+            return false
+        }
+        let ioCommandBuffer = queue.makeCommandBuffer()
+        ioCommandBuffer.load(buffer,
+                             offset: 0,
+                             size: byteCount,
+                             sourceHandle: fileHandle,
+                             sourceHandleOffset: 0)
+        let loaded: Bool? = await CallbackTimeout.await(seconds: Self.fileBlobLoadTimeout) { complete in
+            ioCommandBuffer.addCompletedHandler { completedBuffer in
+                complete(completedBuffer.status == .complete)
+            }
+            ioCommandBuffer.commit()
+        }
+        if loaded == nil {
+            // Best effort: a late answer is ignored either way, and the
+            // buffer it would write is retained by the command buffer.
+            ioCommandBuffer.tryCancel()
+        }
+        return loaded
+    }
+#endif
+}

@@ -1,0 +1,149 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import CoreGraphics
+import Foundation
+
+/// Stateless layout math shared by the UIKit and AppKit attribution badges.
+/// All coordinates are top-left origin: valid as-is on iOS, and on macOS
+/// because the badge view is flipped.
+enum AttributionBadgeLayoutMath {
+    /// Concrete metrics of one badge size preset.
+    struct Metrics: Equatable {
+        /// The text's size. Every credit on the line shares it.
+        let fontSize: CGFloat
+        let horizontalInset: CGFloat
+        let verticalInset: CGFloat
+    }
+
+    /// The words between two credits on the line.
+    static let creditSeparator = " · "
+
+    static func metrics(for size: ImmersiveMapSettings.AttributionSettings.Size) -> Metrics {
+        switch size {
+        case .small:
+            return Metrics(fontSize: 10,
+                           horizontalInset: 8,
+                           verticalInset: 5)
+        case .regular:
+            return Metrics(fontSize: 12,
+                           horizontalInset: 10,
+                           verticalInset: 7)
+        case .large:
+            return Metrics(fontSize: 14,
+                           horizontalInset: 12,
+                           verticalInset: 9)
+        }
+    }
+
+    /// The insets the badge keeps from the view's edges, from the view's
+    /// safe area. A badge at the bottom that does not respect the bottom
+    /// safe area (`AttributionSettings.respectsBottomSafeArea`) sits at the
+    /// bottom edge, and moves in from each side by at least the bottom
+    /// inset: a screen with a home indicator has rounded corners, and that
+    /// much keeps them from cutting the line. A view with no bottom inset
+    /// keeps its insets as they are.
+    static func badgeInsets(safeAreaInsets: PlatformEdgeInsets,
+                            position: ImmersiveMapSettings.AttributionSettings.Position,
+                            respectsBottomSafeArea: Bool) -> PlatformEdgeInsets {
+        let isBottom: Bool
+        switch position {
+        case .bottomLeading, .bottomTrailing, .bottomCenter:
+            isBottom = true
+        case .topLeading, .topTrailing, .topCenter:
+            isBottom = false
+        }
+        guard isBottom, respectsBottomSafeArea == false, safeAreaInsets.bottom > 0 else {
+            return safeAreaInsets
+        }
+        var insets = safeAreaInsets
+        insets.left = max(insets.left, safeAreaInsets.bottom)
+        insets.right = max(insets.right, safeAreaInsets.bottom)
+        insets.bottom = 0
+        return insets
+    }
+
+    /// Width the badge may occupy: bounds minus safe area minus the margin
+    /// on both sides. The margin is the app-configured distance between the
+    /// badge and the view edges; 0, the default, pins the badge into its
+    /// corner.
+    static func availableWidth(bounds: CGRect,
+                               safeAreaInsets: PlatformEdgeInsets,
+                               margin: CGFloat) -> CGFloat {
+        max(0, bounds.width - safeAreaInsets.left - safeAreaInsets.right - margin * 2)
+    }
+
+    /// Badge size from the measured size of the line: the line and its
+    /// insets, no wider than the width it is given, where the line is cut.
+    static func badgeSize(textSize: CGSize,
+                          metrics: Metrics,
+                          boundingWidth: CGFloat) -> CGSize {
+        let width = min(boundingWidth, ceil(textSize.width + metrics.horizontalInset * 2))
+        let height = ceil(textSize.height + metrics.verticalInset * 2)
+
+        return CGSize(width: width, height: height)
+    }
+
+    /// Badge frame for a position, safe-area aware. Leading/trailing flip
+    /// with the layout direction; centers do not.
+    static func badgeFrame(badgeSize: CGSize,
+                           position: ImmersiveMapSettings.AttributionSettings.Position,
+                           bounds: CGRect,
+                           safeAreaInsets: PlatformEdgeInsets,
+                           margin: CGFloat,
+                           isRightToLeft: Bool) -> CGRect {
+        let contentRect = CGRect(x: safeAreaInsets.left + margin,
+                                 y: safeAreaInsets.top + margin,
+                                 width: max(0, bounds.width - safeAreaInsets.left - safeAreaInsets.right
+                                            - margin * 2),
+                                 height: max(0, bounds.height - safeAreaInsets.top - safeAreaInsets.bottom
+                                             - margin * 2))
+
+        enum HorizontalAnchor {
+            case leading
+            case trailing
+            case center
+        }
+
+        let horizontal: HorizontalAnchor
+        let isTop: Bool
+        switch position {
+        case .bottomTrailing:
+            horizontal = .trailing
+            isTop = false
+        case .bottomLeading:
+            horizontal = .leading
+            isTop = false
+        case .topTrailing:
+            horizontal = .trailing
+            isTop = true
+        case .topLeading:
+            horizontal = .leading
+            isTop = true
+        case .bottomCenter:
+            horizontal = .center
+            isTop = false
+        case .topCenter:
+            horizontal = .center
+            isTop = true
+        }
+
+        let x: CGFloat
+        switch horizontal {
+        case .leading:
+            x = isRightToLeft ? contentRect.maxX - badgeSize.width : contentRect.minX
+        case .trailing:
+            x = isRightToLeft ? contentRect.minX : contentRect.maxX - badgeSize.width
+        case .center:
+            x = contentRect.midX - badgeSize.width / 2
+        }
+        let y = isTop ? contentRect.minY : contentRect.maxY - badgeSize.height
+
+        return CGRect(x: x, y: y, width: badgeSize.width, height: badgeSize.height)
+    }
+
+    /// The line's frame inside the badge: the badge less its insets.
+    static func labelFrame(badgeBounds: CGRect, metrics: Metrics) -> CGRect {
+        badgeBounds.insetBy(dx: metrics.horizontalInset, dy: metrics.verticalInset)
+    }
+}

@@ -1,0 +1,513 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+package struct TileTraceRecorderSnapshot: Equatable {
+    package let isRecording: Bool
+    package let fileURL: URL?
+
+    package init(isRecording: Bool, fileURL: URL?) {
+        self.isRecording = isRecording
+        self.fileURL = fileURL
+    }
+}
+
+enum TileTraceValue {
+    case bool(Bool)
+    case double(Double)
+    case int(Int)
+    case string(String)
+    case tile(Tile)
+    case url(String)
+
+    var jsonValue: Any {
+        switch self {
+        case let .bool(value):
+            return value
+        case let .double(value):
+            return value
+        case let .int(value):
+            return value
+        case let .string(value):
+            return value
+        case let .tile(tile):
+            return "\(tile.z)/\(tile.x)/\(tile.y)"
+        case let .url(value):
+            return TileTraceURLRedactor.redact(value)
+        }
+    }
+}
+
+struct TileTraceEvent {
+    let name: String
+    let frameIndex: UInt64?
+    let fields: [String: TileTraceValue]
+
+    static func event(_ name: String,
+                      frameIndex: UInt64? = nil,
+                      fields: [String: TileTraceValue] = [:]) -> TileTraceEvent {
+        TileTraceEvent(name: name,
+                       frameIndex: frameIndex,
+                       fields: fields)
+    }
+}
+
+extension TileTraceEvent {
+    static func tileStoreRequest(frameIndex: UInt64?,
+                                 demanded: Int,
+                                 ready: Int,
+                                 requested: Int) -> TileTraceEvent {
+        .event("tile_store_request",
+               frameIndex: frameIndex,
+               fields: [
+                   "demanded": .int(demanded),
+                   "ready": .int(ready),
+                   "requested": .int(requested)
+               ])
+    }
+
+    static func tilePrepareStart(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_prepare_start", fields: ["tile": .tile(tile)])
+    }
+
+    static func tilePrepareSuccess(_ tile: Tile,
+                                   layerTimings: [TileParseLayerTiming] = []) -> TileTraceEvent {
+        var fields: [String: TileTraceValue] = ["tile": .tile(tile)]
+        let timings = parseLayerTimingsDescription(layerTimings)
+        if timings.isEmpty == false {
+            fields["parseLayerTimings"] = .string(timings)
+        }
+        return .event("tile_prepare_success", fields: fields)
+    }
+
+    static func tilePrepareFailed(_ tile: Tile, error: Error) -> TileTraceEvent {
+        .event("tile_prepare_failed",
+               fields: [
+                   "tile": .tile(tile),
+                   "error": .string(String(describing: error))
+               ])
+    }
+
+    static func tileMaterializeSuccess(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_materialize_success", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileMaterializeStart(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_materialize_start", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileMaterializeFailed(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_materialize_failed", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileStoreLookup(_ tile: Tile,
+                                hit: Bool,
+                                residentCount: Int,
+                                residentBytes: Int) -> TileTraceEvent {
+        .event("tile_store_lookup",
+               fields: [
+                   "tile": .tile(tile),
+                   "hit": .bool(hit),
+                   "residentCount": .int(residentCount),
+                   "residentBytes": .int(residentBytes)
+               ])
+    }
+
+    static func tileStoreInsert(_ tile: Tile,
+                                replaced: Bool,
+                                residentCount: Int,
+                                residentBytes: Int) -> TileTraceEvent {
+        .event("tile_store_insert",
+               fields: [
+                   "tile": .tile(tile),
+                   "replaced": .bool(replaced),
+                   "residentCount": .int(residentCount),
+                   "residentBytes": .int(residentBytes)
+               ])
+    }
+
+    static func tileStoreRelease(_ tile: Tile,
+                                 reason: String,
+                                 residentCount: Int,
+                                 residentBytes: Int) -> TileTraceEvent {
+        .event("tile_store_release",
+               fields: [
+                   "tile": .tile(tile),
+                   "reason": .string(reason),
+                   "residentCount": .int(residentCount),
+                   "residentBytes": .int(residentBytes)
+               ])
+    }
+
+    static func tileStoreRemoveAll(removedCount: Int,
+                                   removedBytes: Int) -> TileTraceEvent {
+        .event("tile_store_remove_all",
+               fields: [
+                   "removedCount": .int(removedCount),
+                   "removedBytes": .int(removedBytes)
+               ])
+    }
+
+    static func tileSchedulerRequest(input: Int, deduplicated: Int) -> TileTraceEvent {
+        .event("tile_scheduler_request",
+               fields: [
+                   "input": .int(input),
+                   "deduplicated": .int(deduplicated)
+               ])
+    }
+
+    static func tileSchedulerAlreadyLoading(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_scheduler_already_loading", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileSchedulerRetryBlocked(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_scheduler_retry_blocked", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileSchedulerEnqueued(_ tile: Tile, inFlight: Int) -> TileTraceEvent {
+        .event("tile_scheduler_enqueued",
+               fields: [
+                   "tile": .tile(tile),
+                   "inFlight": .int(inFlight)
+               ])
+    }
+
+    static func tileLoadScheduled(_ tile: Tile, inFlight: Int) -> TileTraceEvent {
+        .event("tile_load_scheduled",
+               fields: [
+                   "tile": .tile(tile),
+                   "inFlight": .int(inFlight)
+               ])
+    }
+
+    static func tileLoadStart(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_load_start", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileLoadDropped(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_load_dropped", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileDiskLookupStart(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_disk_lookup_start", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileDiskHit(_ tile: Tile) -> TileTraceEvent {
+        .event("tile_disk_hit", fields: ["tile": .tile(tile)])
+    }
+
+    static func tileDiskMiss(_ tile: Tile, reason: String) -> TileTraceEvent {
+        .event("tile_disk_miss",
+               fields: [
+                   "tile": .tile(tile),
+                   "reason": .string(reason)
+               ])
+    }
+
+    static func tileDownloadSuccess(_ tile: Tile, bytes: Int) -> TileTraceEvent {
+        .event("tile_download_success",
+               fields: [
+                   "tile": .tile(tile),
+                   "bytes": .int(bytes)
+               ])
+    }
+
+    static func tileDownloadFailed(_ tile: Tile, reason: String) -> TileTraceEvent {
+        .event("tile_download_failed",
+               fields: [
+                   "tile": .tile(tile),
+                   "reason": .string(reason)
+               ])
+    }
+
+    static func tileLoadSuccess(_ tile: Tile, source: String) -> TileTraceEvent {
+        .event("tile_load_success",
+               fields: [
+                   "tile": .tile(tile),
+                   "source": .string(source)
+               ])
+    }
+
+    static func tileLoadFailed(_ tile: Tile, reason: String) -> TileTraceEvent {
+        .event("tile_load_failed",
+               fields: [
+                   "tile": .tile(tile),
+                   "reason": .string(reason)
+               ])
+    }
+
+    static func tileLoadStalled(_ tile: Tile, stage: String, age: TimeInterval) -> TileTraceEvent {
+        .event("tile_load_stalled",
+               fields: [
+                   "tile": .tile(tile),
+                   "stage": .string(stage),
+                   "ageSeconds": .double(age)
+               ])
+    }
+
+    static func tileDemandUpdate(frameIndex: UInt64,
+                                 visible: Int,
+                                 demanded: Int,
+                                 ready: Int,
+                                 requested: Int,
+                                 rendered: Int,
+                                 placementChanged: Bool,
+                                 placementVersion: UInt64,
+                                 surface: String,
+                                 inOwnSlot: Int,
+                                 standIns: Int) -> TileTraceEvent {
+        .event("tile_demand_update",
+               frameIndex: frameIndex,
+               fields: [
+                   "visible": .int(visible),
+                   "demanded": .int(demanded),
+                   "ready": .int(ready),
+                   "requested": .int(requested),
+                   "rendered": .int(rendered),
+                   "placementChanged": .bool(placementChanged),
+                   "placementVersion": .int(Int(placementVersion)),
+                   "surface": .string(surface),
+                   "inOwnSlot": .int(inOwnSlot),
+                   "standIns": .int(standIns)
+               ])
+    }
+
+    static func tileLoadingStatusSnapshot(frameIndex: UInt64,
+                                          snapshot: TileLoadingStatusSnapshot) -> TileTraceEvent {
+        var fields: [String: TileTraceValue] = [
+            "requested": .int(snapshot.requested),
+            "deduplicated": .int(snapshot.deduplicated),
+            "activeLoads": .int(snapshot.activeLoads),
+            "scheduled": .int(snapshot.scheduled),
+            "diskInFlight": .int(snapshot.disk.inFlight),
+            "diskCompleted": .int(snapshot.disk.completed),
+            "diskFailed": .int(snapshot.disk.failed),
+            "networkInFlight": .int(snapshot.network.inFlight),
+            "networkCompleted": .int(snapshot.network.completed),
+            "networkFailed": .int(snapshot.network.failed),
+            "parseInFlight": .int(snapshot.parsing.inFlight),
+            "parseCompleted": .int(snapshot.parsing.completed),
+            "parseFailed": .int(snapshot.parsing.failed),
+            "totalCompleted": .int(snapshot.totalCompleted),
+            "totalFailed": .int(snapshot.totalFailed),
+            "networkBytes": .int(snapshot.networkBytes)
+        ]
+        if let latestDiskTile = snapshot.latestDiskTile {
+            fields["latestDiskTile"] = .tile(latestDiskTile)
+        }
+        if let latestNetworkTile = snapshot.latestNetworkTile {
+            fields["latestNetworkTile"] = .tile(latestNetworkTile)
+        }
+        if let latestParsingTile = snapshot.latestParsingTile {
+            fields["latestParsingTile"] = .tile(latestParsingTile)
+        }
+        if let latestFailure = snapshot.latestFailure {
+            fields["latestFailure"] = .string(latestFailure)
+        }
+        let tiles = tileStatusDescription(snapshot.tiles)
+        if tiles.isEmpty == false {
+            fields["tiles"] = .string(tiles)
+        }
+        return .event("tile_loading_status_snapshot",
+                      frameIndex: frameIndex,
+                      fields: fields)
+    }
+
+    private static func parseLayerTimingsDescription(_ timings: [TileParseLayerTiming]) -> String {
+        timings
+            .filter { $0.duration > 0 }
+            .sorted { lhs, rhs in
+                if lhs.duration != rhs.duration {
+                    return lhs.duration > rhs.duration
+                }
+                return lhs.layerName < rhs.layerName
+            }
+            .map { timing in
+                let milliseconds = Int((timing.duration * 1000).rounded())
+                return "\(timing.layerName):\(milliseconds)ms"
+            }
+            .joined(separator: ",")
+    }
+
+    private static func tileStatusDescription(_ tiles: [TileLoadingStatusTileSnapshot]) -> String {
+        tiles
+            .map { tile in
+                "\(tile.tile.z)/\(tile.tile.x)/\(tile.tile.y):\(tileStatusDescription(tile.status)):\(tile.detail)"
+            }
+            .joined(separator: ";")
+    }
+
+    private static func tileStatusDescription(_ status: TileLoadingTileStatus) -> String {
+        switch status {
+        case .queued:
+            return "queued"
+        case .loading:
+            return "loading"
+        case .parsing:
+            return "parsing"
+        case .ready:
+            return "ready"
+        case .failed:
+            return "failed"
+        }
+    }
+}
+
+/// Its file is touched only on its queue and its flag only under its
+/// lock, so it can be called from any thread.
+package final class TileTraceRecorder: @unchecked Sendable {
+    private let fileManager: FileManager
+    private let directoryURL: URL
+    private let now: () -> Date
+    private let queue = DispatchQueue(label: "ImmersiveMap.TileTraceRecorder")
+    private let stateLock = NSLock()
+
+    private var fileHandle: FileHandle?
+    private var currentFileURL: URL?
+    private var isRecordingFlag = false
+
+    package init(fileManager: FileManager = .default,
+         directoryURL: URL? = nil,
+         now: @escaping () -> Date = Date.init) {
+        self.fileManager = fileManager
+        self.directoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
+        self.now = now
+    }
+
+    @discardableResult
+    package func startRecording() -> URL? {
+        queue.sync {
+            if fileHandle != nil {
+                return currentFileURL
+            }
+
+            do {
+                try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+                let fileURL = directoryURL.appendingPathComponent(makeFileName(for: now()))
+                fileManager.createFile(atPath: fileURL.path, contents: nil)
+                let handle = try FileHandle(forWritingTo: fileURL)
+                fileHandle = handle
+                currentFileURL = fileURL
+                setRecordingFlag(true)
+                return fileURL
+            } catch {
+                fileHandle = nil
+                currentFileURL = nil
+                setRecordingFlag(false)
+                return nil
+            }
+        }
+    }
+
+    package func stopRecording() {
+        queue.sync {
+            guard let fileHandle else { return }
+            try? fileHandle.synchronize()
+            try? fileHandle.close()
+            self.fileHandle = nil
+            setRecordingFlag(false)
+        }
+    }
+
+    package func snapshot() -> TileTraceRecorderSnapshot {
+        queue.sync {
+            TileTraceRecorderSnapshot(isRecording: fileHandle != nil,
+                                      fileURL: currentFileURL)
+        }
+    }
+
+    func record(_ event: TileTraceEvent) {
+        guard isRecording else { return }
+        let timestamp = now()
+        queue.async { [weak self] in
+            guard let self,
+                  let fileHandle else {
+                return
+            }
+
+            guard let line = makeJSONLine(event: event, timestamp: timestamp),
+                  let data = line.data(using: .utf8) else {
+                return
+            }
+            fileHandle.write(data)
+        }
+    }
+
+    private var isRecording: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return isRecordingFlag
+    }
+
+    private func setRecordingFlag(_ isRecording: Bool) {
+        stateLock.lock()
+        isRecordingFlag = isRecording
+        stateLock.unlock()
+    }
+
+    private func makeJSONLine(event: TileTraceEvent, timestamp: Date) -> String? {
+        var object: [String: Any] = [
+            "t": timestamp.timeIntervalSince1970,
+            "event": event.name
+        ]
+        if let frameIndex = event.frameIndex {
+            object["frame"] = Int(frameIndex)
+        }
+        for key in event.fields.keys.sorted() {
+            object[key] = event.fields[key]?.jsonValue
+        }
+
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return json + "\n"
+    }
+
+    private func makeFileName(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return "immersive-map-tile-trace-\(formatter.string(from: date)).jsonl"
+    }
+
+    private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
+        if let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+            return documents.appendingPathComponent("ImmersiveMapDebugLogs", isDirectory: true)
+        }
+        return fileManager.temporaryDirectory.appendingPathComponent("ImmersiveMapDebugLogs", isDirectory: true)
+    }
+}
+
+enum TileTraceURLRedactor {
+    private static let sensitiveQueryNames: Set<String> = [
+        "access_token",
+        "apikey",
+        "api_key",
+        "authorization",
+        "auth",
+        "key",
+        "password",
+        "token"
+    ]
+
+    static func redact(_ value: String) -> String {
+        guard var components = URLComponents(string: value),
+              let queryItems = components.queryItems,
+              queryItems.isEmpty == false else {
+            return value
+        }
+
+        components.queryItems = queryItems.map { item in
+            guard sensitiveQueryNames.contains(item.name.lowercased()) else {
+                return item
+            }
+            return URLQueryItem(name: item.name, value: "REDACTED")
+        }
+        return components.string ?? value
+    }
+}

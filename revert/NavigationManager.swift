@@ -42,7 +42,7 @@ nonisolated struct ApproachGuide {
 final class NavigationManager {
     var route: PlannedRoute?
     /// Vehicle chosen for this navigation. It drives the car/bike cockpit,
-    /// labels, recording and the CarPlay snapshot.
+    /// labels, recording and the widget snapshot.
     private(set) var vehicleKind: VehicleKind = .motorcycle
     var step: NavStep?              // the next maneuver
     var nextStep: NavStep?          // the maneuver after that
@@ -116,7 +116,14 @@ final class NavigationManager {
     @ObservationIgnored private var loopIsClosed = false
     @ObservationIgnored private var stepIdx = 1
     /// Which distance rungs have already been spoken, per step id.
-    @ObservationIgnored private var announcedCallouts: [Int: Set<Int>] = [:]
+    /// What the rider has actually heard, per step id. Stages, not indices.
+    @ObservationIgnored private var calloutStates: [Int: AnnouncementScheduler.State] = [:]
+    /// The last manoeuvre the rider actually heard, for "say that again".
+    @ObservationIgnored private(set) var lastInstruction: (step: NavStep, distance: Double?)?
+    @ObservationIgnored private var startGuidanceAnnounced = false
+    @ObservationIgnored private var spokeOffRoute = false
+    @ObservationIgnored private var lastInstructionAt: Date?
+    @ObservationIgnored private var accumulatedLapTime: TimeInterval = 0
     /// Consecutive fixes whose course disagrees with the route's own tangent.
     @ObservationIgnored private var reversedFixes = 0
     @ObservationIgnored private var straightAnnounced = Set<Int>()
@@ -185,6 +192,7 @@ final class NavigationManager {
             backgroundLease = hub.acquireBackground()
             hub.requestAlwaysIfNeeded()
         }
+        Speaker.shared.cancelNavigationPrompts()
         reset()
         // After reset(), which clears it: a loop that ends where it began
         // banks laps at the line; a route that does not close finishes by
@@ -202,7 +210,30 @@ final class NavigationManager {
         refreshApproachIfNeeded()
     }
 
+    /// "Say that again": repeats what the rider actually heard. The distance is
+    /// the one from that announcement, not a fresh estimate, so the repeat is
+    /// the instruction they missed rather than a new one.
+    @discardableResult
+    func repeatLastInstruction() -> Bool {
+        guard let last = lastInstruction else { return false }
+        Speaker.shared.say(Narrator.instruction(last.step, distance: last.distance),
+                           kind: .navigation,
+                           priority: .immediateManeuver,
+                           allowDuplicate: true)
+        return true
+    }
+
+    /// Explicit end-of-navigation, unlike `stop()` which also runs on teardown.
+    func endNavigation() {
+        let wasActive = route != nil
+        stop()
+        if wasActive {
+            Speaker.shared.say(Narrator.navigationEnded, kind: .navigation, priority: .completion)
+        }
+    }
+
     func stop() {
+        Speaker.shared.cancelNavigationPrompts()
         routeGeneration += 1
         route = nil
         step = nil
@@ -225,7 +256,7 @@ final class NavigationManager {
         distanceSinceLap = 0
         loopIsClosed = false
         stepIdx = 0
-        announcedCallouts = [:]
+        calloutStates = [:]
         straightAnnounced = []
         offSince = nil
         joined = false
@@ -240,6 +271,11 @@ final class NavigationManager {
         lap = 1
         lastLapDuration = nil
         lapStartedAt = Date()
+        accumulatedLapTime = 0
+        startGuidanceAnnounced = false
+        spokeOffRoute = false
+        lastInstruction = nil
+        lastInstructionAt = nil
         clearApproach()
     }
 
@@ -302,6 +338,14 @@ final class NavigationManager {
                 distanceToStart = loc.distance(from: CLLocation(latitude: first.lat, longitude: first.lon))
             }
             if r.kind.isTimed {
+                // The rider may be streets away from the start line. Say where
+                // it is once; the approach prompts take over from there.
+                if !startGuidanceAnnounced, distanceToStart > 300 {
+                    startGuidanceAnnounced = true
+                    Speaker.shared.say(Narrator.startGuidance(distance: distanceToStart),
+                                       kind: .navigation,
+                                       priority: .contextual)
+                }
                 // A timed loop starts where its template says. The approach
                 // guidance exists so the rider can find that point, and the
                 // 75 m gate was too tight for a GPS fix taken a few metres
@@ -363,11 +407,17 @@ final class NavigationManager {
             // "350 ft to the turn" pointing at a junction the rider was not at.
             if !offRoute {
                 offRoute = true
+                spokeOffRoute = true
                 RideDebug.shared.event("NAV-OFFROUTE", [
                     ("offset", "\(Int(m.dist))"),
                     ("along", "\(Int(m.along))"),
                     ("speed", "\(Int(speed))")
                 ])
+                let recentTurn = lastInstructionAt.map { Date().timeIntervalSince($0) < 12 } ?? false
+                let closeTurn = (lastInstruction?.distance ?? .greatestFiniteMagnitude) < 120
+                Speaker.shared.say(recentTurn && closeTurn ? Narrator.missedTurn : Narrator.offRoute,
+                                   kind: .navigation,
+                                   priority: .deviation)
             }
             // A GPS bias of 50 m beside a road used to sit right on the old
             // 50 m line, so every fix flipped in and out and re-routed. The
@@ -387,6 +437,10 @@ final class NavigationManager {
                     ("offset", "\(Int(m.dist))"),
                     ("along", "\(Int(m.along))")
                 ])
+                if spokeOffRoute {
+                    spokeOffRoute = false
+                    Speaker.shared.say(Narrator.backOnRoute, kind: .navigation, priority: .contextual)
+                }
             }
         }
         guard !offRoute else {
@@ -448,13 +502,14 @@ final class NavigationManager {
         if crossedLine, r.kind.isTimed, loopIsClosed {
             if lap < totalLaps {
                 lastLapDuration = Date().timeIntervalSince(lapStartedAt)
+                accumulatedLapTime += lastLapDuration ?? 0
                 lap += 1
                 lapStartedAt = Date()
                 distanceSinceLap = 0
                 seg = m.seg
                 along = m.along
                 stepIdx = 0
-                announcedCallouts = [:]
+                calloutStates = [:]
                 straightAnnounced = []
                 offRoute = false
                 offSince = nil
@@ -467,7 +522,8 @@ final class NavigationManager {
                     ("length", "\(Int(r.length))"),
                     ("speed", "\(Int(speed))")
                 ])
-                Speaker.shared.say("Lap \(lap) of \(totalLaps)", kind: .navigation)
+                Speaker.shared.say(Narrator.lap(lap, of: totalLaps, last: lastLapDuration),
+                                   kind: .navigation, priority: .completion)
             } else {
                 arrived = true
                 remaining = 0
@@ -481,20 +537,23 @@ final class NavigationManager {
                     ("lap", "\(lap)/\(totalLaps)"),
                     ("last", "\(Int((lastLapDuration ?? 0).rounded()))")
                 ])
-                Speaker.shared.say(Narrator.arrival, kind: .navigation)
+                Speaker.shared.cancelNavigationPrompts()
+                Speaker.shared.say(Narrator.loopComplete(total: accumulatedLapTime + (lastLapDuration ?? 0)),
+                                   kind: .navigation, priority: .completion)
                 return
             }
         } else if r.kind.isTimed, !loopIsClosed,
                   r.length - m.along < 30, m.along > r.length * 0.5 {
             if lap < totalLaps {
                 lastLapDuration = Date().timeIntervalSince(lapStartedAt)
+                accumulatedLapTime += lastLapDuration ?? 0
                 lap += 1
                 lapStartedAt = Date()
                 seg = 0
                 along = 0
                 remaining = r.length
                 stepIdx = 0
-                announcedCallouts = [:]
+                calloutStates = [:]
                 straightAnnounced = []
                 offRoute = false
                 offSince = nil
@@ -507,7 +566,8 @@ final class NavigationManager {
                     ("length", "\(Int(r.length))"),
                     ("speed", "\(Int(speed))")
                 ])
-                Speaker.shared.say("Lap \(lap) of \(totalLaps)", kind: .navigation)
+                Speaker.shared.say(Narrator.lap(lap, of: totalLaps, last: lastLapDuration),
+                                   kind: .navigation, priority: .completion)
                 return
             }
             arrived = true
@@ -522,7 +582,9 @@ final class NavigationManager {
                 ("lap", "\(lap)/\(totalLaps)"),
                 ("last", "\(Int((lastLapDuration ?? 0).rounded()))")
             ])
-            Speaker.shared.say(Narrator.arrival, kind: .navigation)
+            Speaker.shared.cancelNavigationPrompts()
+            Speaker.shared.say(Narrator.sprintFinish(time: lastLapDuration),
+                               kind: .navigation, priority: .completion)
             return
         } else if !r.kind.isTimed, r.length - m.along < 30, m.along > r.length * 0.5 {
             // Point-to-point still ends by proximity; there is no line to cross.
@@ -579,8 +641,13 @@ final class NavigationManager {
         // A fix that may describe a road left minutes ago must not announce a
         // maneuver out of the blue.
         if age <= Self.staleFixAge {
-            speakStraightIfNeeded(route: r)
-            speakIfNeeded(next, speed: speed)
+            // A turn prompt is higher value than "continue on"; never schedule
+            // the straight line if the turn is about to speak, and never mark
+            // it spoken when it was skipped.
+            let spokeTurn = speakIfNeeded(next, speed: speed)
+            if !spokeTurn {
+                speakStraightIfNeeded(route: r)
+            }
         }
 
         // Ride the puck and the camera on the route at the predicted distance:
@@ -715,55 +782,47 @@ final class NavigationManager {
         min(max(speed * 3.0, 35), 150)
     }
 
-    private func speakIfNeeded(_ s: NavStep, speed: Double) {
-        guard !s.instruction.isEmpty else { return }
+    /// Returns true when this fix produced a turn announcement. The caller
+    /// uses that to protect it from a lower-value "continue on" line.
+    @discardableResult
+    private func speakIfNeeded(_ s: NavStep, speed: Double) -> Bool {
+        guard !s.instruction.isEmpty else { return false }
         // The lap line is not the destination; the lap announcement covers it.
-        if s.turn == .arrive, lap < totalLaps { return }
-        var spoken = announcedCallouts[s.id, default: []]
-        let rungs = Self.calloutRungs(forSpeed: speed)
+        if s.turn == .arrive, lap < totalLaps { return false }
+        var state = calloutStates[s.id, default: AnnouncementScheduler.State()]
+        guard let decision = AnnouncementScheduler.decide(
+            state: &state,
+            distance: stepDistance,
+            speed: speed,
+            now: Date(),
+            minimumGapMeters: 40,
+            minimumGapSeconds: 2.0
+        ) else { return false }
+        calloutStates[s.id] = state
+        lastInstruction = (s, decision.spokenDistance)
+        lastInstructionAt = Date()
 
-        // A step can become current already inside several rungs — the next
-        // manoeuvre after a turn is often 40 m away. Announce once, with the
-        // live distance, and mark every rung already passed so the following
-        // fixes do not fire a burst of duplicates.
-        let crossed = rungs.enumerated()
-            .filter { stepDistance <= $0.element && !spoken.contains($0.offset) }
-        if let first = crossed.first {
-            for rung in crossed { spoken.insert(rung.offset) }
-            announcedCallouts[s.id] = spoken
-            RideDebug.shared.event("NAV-CUE", [
-                ("stage", "rung\(first.offset + 1)"),
-                ("turn", "\(s.turn)"),
-                ("road", s.road ?? "—"),
-                ("instruction", s.instruction),
-                ("distance", "\(Int(stepDistance))"),
-                ("speed", "\(Int(speed))"),
-                ("band", "\(Int(speed * 3.6)) km/h"),
-                ("lookahead", "\(Int(first.element)) m")
-            ])
-            if UserDefaults.standard.bool(forKey: "voice.muted"), first.offset == rungs.count - 1 {
-                TurnCue.approach()
-            }
-            Speaker.shared.say(Narrator.instruction(s, distance: stepDistance), kind: .navigation)
-            return
+        RideDebug.shared.event("NAV-CUE", [
+            ("stage", decision.stage.title),
+            ("turn", "\(s.turn)"),
+            ("road", s.road ?? "—"),
+            ("instruction", s.instruction),
+            ("distance", "\(Int(stepDistance))"),
+            ("spokenDistance", decision.spokenDistance.map { "\(Int($0))" } ?? "now"),
+            ("speed", "\(Int(speed))"),
+            ("band", "\(Int(speed * 3.6)) km/h")
+        ])
+        if UserDefaults.standard.bool(forKey: "voice.muted"), decision.stage == .final {
+            TurnCue.approach()
         }
-
-        // On the junction: "Turn left onto X", no distance. Scale this too.
-        let final = Self.finalPromptDistance(forSpeed: speed)
-        if stepDistance <= final, !spoken.contains(99) {
-            spoken.insert(99)
-            announcedCallouts[s.id] = spoken
-            RideDebug.shared.event("NAV-CUE", [
-                ("stage", "now"),
-                ("turn", "\(s.turn)"),
-                ("road", s.road ?? "—"),
-                ("instruction", s.instruction),
-                ("distance", "\(Int(stepDistance))"),
-                ("speed", "\(Int(speed))"),
-                ("finalBand", "\(Int(final)) m")
-            ])
-            Speaker.shared.say(Narrator.instruction(s, distance: nil), kind: .navigation)
-        }
+        Speaker.shared.say(Narrator.instruction(s, distance: decision.spokenDistance),
+                           kind: .navigation,
+                           priority: decision.stage == .final ? .immediateManeuver : .advanceManeuver,
+                           relevance: { [weak self] in
+                               guard let self else { return false }
+                               return self.step?.id == s.id && self.stepDistance > 3 && !self.arrived
+                           })
+        return true
     }
 
     /// Google-style "stay on this road" callout at the top of a long segment.
@@ -902,12 +961,32 @@ final class NavigationManager {
             ("remaining", "\(Int(remaining))"),
             ("point", String(format: "%.5f,%.5f", loc.coordinate.latitude, loc.coordinate.longitude))
         ])
-        Speaker.shared.say("Off route. Finding a way back", kind: .navigation)
-
         // Point-to-point directions genuinely end at the destination. Loops do
         // not: their destination is the start, so send them through the graph
         // rejoin below instead.
         if r.kind.isPointToPoint, let destination = normalDestination {
+            // The graph that planned the route can also recover it. Only ask
+            // the network when no local roads are available or the graph fails.
+            if !roads.isEmpty {
+                let graph = roads
+                let kind = r.kind
+                let laps = r.laps
+                let from = loc.coordinate
+                Task.detached(priority: .userInitiated) {
+                    let local = RouteBuilder.direct(roads: graph, from: from, to: destination)
+                    await MainActor.run {
+                        if var route = local {
+                            route.kind = kind
+                            route.laps = laps
+                            self.finishReroute(route, generation: generation)
+                        } else {
+                            self.rerouteDirections(from: from, to: destination,
+                                                   generation: generation)
+                        }
+                    }
+                }
+                return
+            }
             rerouteDirections(from: loc.coordinate, to: destination, generation: generation)
             return
         }
@@ -972,7 +1051,7 @@ final class NavigationManager {
         normalDestination = new.kind.isPointToPoint ? new.destination : nil
         seg = 0
         along = 0
-        announcedCallouts = [:]
+        calloutStates = [:]
         straightAnnounced = []
         offSince = nil
         offRoute = false
@@ -985,7 +1064,7 @@ final class NavigationManager {
         step = new.steps.indices.contains(stepIdx) ? new.steps[stepIdx] : nil
         nextStep = new.steps.indices.contains(stepIdx + 1) ? new.steps[stepIdx + 1] : nil
         stepDistance = 0
-        Speaker.shared.say(Narrator.routeUpdated, kind: .navigation)
+        Speaker.shared.say(Narrator.routeUpdatedContinue, kind: .navigation, priority: .deviation)
     }
 
     // MARK: - Approach to the start
@@ -1011,6 +1090,11 @@ final class NavigationManager {
         lap = 1
         lastLapDuration = nil
         lapStartedAt = Date()
+        accumulatedLapTime = 0
+        startGuidanceAnnounced = false
+        spokeOffRoute = false
+        lastInstruction = nil
+        lastInstructionAt = nil
         clearApproach()
         seg = m.seg
         along = m.along
@@ -1151,14 +1235,15 @@ final class NavigationManager {
             guide.distance > 0 ? time * (approachRemaining / guide.distance) : 0
         }
 
-        if approachStepDistance < 140,
+        let threshold = max(90, loc.speed * 3.5)
+        if approachStepDistance < threshold,
            approachStepDistance > 5,
            !approachAnnounced.contains(upcoming.id) {
             approachAnnounced.insert(upcoming.id)
-            // "Turn left onto..." with no distance was the other half of the
-            // complaint: the rider could not tell which junction it meant.
-            Speaker.shared.say("In \(Units.spokenDistance(approachStepDistance)), \(upcoming.instruction)",
-                               kind: .navigation)
+            Speaker.shared.say(Narrator.approach(upcoming.instruction,
+                                                 distance: approachStepDistance),
+                               kind: .navigation,
+                               priority: .immediateManeuver)
         }
     }
 

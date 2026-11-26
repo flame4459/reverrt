@@ -11,7 +11,7 @@ nonisolated struct NavigationActivityAttributes: ActivityAttributes {
         var speed: String
         var offRoute: Bool
         var updatedAt: Date
-        /// SF Symbol for the upcoming maneuver (`NavStep.symbol`). The CarPlay
+        /// SF Symbol for the upcoming maneuver (`NavStep.symbol`). The adaptive
         /// dashboard card leads with it, so the shape of the turn lands before
         /// the words do.
         var turnSymbol: String
@@ -27,7 +27,6 @@ nonisolated struct NavigationActivityAttributes: ActivityAttributes {
         var totalLaps: Int = 0
         /// Short hazard/alert label to show on the car card.
         var hazard: String? = nil
-        var isSimulation: Bool = false
         /// "car" or "motorcycle"; the widget picks the right glyph.
         var vehicleKind: String = "motorcycle"
         /// File name of the rendered map card in the app group, if one exists.
@@ -44,18 +43,6 @@ nonisolated struct NavigationActivityAttributes: ActivityAttributes {
     var startedAt: Date
 }
 
-/// iOS 17 variant of the Live Activity.
-///
-/// The adaptive layout and the small activity family (CarPlay Dashboard, Watch
-/// Smart Stack) only exist on iOS 18, so the two generations must not claim the
-/// same activity type: ActivityKit expects exactly one widget per type. This
-/// type reuses the same payload and differs only in its type name, which is
-/// what ActivityKit uses as the activity key.
-nonisolated struct LegacyNavigationActivityAttributes: ActivityAttributes {
-    typealias ContentState = NavigationActivityAttributes.ContentState
-
-    var startedAt: Date
-}
 
 /// Snapshot shared with the widget extension. `NavigationActivityAttributes`
 /// is the live channel; this is the tickable widget's view of the same drive.
@@ -65,7 +52,6 @@ nonisolated struct CarWidgetSnapshot: Codable, Hashable, Sendable {
         case driving
         case paused
         case arrived
-        case simulation
     }
 
     /// Written by this build. Older payloads decode as nil and are treated as
@@ -86,7 +72,6 @@ nonisolated struct CarWidgetSnapshot: Codable, Hashable, Sendable {
     var lap: Int = 0
     var totalLaps: Int = 0
     var hazard: String? = nil
-    var isSimulation: Bool = false
     var mapImage: String? = nil
     var progress: Double = 0
     /// Current maneuver id, for correlating Dashboard snapshots with the
@@ -99,7 +84,7 @@ nonisolated struct CarWidgetSnapshot: Codable, Hashable, Sendable {
     /// update is a stopped app, not a quiet stretch of road.
     var isStale: Bool { Date().timeIntervalSince(updatedAt) > 300 }
     var isLive: Bool {
-        mode == .driving || mode == .paused || mode == .simulation
+        mode == .driving || mode == .paused
     }
 
     static let parked = CarWidgetSnapshot()
@@ -167,7 +152,7 @@ nonisolated enum WidgetDebugLog {
         defaults.set(recent, forKey: recentKey)
     }
 
-    /// The retained history for the CarPlay diagnostics screen. Unlike
+    /// The retained history for the widget diagnostics screen. Unlike
     /// `drain()`, this is never removed by the ride transcript flush.
     static func recent() -> [String] {
         defaults?.stringArray(forKey: recentKey) ?? []

@@ -513,8 +513,6 @@ nonisolated struct RouteRibbon: Sendable {
 // MARK: - Config and puck
 
 enum MapConfig {
-    static let style: MapStyle = .standard(elevation: .flat, emphasis: .muted,
-                                           pointsOfInterest: .excludingAll)
     static let accent = Color(red: 0.396, green: 0.953, blue: 0.875)
     static let casing = Color(red: 0.016, green: 0.035, blue: 0.051)
 
@@ -530,43 +528,6 @@ enum MapConfig {
         return SIMD4<Float>(Float(0.396 + 0.20 * m),
                             Float(0.953 - 0.02 * m),
                             Float(0.875 - 0.15 * m), 1)
-    }
-}
-
-struct NavigationPuck: View {
-    let heading: Double
-    let speed: Double
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var coneOpacity: Double {
-        min(max(speed / 25, 0), 1) * 0.35
-    }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(MapConfig.accent.opacity(0.16))
-                .frame(width: 54, height: 54)
-                .blur(radius: 8)
-            Circle()
-                .fill(MapConfig.accent)
-                .frame(width: 36, height: 36)
-                .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 2))
-                .shadow(color: MapConfig.accent.opacity(0.45), radius: 8, y: 3)
-            Image(systemName: "location.north.fill")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.white)
-            if !reduceMotion, speed > 1 {
-                Triangle()
-                    .fill(LinearGradient(colors: [MapConfig.accent.opacity(coneOpacity), .clear],
-                                         startPoint: .bottom, endPoint: .top))
-                    .frame(width: 34, height: 46)
-                    .offset(y: -28)
-            }
-        }
-        .rotationEffect(.degrees(heading))
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: heading)
-        .accessibilityLabel("Current direction")
     }
 }
 

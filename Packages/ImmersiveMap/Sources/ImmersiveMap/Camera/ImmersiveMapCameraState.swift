@@ -1,0 +1,65 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+//
+//  ImmersiveMapCameraState.swift
+//  ImmersiveMap
+//
+
+import simd
+
+/// The `Camera` folder: camera state, constraints (bearing, pitch, zoom
+/// limits, region bounds) and the gesture-independent zoom and view-mode math that `UI`,
+/// `Presentation`, tile visibility and `Render` share without owning camera
+/// policy. No gesture recognizers or views, no Metal or frame state, no tile
+/// loading or style configuration, no label, pin or starfield state.
+struct ImmersiveMapCameraState: Equatable {
+    static let `default` = ImmersiveMapCameraState(centerWorldMercator: SIMD2<Double>(0.5, 0.5),
+                                          zoom: 0,
+                                          bearing: 0,
+                                          pitch: 0)
+
+    var centerWorldMercator: SIMD2<Double>
+    var zoom: Double
+    var bearing: Float
+    var pitch: Float
+
+    init(centerWorldMercator: SIMD2<Double>,
+         zoom: Double,
+         bearing: Float,
+         pitch: Float) {
+        self.centerWorldMercator = SIMD2<Double>(ImmersiveMapProjection.wrapNormalizedWorldX(centerWorldMercator.x),
+                                                 ImmersiveMapProjection.clampNormalizedWorldY(centerWorldMercator.y))
+        self.zoom = zoom
+        self.bearing = bearing
+        self.pitch = pitch
+    }
+
+    init(cameraPosition: ImmersiveMapCameraPosition,
+         cameraSettings: ImmersiveMapSettings.CameraSettings) {
+        let maxLatitudeDeg = ImmersiveMapProjection.maxMercatorLatitude * (180.0 / .pi)
+        let clampedLatitudeDegrees = min(max(cameraPosition.latitudeDegrees, -maxLatitudeDeg), maxLatitudeDeg)
+        let latitudeRadians = (clampedLatitudeDegrees / 180.0) * Double.pi
+        let longitudeRadians = (cameraPosition.longitudeDegrees / 180.0) * Double.pi
+        let centerWorldMercator = ImmersiveMapProjection.worldMercator(latitude: latitudeRadians,
+                                                              longitude: longitudeRadians)
+        let clampedZoom = cameraSettings.clampZoom(cameraPosition.zoom)
+        let boundedCenter = cameraSettings.bounds.map {
+            CameraBoundsConstraint(bounds: $0).apply(to: centerWorldMercator, zoom: clampedZoom)
+        } ?? centerWorldMercator
+        self.init(centerWorldMercator: boundedCenter,
+                  zoom: clampedZoom,
+                  bearing: cameraPosition.bearing,
+                  pitch: cameraSettings.clampPitch(cameraPosition.pitch, at: clampedZoom))
+    }
+
+    func cameraPosition() -> ImmersiveMapCameraPosition {
+        let latitudeRadians = ImmersiveMapProjection.latitude(fromNormalizedWorldY: centerWorldMercator.y)
+        let longitudeRadians = ImmersiveMapProjection.longitude(fromNormalizedWorldX: centerWorldMercator.x)
+        return ImmersiveMapCameraPosition(latitudeDegrees: latitudeRadians * (180.0 / .pi),
+                                          longitudeDegrees: longitudeRadians * (180.0 / .pi),
+                                          zoom: zoom,
+                                          bearing: bearing,
+                                          pitch: pitch)
+    }
+}

@@ -1,0 +1,60 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+/// Stores the map's current surface mode and resolves the presentation state for the frame pipeline.
+final class MapPresentationStateController {
+    private var settings: ImmersiveMapSettings
+    private var forcedRenderSurfaceMode: ViewMode?
+
+    init(settings: ImmersiveMapSettings) {
+        self.settings = settings
+    }
+
+    func applySettings(_ settings: ImmersiveMapSettings) {
+        self.settings = settings
+    }
+
+    func resolve(cameraState: ImmersiveMapCameraState) -> ResolvedPresentationState {
+        PresentationStateResolver.resolve(cameraState: cameraState,
+                                          settings: settings.presentation,
+                                          forcedRenderSurfaceMode: forcedRenderSurfaceMode)
+    }
+
+    func switchRenderSurfaceMode(cameraState: ImmersiveMapCameraState) {
+        guard forcedRenderSurfaceMode == nil else {
+            forcedRenderSurfaceMode = nil
+            return
+        }
+
+        let resolvedPresentation = resolve(cameraState: cameraState)
+
+        switch resolvedPresentation.renderSurfaceMode {
+        case .spherical:
+            forcedRenderSurfaceMode = .flat
+        case .flat:
+            forcedRenderSurfaceMode = .spherical
+        }
+    }
+
+    func isSphericalSurfaceActive(cameraState: ImmersiveMapCameraState) -> Bool {
+        resolve(cameraState: cameraState).renderSurfaceMode == .spherical
+    }
+
+    func cameraConstraints(cameraState: ImmersiveMapCameraState) -> CameraConstraints {
+        CameraConstraintResolver.resolve(cameraState: cameraState,
+                                         cameraSettings: settings.camera,
+                                         renderSurfaceMode: resolve(cameraState: cameraState).renderSurfaceMode)
+    }
+
+    /// The window the globe's upright pull holds the camera to, nil where it
+    /// holds nothing.
+    func globeUprightWindow(cameraState: ImmersiveMapCameraState) -> GlobeUprightWindow? {
+        let renderSurfaceMode = resolve(cameraState: cameraState).renderSurfaceMode
+        return GlobeUprightPull.window(zoom: cameraState.zoom,
+                                       settings: settings.camera.globeUprightPull,
+                                       renderSurfaceMode: renderSurfaceMode,
+                                       constraints: CameraConstraintResolver.resolve(cameraState: cameraState,
+                                                                                     cameraSettings: settings.camera,
+                                                                                     renderSurfaceMode: renderSurfaceMode))
+    }
+}

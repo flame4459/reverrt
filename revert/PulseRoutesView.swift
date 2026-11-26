@@ -1248,7 +1248,7 @@ struct PulseRoutesView: View {
                         .font(PulseType.eyebrow)
                         .tracking(1.8)
                         .foregroundStyle(Pulse.accent)
-                    Text("Build a scenic loop")
+                    Text("Plan a scenic loop")
                         .font(PulseType.display(21))
                         .tracking(-0.4)
                         .foregroundStyle(Pulse.ink)

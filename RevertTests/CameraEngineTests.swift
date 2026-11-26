@@ -58,24 +58,24 @@ struct CameraEngineTests {
         #expect(abs((a ?? 0) - (b ?? 0)) < 3, "60 Hz \(a ?? 0) vs 120 Hz \(b ?? 0)")
     }
 
-    @Test func northUpStaysNorthAndStillFollowsTheRider() {
+    @Test func northUpStaysNorthAndStillFollowsTheRider() throws {
         let route = straightRoute()
         var engine = RideCameraEngine()
         _ = engine.update(route: route, rawProgress: 0, speed: 10, maneuverMeters: 0,
                           fallbackHeading: 45, timestamp: 100,
                           centered: true, mode: .northUp)
-        let first = try? #require(engine.frame)
-        #expect(first?.heading == 0, "north up must not rotate with the road")
-        #expect((first?.distance ?? 0) > 100, "north up needs a real camera distance")
+        let first = try #require(engine.frame)
+        #expect(first.heading == 0, "north up must not rotate with the road")
+        #expect(first.distance > 100, "north up needs a real camera distance")
 
         // Move a kilometre along; the frame must move with the rider.
         _ = engine.update(route: route, rawProgress: 1_000, speed: 10, maneuverMeters: 0,
                           fallbackHeading: 45, timestamp: 110,
                           centered: true, mode: .northUp)
-        let second = try? #require(engine.frame)
-        #expect(abs((second?.latitude ?? 0) - (first?.latitude ?? 0)) > 0.001,
+        let second = try #require(engine.frame)
+        #expect(abs(second.latitude - first.latitude) > 0.001,
                 "the camera did not follow the rider")
-        #expect(second?.heading == 0)
+        #expect(second.heading == 0)
     }
 
     @Test func springSettlesOnTheTarget() {

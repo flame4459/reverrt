@@ -1,0 +1,279 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Mvt
+import simd
+
+/// The built-in style, for the Protomaps basemap schema (tiles version 4):
+/// the layers `earth`, `landcover`, `landuse`, `water`, `buildings`,
+/// `roads`, `boundaries`, `places` and `pois`, each feature told apart by
+/// `kind` and `kind_detail`, over the reading `ProtomapsBasemapSchema`
+/// makes of it, and the layers `biome`, `lake` and `road` the engine's
+/// overview of the globe lays into the tiles of the overview zooms
+/// (`OverviewTileSource`).
+///
+/// This file is the dispatch: the layer switch in `makeStyle`, the
+/// road policy every road feature carries, and the builders the rules
+/// share.
+/// The rules themselves are split by layer family into the extensions
+/// next to it: `Ground`, `Buildings`, `Roads` and `Labels`.
+/// Nothing in them is public: the members are
+/// internal only so that the extensions can share them across files.
+public struct ProtomapsBasemapDefaultMapStyle: ImmersiveMapVectorTileStyle {
+    static let implementationRevision: UInt32 = 27
+    /// The style draws what the tile carries and adds no zoom gate of its
+    /// own: the basemap already thins every layer per tile level, so a
+    /// feature in a tile is a feature on the map. A road shows from the
+    /// first tile that ships it, without a fade.
+    static let roadZoomFade = ImmersiveMapZoomFade.none
+    /// The basemap ships the continuous `landcover` through tile z7 only,
+    /// and the engine draws the z7 tiles for camera zoom 7.0 up to 8.0. The
+    /// land cover and the biomes fade out over camera zoom 6.7 to 7.1,
+    /// around the globe's last tenths of the unroll and the roads' switch
+    /// to their own look (`roadLookSwitchZoom`), so the country view
+    /// arrives as one change. Up to zoom 7 the z6 tiles serve the view, and
+    /// they carry a handful of the land use's woods and fields, so the land
+    /// the cover leaves there is plainer until the z7 tiles bring them. The
+    /// fade hides nothing a tile would otherwise show past it: from camera
+    /// zoom 8 no tile has the cover.
+    static let landcoverZoomFade = ImmersiveMapZoomFade.fadeOut(from: 6.7, to: 7.1)
+    /// The camera zoom the roads switch from the globe's look, the highway
+    /// yellow under its veil, to their own colour and alpha, at once
+    /// (`LinePass.sphereLookUntilZoom`): where the globe has finished its
+    /// unroll and the land cover is fading out (`landcoverZoomFade`).
+    static let roadLookSwitchZoom: Float = 7.0
+    let theme: ProtomapsBasemapTheme
+
+    /// The land, the water and the ice of the theme, where no tile paints.
+    public var baseColors: ImmersiveMapBaseColors {
+        theme.baseColors
+    }
+
+    /// The theme's shading of the slopes.
+    public var hillshade: ImmersiveMapHillshade {
+        theme.hillshade
+    }
+
+    public var labelOpacity: ImmersiveMapLabelOpacity {
+        theme.labelOpacity
+    }
+
+    /// The theme's darkening where the terrain hides the sky.
+    public var terrainOcclusion: ImmersiveMapTerrainOcclusion {
+        theme.terrainOcclusion
+    }
+
+    /// The theme's colours of the trees.
+    public var treePalette: ImmersiveMapTreePalette {
+        theme.treePalette
+    }
+
+    public init(theme: ProtomapsBasemapTheme = .default) {
+        self.theme = theme
+    }
+
+    /// The palette's fingerprint and the rules' revision: a change to either
+    /// re-prepares every tile.
+    public var cacheFingerprint: UInt32 {
+        theme.cacheFingerprint &+ Self.implementationRevision
+    }
+
+    public var styleID: String { "protomaps" }
+
+    public func makeStyle(for feature: ImmersiveMapFeatureStyleContext) -> FeatureStyle {
+        makeStyle(context: feature)
+    }
+
+    /// The full-tile base quad the engine emits per tile, in the land
+    /// colour. The basemap ships the land as the `earth` polygon, so the
+    /// quad only guards a tile with no earth feature (open ocean, where it
+    /// lies under the water fill) and the holes an ocean's islands cut.
+    public func backgroundStyle(tileZoom: Int) -> FeatureStyle {
+        polygon(key: 1, colorOf: \.land)
+    }
+
+    /// The basemap ships the ocean names as points of `water` from z0, so
+    /// the parser adds none of its own.
+    public func waterNameStyle(_ kind: WaterNameKind, tileZoom: Int) -> FeatureStyle? {
+        nil
+    }
+
+    /// From this class priority up a road is part of the automobile network
+    /// and draws in the tier above the pedestrian one: service roads sit at
+    /// 45 and paths at 35 with rail between.
+    static let automobileTierPriority = 45
+
+    /// The road policy every road of this style carries, stated once for
+    /// the branches that produce roads: where it draws and which tier
+    /// it belongs to. A style that is no road (a hidden class, a ferry's
+    /// plain line) passes through.
+    func roadPolicy(applying facts: ImmersiveMapRoadFacts, to style: FeatureStyle) -> FeatureStyle {
+        guard case .road(var road) = style else {
+            return style
+        }
+        road.level = Self.roadLevel(facts)
+        road.tier = road.classPriority >= Self.automobileTierPriority ? .automobile : .pedestrian
+        return .road(road)
+    }
+
+    /// Where a road draws: its tagged structure or, for a road on the
+    /// ground, its `layer`, so a street diving under a bridge draws with
+    /// the tunnels and a ramp climbing over one with the bridges.
+    static func roadLevel(_ facts: ImmersiveMapRoadFacts) -> RoadLevel {
+        switch facts.structure {
+        case .tunnel: return .tunnel
+        case .bridge: return .bridge
+        case .ground: return facts.layer < 0 ? .tunnel : facts.layer > 0 ? .bridge : .ground
+        }
+    }
+
+    func makeStyle(context data: ImmersiveMapFeatureStyleContext) -> FeatureStyle {
+        let layer = data.layerName.lowercased()
+        let props = data.properties.values
+        let z = data.tileZoom
+        let kind = props["kind"]?.stringValue?.lowercased()
+        let kindDetail = props["kind_detail"]?.stringValue?.lowercased()
+
+        switch layer {
+        case "earth":
+            return polygon(key: 2, colorOf: \.land)
+        case "landcover":
+            return landcoverStyle(kind: kind, tileZoom: z)
+        case "landuse":
+            return landuseStyle(kind: kind, tileZoom: z)
+        case "biome":
+            return biomeStyle(kind: kind, tileZoom: z)
+        case "lake":
+            return overviewLakeStyle(tileZoom: z)
+        case "road":
+            return overviewRoadNetworkStyle(rank: parseIntValue(props["rank"]), tileZoom: z)
+        case "water":
+            switch data.geometry {
+            case .point:
+                return waterLabelStyle(kind: kind, props: props, tileZoom: z)
+            case .line:
+                return waterwayStyle(kind: kind, kindDetail: kindDetail, props: props)
+            case .polygon, .unknown:
+                // No tree stands in a pond or a river.
+                return polygon(key: Self.waterKey, colorOf: \.water, excludesTrees: true)
+            }
+        case "buildings":
+            if data.geometry == .point {
+                return addressLabelStyle(facts: data.facts)
+            }
+            return buildingStyle(facts: data.facts)
+        case "roads":
+            let road = data.facts.road ?? .ground
+            return roadPolicy(applying: road,
+                              to: roadsStyle(kind: kind,
+                                             kindDetail: kindDetail,
+                                             props: props,
+                                             road: road,
+                                             tileZoom: z))
+        case "boundaries":
+            return boundaryStyle(kind: kind, props: props, tileZoom: z)
+        case "places":
+            return placeLabelStyle(kind: kind, kindDetail: kindDetail, props: props)
+        case "pois":
+            // A mapped tree is no POI to name: it stands as a tree.
+            if kind == "tree" {
+                return theme.layers.trees.mapped.map(FeatureStyle.tree) ?? hiddenStyle
+            }
+            return poiLabelStyle(kind: kind, props: props)
+        default:
+            return hiddenStyle
+        }
+    }
+
+    /// Nothing drawn, for a feature the rules know and decline.
+    var hiddenStyle: FeatureStyle {
+        .hidden
+    }
+
+    func polygon(key: UInt8,
+                 color: SIMD4<Float>,
+                 zoomFade: ImmersiveMapZoomFade = .none,
+                 sphereColor: SIMD3<Float>? = nil,
+                 trees: TreeFillStyle? = nil,
+                 excludesTrees: Bool = false) -> FeatureStyle {
+        .fill(FillStyle(key: key, color: color, zoomFade: zoomFade, sphereColor: sphereColor,
+                        trees: trees, excludesTrees: excludesTrees))
+    }
+
+    /// A fill whose colour is one pick from the palette: the plane's from
+    /// `layers`, the globe's from `globeLayers` where the theme has one,
+    /// so one rule colours both surfaces. `trees` are the trees the fill
+    /// grows on the plane (`TreeFillStyle`), `excludesTrees` keeps every
+    /// tree off it (`FillStyle.excludesTrees`).
+    func polygon(key: UInt8,
+                 colorOf pick: (ProtomapsBasemapTheme.LayerStyles) -> SIMD4<Float>,
+                 zoomFade: ImmersiveMapZoomFade = .none,
+                 trees: TreeFillStyle? = nil,
+                 excludesTrees: Bool = false) -> FeatureStyle {
+        polygon(key: key, color: pick(theme.layers), zoomFade: zoomFade, sphereColor: globeColor(pick),
+                trees: trees, excludesTrees: excludesTrees)
+    }
+
+    /// The colour a pick from the palette wears on the globe, nil where the
+    /// theme has no globe palette (the pick's own colour then).
+    func globeColor(_ pick: (ProtomapsBasemapTheme.LayerStyles) -> SIMD4<Float>) -> SIMD3<Float>? {
+        theme.globeLayers.map { globe in
+            let color = pick(globe)
+            return SIMD3<Float>(color.x, color.y, color.z)
+        }
+    }
+
+    func line(key: UInt8,
+              color: SIMD4<Float>,
+              width: Double,
+              dashLength: Double = 0,
+              dashGap: Double = 0,
+              minimumWidthPoints: Float = 0,
+              sphereColor: SIMD3<Float>? = nil) -> FeatureStyle {
+        .line(LineStyle(pass: LinePass(
+            key: key,
+            color: color,
+            minimumWidthPoints: minimumWidthPoints,
+            sphereColor: sphereColor,
+            lineGeometry: LineGeometryStyle(lineWidth: width,
+                                            lineCapRound: true,
+                                            lineJoinRound: true,
+                                            dashLength: dashLength,
+                                            dashGap: dashGap)
+        )))
+    }
+
+    func parseIntValue(_ value: MvtValue?) -> Int? {
+        switch value {
+        case .int(let number), .sint(let number):
+            return Int(number)
+        case .uint(let number):
+            return Int(number)
+        case .double(let number):
+            return Int(number)
+        case .float(let number):
+            return Int(number)
+        case .string(let text):
+            return Int(text.trimmingCharacters(in: .whitespaces))
+        case .bool, .absent, nil:
+            return nil
+        }
+    }
+
+    /// A flag as the basemap spells it: a bool, a number or a word.
+    func parseBoolValue(_ value: MvtValue?) -> Bool {
+        switch value {
+        case .bool(let flag):
+            return flag
+        case .int(let number), .sint(let number):
+            return number != 0
+        case .uint(let number):
+            return number != 0
+        case .string(let text):
+            let normalized = text.lowercased()
+            return normalized == "true" || normalized == "yes" || normalized == "1"
+        case .double, .float, .absent, nil:
+            return false
+        }
+    }
+}

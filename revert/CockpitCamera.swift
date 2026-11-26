@@ -16,7 +16,7 @@ nonisolated enum RideCameraMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .cockpit: "2.5D cockpit"
-        case .chase: "Chase"
+        case .chase: "Follow camera"
         case .classic: "Classic follow"
         case .northUp: "North up"
         }
@@ -57,16 +57,6 @@ nonisolated enum RideCameraMode: String, CaseIterable, Identifiable {
         case .classic: min(max(250 + speed * 5, 280), 620)
         case .northUp: min(max(700 + speed * 6, 750), 1_400)
         }
-    }
-
-    func camera(for pose: RideCameraPose) -> MapCameraPosition {
-        let camera = MapCamera(
-            centerCoordinate: pose.coordinate,
-            distance: distance(for: pose.speed),
-            heading: usesPose ? pose.heading : 0,
-            pitch: pitch
-        )
-        return .camera(camera)
     }
 }
 

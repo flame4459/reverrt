@@ -73,8 +73,11 @@ struct BackupView: View {
                             .foregroundStyle(MapUI.secondaryInk)
                     }
                 }
-                .onChange(of: remindersEnabled) { _, _ in
-                    Task { await BackupReminder.schedule() }
+                .onChange(of: remindersEnabled) { _, on in
+                    Task {
+                        if on { _ = await BackupReminder.requestPermission() }
+                        await BackupReminder.schedule()
+                    }
                 }
                 if notificationsDenied {
                     Button {
@@ -159,6 +162,8 @@ struct BackupView: View {
         defer { busy = false }
         do {
             exportURL = try RevertBackupService.write(context: context)
+            // The reminder clock follows real backups, not the install date.
+            BackupReminder.recordBackup()
             RevertHaptics.success()
             sharingExport = true
         } catch {

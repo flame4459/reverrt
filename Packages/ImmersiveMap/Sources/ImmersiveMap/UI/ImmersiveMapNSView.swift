@@ -1,0 +1,322 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+#if os(macOS)
+
+import AppKit
+import Metal
+import QuartzCore
+
+/// AppKit/Metal host view for ImmersiveMap.
+/// Owns the `CAMetalLayer` (backing layer), AppKit lifecycle, layout, and the update
+/// bridge from SwiftUI; per-feature state and behavior live in `ImmersiveMapHostRuntime`
+/// and its `ImmersiveMapRuntimeGraph`.
+public class ImmersiveMapNSView: NSView {
+    // MARK: - Rendering
+
+    private var hostRuntime: ImmersiveMapHostRuntime!
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+
+    var metalLayer: CAMetalLayer {
+        return layer as! CAMetalLayer
+    }
+
+    /// Transparent space needs the drawable composited over whatever is behind
+    /// the map. On AppKit the backing layer alone decides it; the enclosing
+    /// window still has to be transparent for the desktop to show through.
+    func applyBackgroundTransparency(_ isTransparent: Bool) {
+        metalLayer.isOpaque = isTransparent == false
+    }
+
+    /// Top-left origin, as in UIKit: shared layout math for controls, the HUD,
+    /// and gesture coordinates match across platforms.
+    public override var isFlipped: Bool { true }
+
+    // MARK: - Controllers
+
+    var runtimeGraph: ImmersiveMapRuntimeGraph { hostRuntime.runtimeGraph }
+    var gestureController: MapGestureController { runtimeGraph.gestureController }
+    var renderRuntime: ImmersiveMapRenderRuntime { runtimeGraph.renderRuntime }
+    var viewportRuntime: ImmersiveMapViewportRuntime { runtimeGraph.viewportRuntime }
+    var pinRuntime: ImmersiveMapPinRuntime { runtimeGraph.pinRuntime }
+    var annotationRuntime: ImmersiveMapAnnotationRuntime { runtimeGraph.annotationRuntime }
+    var controlsRuntime: ImmersiveMapControlsRuntime { runtimeGraph.controlsRuntime }
+    var cameraRuntime: ImmersiveMapCameraRuntime { runtimeGraph.cameraRuntime }
+    var cameraCommandHandler: ImmersiveMapCameraCommandHandler { runtimeGraph.cameraCommandHandler }
+    var interactionRuntime: ImmersiveMapInteractionRuntime { runtimeGraph.interactionRuntime }
+    var cameraAnimationRuntime: ImmersiveMapCameraAnimationRuntime { runtimeGraph.cameraAnimationRuntime }
+    var selectionHandler: ImmersiveMapSelectionHandler { runtimeGraph.selectionHandler }
+    var tapHandler: ImmersiveMapTapHandler { runtimeGraph.tapHandler }
+    var rendererBuilder: ImmersiveMapRendererBuilder { runtimeGraph.rendererBuilder }
+
+    // MARK: - Initialization
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup(settings: .default,
+              initialCameraPosition: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup(settings: .default,
+              initialCameraPosition: nil)
+    }
+
+    public convenience init(frame: NSRect,
+                            settings: ImmersiveMapSettings,
+                            pinsController: ImmersiveMapPinsController? = nil,
+                            cameraPosition: ImmersiveMapCameraPosition? = nil) {
+        self.init(frame: frame,
+                  settings: settings,
+                  pinsController: pinsController,
+                  cameraPosition: cameraPosition,
+                  cameraController: nil,
+                  selectionController: nil,
+                  pinTapAction: nil)
+    }
+
+    init(frame: NSRect,
+         settings: ImmersiveMapSettings,
+         pinsController: ImmersiveMapPinsController?,
+         sceneModelsController: ImmersiveMapSceneModelsController? = nil,
+         cameraPosition: ImmersiveMapCameraPosition?,
+         cameraController: ImmersiveMapCameraController?,
+         selectionController: ImmersiveMapSelectionController?,
+         pinTapAction: ((ImmersiveMapPinTapEvent) -> Void)?,
+         sceneModelTapAction: ((ImmersiveMapSceneModelTapEvent) -> Void)? = nil,
+         layerTapAction: ((ImmersiveMapLayerTapEvent) -> Void)? = nil,
+         frameRenderedAction: ((ImmersiveMapRenderedFrame) -> Void)? = nil,
+         terrainSurroundingsAction: ((ImmersiveMapTerrainSurroundings?) -> Void)? = nil,
+         annotationContent: AnnotationViewContent? = nil) {
+        super.init(frame: frame)
+        setup(settings: settings,
+              initialCameraPosition: cameraPosition)
+        hostRuntime.syncControllers(pinsController: pinsController,
+                                    sceneModelsController: sceneModelsController,
+                                    cameraController: cameraController,
+                                    selectionController: selectionController,
+                                    pinTapAction: pinTapAction,
+                                    sceneModelTapAction: sceneModelTapAction,
+                                    layerTapAction: layerTapAction,
+                                    frameRenderedAction: frameRenderedAction,
+                                    terrainSurroundingsAction: terrainSurroundingsAction)
+        hostRuntime.updateAnnotationContent(annotationContent)
+    }
+
+    public override func makeBackingLayer() -> CALayer {
+        CAMetalLayer()
+    }
+
+    private func setup(settings: ImmersiveMapSettings,
+                       initialCameraPosition: ImmersiveMapCameraPosition?) {
+        wantsLayer = true
+        // The layer's content is drawn entirely by Metal - AppKit must not request redraws.
+        layerContentsRedrawPolicy = .never
+        metalLayer.contentsScale = currentBackingScaleFactor()
+
+        hostRuntime = ImmersiveMapHostRuntime(mapView: self,
+                                              layer: metalLayer,
+                                              settings: settings,
+                                              initialCameraPosition: initialCameraPosition,
+                                              requestsLayout: { [weak self] in
+                                                  self?.needsLayout = true
+                                              })
+        // The CAMetalDisplayLink is bound to the Metal layer itself, so the
+        // system paces it against the display that presents the layer and
+        // follows the window when it moves between monitors.
+        hostRuntime.start()
+
+        startMemoryPressureMonitoring()
+        needsLayout = true
+    }
+
+    private func startMemoryPressureMonitoring() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical],
+                                                             queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                self?.hostRuntime?.handleMemoryPressure()
+            }
+        }
+        source.activate()
+        memoryPressureSource = source
+    }
+
+    private func currentBackingScaleFactor() -> CGFloat {
+        let scale = window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2.0
+        return max(scale, 1.0)
+    }
+
+    // MARK: - Layout
+
+    public override func layout() {
+        super.layout()
+
+        let didChangeDrawableSize = viewportRuntime.layout(layer: metalLayer,
+                                                           bounds: bounds,
+                                                           contentsScale: metalLayer.contentsScale)
+        if didChangeDrawableSize {
+            requestFrame()
+        }
+
+        controlsRuntime.layout(in: bounds,
+                               safeAreaInsets: safeAreaInsets)
+        runtimeGraph.debugPanelRuntime?.layout(in: bounds,
+                                               safeAreaTopInset: safeAreaInsets.top)
+        annotationRuntime.layout(in: bounds)
+    }
+
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsLayout = true
+    }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        applyBackingScaleIfNeeded()
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            return
+        }
+
+        applyBackingScaleIfNeeded()
+        requestFrame()
+    }
+
+    private func applyBackingScaleIfNeeded() {
+        let scale = currentBackingScaleFactor()
+        guard metalLayer.contentsScale != scale else {
+            return
+        }
+
+        metalLayer.contentsScale = scale
+        needsLayout = true
+        requestFrame()
+    }
+
+    // MARK: - Input
+
+    public override func scrollWheel(with event: NSEvent) {
+        gestureController.handleScrollWheel(event)
+    }
+
+    // MARK: - Updates
+
+    /// Syncs new parameters from the SwiftUI `updateNSView` hook with the already created AppKit/Metal view.
+    func update(settings: ImmersiveMapSettings,
+                pinsController: ImmersiveMapPinsController?,
+                sceneModelsController: ImmersiveMapSceneModelsController? = nil,
+                layersController: ImmersiveMapLayersController? = nil,
+                cameraController: ImmersiveMapCameraController?,
+                selectionController: ImmersiveMapSelectionController?,
+                pinTapAction: ((ImmersiveMapPinTapEvent) -> Void)?,
+                sceneModelTapAction: ((ImmersiveMapSceneModelTapEvent) -> Void)? = nil,
+                layerTapAction: ((ImmersiveMapLayerTapEvent) -> Void)? = nil,
+                frameRenderedAction: ((ImmersiveMapRenderedFrame) -> Void)? = nil,
+                terrainSurroundingsAction: ((ImmersiveMapTerrainSurroundings?) -> Void)? = nil,
+                annotationContent: AnnotationViewContent?,
+                cameraPosition: ImmersiveMapCameraPosition?,
+                tourVideoRecorder: ImmersiveMapTourVideoRecorder? = nil,
+                debugPanel: ImmersiveMapDebugPanel? = nil) {
+        hostRuntime.update(settings: settings,
+                           pinsController: pinsController,
+                           sceneModelsController: sceneModelsController,
+                           layersController: layersController,
+                           cameraController: cameraController,
+                           selectionController: selectionController,
+                           pinTapAction: pinTapAction,
+                           sceneModelTapAction: sceneModelTapAction,
+                           layerTapAction: layerTapAction,
+                           frameRenderedAction: frameRenderedAction,
+                           terrainSurroundingsAction: terrainSurroundingsAction,
+                           annotationContent: annotationContent,
+                           cameraPosition: cameraPosition,
+                           tourVideoRecorder: tourVideoRecorder,
+                           debugPanel: debugPanel)
+    }
+
+    func dismantle() {
+        hostRuntime.dismantle()
+    }
+
+    /// Dismantle driven by SwiftUI teardown: detaches app-owned state and, when
+    /// view reuse is enabled, parks this view for the next `ImmersiveMapView`
+    /// to adopt warm instead of releasing the renderer.
+    func dismantleForReuse() {
+        let viewReuse = cameraRuntime.currentSettings.viewReuse
+        // Animations are cancelled BEFORE the controllers detach: a flight
+        // completion fired after detach would queue any follow-up command in
+        // the app's controller and replay it onto the next screen.
+        cameraAnimationRuntime.cancelAnimations()
+        dismantle()
+        guard viewReuse.isEnabled else {
+            return
+        }
+        // A parked view must idle. Interaction sources stuck by an interrupted
+        // gesture are cleared, the declared camera position is forgotten (the
+        // adopting screen's declaration must re-apply even when equal), and
+        // the render loop is gated off so the display link stays paused no
+        // matter what invalidations arrive.
+        interactionRuntime.resetForParking()
+        cameraRuntime.clearAppliedCameraPositionForReuse()
+        renderRuntime.setParked(true)
+        ImmersiveMapHostViewPool.shared.park(self, timeToLive: viewReuse.parkedTimeToLive)
+    }
+
+    /// Rewires an adopted (previously parked) view for a new `ImmersiveMapView`:
+    /// the regular update path reconciles settings and controllers, so adoption
+    /// behaves like an update of a live view rather than a fresh build.
+    func prepareForAdoption(settings: ImmersiveMapSettings,
+                            pinsController: ImmersiveMapPinsController?,
+                            sceneModelsController: ImmersiveMapSceneModelsController?,
+                            cameraPosition: ImmersiveMapCameraPosition?,
+                            cameraController: ImmersiveMapCameraController?,
+                            selectionController: ImmersiveMapSelectionController?,
+                            pinTapAction: ((ImmersiveMapPinTapEvent) -> Void)?,
+                            sceneModelTapAction: ((ImmersiveMapSceneModelTapEvent) -> Void)? = nil,
+                            layerTapAction: ((ImmersiveMapLayerTapEvent) -> Void)? = nil,
+                            frameRenderedAction: ((ImmersiveMapRenderedFrame) -> Void)? = nil,
+                            terrainSurroundingsAction: ((ImmersiveMapTerrainSurroundings?) -> Void)? = nil,
+                            annotationContent: AnnotationViewContent?) {
+        hostRuntime.update(settings: settings,
+                           pinsController: pinsController,
+                           sceneModelsController: sceneModelsController,
+                           cameraController: cameraController,
+                           selectionController: selectionController,
+                           pinTapAction: pinTapAction,
+                           sceneModelTapAction: sceneModelTapAction,
+                           layerTapAction: layerTapAction,
+                           frameRenderedAction: frameRenderedAction,
+                           terrainSurroundingsAction: terrainSurroundingsAction,
+                           annotationContent: annotationContent,
+                           cameraPosition: cameraPosition)
+        renderRuntime.setParked(false)
+        needsLayout = true
+        requestFrame()
+    }
+
+    func requestFrame() {
+        hostRuntime.requestFrame()
+    }
+
+    #if DEBUG
+    var hostRuntimeForTesting: ImmersiveMapHostRuntime {
+        hostRuntime
+    }
+    #endif
+
+
+    // MARK: - Cleanup
+
+    deinit {
+        memoryPressureSource?.cancel()
+    }
+}
+
+#endif

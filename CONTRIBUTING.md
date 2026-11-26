@@ -41,6 +41,6 @@ build.
 
 - One type per file where practical; file names match the type.
 - Tests are Swift Testing (`@Test`, `#expect`) in `RevertTests/`.
-- Every user-visible fix gets a test unless it needs hardware (CarPlay, a real
-  GPS fix, a helmet).
+- Every user-visible fix gets a test unless it needs hardware (a real GPS fix,
+  a helmet).
 - Keep `REFINEMENTS.md` honest: tick only what is verified.

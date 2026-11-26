@@ -50,13 +50,11 @@ enum DebugScreens {
     static var isSummary: Bool { CommandLine.arguments.contains("-debugSummary") }
     static var isGarage: Bool { CommandLine.arguments.contains("-debugGarage") }
     static var isOffline: Bool { CommandLine.arguments.contains("-debugOffline") }
-    static var isCarPlayMap: Bool { CommandLine.arguments.contains("-debugCarPlayMap") }
     static var isDebugReports: Bool { CommandLine.arguments.contains("-debugReports") }
     static var isRideDebug: Bool { CommandLine.arguments.contains("-debugRideDebug") }
     static var isWidgetDiagnostics: Bool { CommandLine.arguments.contains("-debugWidgetDiagnostics") }
     static var isFeatureLab: Bool { CommandLine.arguments.contains("-debugFeatureLab") }
     static var isChaseReplay: Bool { CommandLine.arguments.contains("-debugChaseReplay") }
-    static var isDirectorReplay: Bool { CommandLine.arguments.contains("-debugDirectorReplay") }
     static var menu: CentralMenuDestination? {
         if CommandLine.arguments.contains("-debugPlan") { return .plan }
         if CommandLine.arguments.contains("-debugSettings") { return .settings }
@@ -147,54 +145,5 @@ struct DebugRideDetailRoot: View {
     }
 }
 
-#if canImport(CarPlay)
-/// Renders the same map controller the car screen uses, so the route line and
-/// destination marker can be checked on the simulator without a vehicle.
-struct DebugCarPlayMapRoot: View {
-    private let route = DebugScreens.samplePlannedRoute()
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            CarPlayMapPreview(route: route)
-                .ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 2) {
-                Text("CARPLAY MAP PREVIEW")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.4)
-                Text("Route line and destination marker")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-            .padding(10)
-            .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
-            .padding(16)
-        }
-        .preferredColorScheme(.dark)
-    }
-}
-
-private struct CarPlayMapPreview: UIViewControllerRepresentable {
-    let route: PlannedRoute
-
-    func makeUIViewController(context: Context) -> CarPlayMapViewController {
-        let controller = CarPlayMapViewController()
-        controller.loadViewIfNeeded()
-        controller.showRoute(route, overview: true)
-        // The map is not laid out yet on the first call; frame again once it is.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            controller.showRoute(route, overview: true)
-        }
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: CarPlayMapViewController, context: Context) {}
-}
-#else
-struct DebugCarPlayMapRoot: View {
-    var body: some View {
-        Text("CarPlay is unavailable on this platform.")
-            .preferredColorScheme(.dark)
-    }
-}
-#endif
 #endif

@@ -1,0 +1,332 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Metal
+import QuartzCore
+
+final class RenderPassGraph {
+    static func isWorldLayer(_ layer: RenderLayer) -> Bool {
+        switch layer {
+        case .starfield, .globeVectorSurface, .globeCap,
+             .placementStencil, .flatMapSurface, .flatMapRoads, .appLayers, .surfaceLabels, .buildingExtrusion,
+             .sceneModels, .horizon:
+            return true
+        case .shadowCasters, .farShadowCasters, .groundShadowMask, .postProcessing,
+             .labels, .pins, .debugOverlay:
+            return false
+        }
+    }
+
+    static func isOverlayLayer(_ layer: RenderLayer) -> Bool {
+        switch layer {
+        case .labels, .pins, .debugOverlay:
+            return true
+        case .shadowCasters, .farShadowCasters, .groundShadowMask, .starfield,
+             .globeVectorSurface, .globeCap, .placementStencil, .flatMapSurface, .flatMapRoads, .appLayers,
+             .surfaceLabels, .buildingExtrusion, .sceneModels, .horizon, .postProcessing:
+            return false
+        }
+    }
+
+    /// The overlay always keeps its own pass over its own cleared depth:
+    /// the labels draw fill and halo in one pass and use that depth to keep
+    /// a later glyph's halo off an earlier glyph's fill (TextShader.metal),
+    /// which the world pass's depth, full of the ground's layer ranks and
+    /// the buildings, cannot host. The merge that folded the overlay into
+    /// the world pass on model-free single-sample frames saved a drawable
+    /// load/store round trip; the single text pass saves far more.
+    static func mergesOverlayIntoWorld(overlayLayers: [RenderLayer], renderSampleCount: Int) -> Bool {
+        false
+    }
+
+    /// The world pass draw order for the frame. The planner lists the flat
+    /// layers ground first; the order flips so the opaque buildings write
+    /// depth before the ground is drawn and every ground fragment under a
+    /// building fails its depth test unshaded (the ground writes only its
+    /// rank band, farther than any building, so the flip changes nothing
+    /// else).
+    static func worldLayerOrder(_ layers: [RenderLayer]) -> [RenderLayer] {
+        guard let surfaceIndex = layers.firstIndex(of: .flatMapSurface),
+              let buildingIndex = layers.firstIndex(of: .buildingExtrusion),
+              surfaceIndex < buildingIndex else {
+            return layers
+        }
+        var ordered = layers
+        ordered.remove(at: buildingIndex)
+        ordered.insert(.buildingExtrusion, at: surfaceIndex)
+        return ordered
+    }
+
+    /// Depth-only pass of the directional light into one window's slice of
+    /// the shadow map. Ignores the drawable target: the map is a
+    /// fixed-resolution offscreen depth texture that must be stored for
+    /// sampling by the world pass. A plain pass into one slice, never a
+    /// layered one.
+    private final class ShadowMapDescriptorProvider: RenderPassDescriptorProvider {
+        private let slot: ShadowCascadeSlot
+
+        init(slot: ShadowCascadeSlot) {
+            self.slot = slot
+        }
+
+        func makeRenderPassDescriptor(frameContext: FrameContext,
+                                      attachments: FrameAttachmentStore,
+                                      target _: FrameRenderTarget?) -> MTLRenderPassDescriptor? {
+            guard let shadowState = ShadowPassGateResolver.resolve(frameContext: frameContext),
+                  shadowState.slots.contains(slot),
+                  let shadowMapTexture = attachments.ensureShadowMapTexture(resolution: shadowState.mapResolution) else {
+                return nil
+            }
+
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.depthAttachment.texture = shadowMapTexture
+            descriptor.depthAttachment.slice = slot.rawValue
+            descriptor.depthAttachment.loadAction = .clear
+            descriptor.depthAttachment.storeAction = .store
+            descriptor.depthAttachment.clearDepth = 1.0
+            return descriptor
+        }
+    }
+
+    /// The ground shadow mask: a single-sample 8-bit target the size of the
+    /// drawable, fully overwritten by one fullscreen triangle (so nothing to
+    /// load) and stored for the world pass to read.
+    private final class GroundShadowMaskDescriptorProvider: RenderPassDescriptorProvider {
+        func makeRenderPassDescriptor(frameContext: FrameContext,
+                                      attachments: FrameAttachmentStore,
+                                      target _: FrameRenderTarget?) -> MTLRenderPassDescriptor? {
+            guard frameContext.renderSurfaceMode == .flat,
+                  ShadowPassGateResolver.resolve(frameContext: frameContext) != nil,
+                  let maskTexture = attachments.ensureGroundShadowMaskTexture(drawSize: frameContext.drawSize) else {
+                return nil
+            }
+
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = maskTexture
+            descriptor.colorAttachments[0].loadAction = .dontCare
+            descriptor.colorAttachments[0].storeAction = .store
+            return descriptor
+        }
+    }
+
+    private final class WorldDescriptorProvider: RenderPassDescriptorProvider {
+        private let clearColor: MTLClearColor
+        private let depthTexture: MTLTexture?
+        /// Where the world's depth is kept for the label pass: the depth
+        /// texture itself (stored) with one sample, a resolve target with
+        /// several; nil drops it when the pass ends, as always.
+        private let sceneDepthTexture: MTLTexture?
+        private let outputPlan: RenderFrameOutputPlan
+
+        init(clearColor: MTLClearColor,
+             depthTexture: MTLTexture?,
+             sceneDepthTexture: MTLTexture? = nil,
+             outputPlan: RenderFrameOutputPlan) {
+            self.clearColor = clearColor
+            self.depthTexture = depthTexture
+            self.sceneDepthTexture = sceneDepthTexture
+            self.outputPlan = outputPlan
+        }
+
+        func makeRenderPassDescriptor(frameContext: FrameContext,
+                                      attachments: FrameAttachmentStore,
+                                      target: FrameRenderTarget?) -> MTLRenderPassDescriptor? {
+            guard let target else {
+                return nil
+            }
+
+            let outputTexture: MTLTexture?
+            switch outputPlan.worldColorDestination {
+            case .drawable:
+                outputTexture = target.texture
+            case .postProcessingInput:
+                outputTexture = attachments.ensurePostProcessingInputTexture(
+                    drawSize: frameContext.drawSize,
+                    pixelFormat: target.texture.pixelFormat
+                )
+            }
+            guard let outputTexture else { return nil }
+
+            let descriptor = MTLRenderPassDescriptor()
+            if outputPlan.usesMultisampleResolve {
+                guard let colorTexture = attachments.ensureColorTexture(
+                    drawSize: frameContext.drawSize,
+                    pixelFormat: target.texture.pixelFormat
+                ) else {
+                    return nil
+                }
+                descriptor.colorAttachments[0].texture = colorTexture
+                descriptor.colorAttachments[0].resolveTexture = outputTexture
+                descriptor.colorAttachments[0].storeAction = .multisampleResolve
+            } else {
+                descriptor.colorAttachments[0].texture = outputTexture
+                descriptor.colorAttachments[0].storeAction = .store
+            }
+            descriptor.colorAttachments[0].loadAction = .clear
+            descriptor.colorAttachments[0].clearColor = clearColor
+            if let depthTexture {
+                descriptor.depthAttachment.texture = depthTexture
+                descriptor.depthAttachment.loadAction = .clear
+                descriptor.depthAttachment.storeAction = .dontCare
+                descriptor.depthAttachment.clearDepth = 1.0
+                if let sceneDepthTexture {
+                    if sceneDepthTexture === depthTexture {
+                        descriptor.depthAttachment.storeAction = .store
+                    } else {
+                        // One sample serves: a road name is cut at a
+                        // building's edge to the pixel, not the sample.
+                        descriptor.depthAttachment.resolveTexture = sceneDepthTexture
+                        descriptor.depthAttachment.depthResolveFilter = .sample0
+                        descriptor.depthAttachment.storeAction = .multisampleResolve
+                    }
+                }
+                // The stencil half of the texture carries the sphere's
+                // tile-priority marks and the flat map's surface bits
+                // (TileSourceStencilPriority): cleared to 0, never stored.
+                descriptor.stencilAttachment.texture = depthTexture
+                descriptor.stencilAttachment.loadAction = .clear
+                descriptor.stencilAttachment.storeAction = .dontCare
+                descriptor.stencilAttachment.clearStencil = 0
+            }
+            return descriptor
+        }
+    }
+
+    private final class PostProcessingDescriptorProvider: RenderPassDescriptorProvider {
+        func makeRenderPassDescriptor(frameContext _: FrameContext,
+                                      attachments _: FrameAttachmentStore,
+                                      target: FrameRenderTarget?) -> MTLRenderPassDescriptor? {
+            guard let target else {
+                return nil
+            }
+
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = target.texture
+            descriptor.colorAttachments[0].loadAction = .dontCare
+            descriptor.colorAttachments[0].storeAction = .store
+            return descriptor
+        }
+    }
+
+    private final class OverlayDescriptorProvider: RenderPassDescriptorProvider {
+        func makeRenderPassDescriptor(frameContext: FrameContext,
+                                      attachments: FrameAttachmentStore,
+                                      target: FrameRenderTarget?) -> MTLRenderPassDescriptor? {
+            guard let target,
+                  let depthTexture = attachments.ensureOverlayDepthTexture(drawSize: frameContext.drawSize) else {
+                return nil
+            }
+
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = target.texture
+            descriptor.colorAttachments[0].loadAction = .load
+            descriptor.colorAttachments[0].storeAction = .store
+            descriptor.depthAttachment.texture = depthTexture
+            descriptor.depthAttachment.loadAction = .clear
+            descriptor.depthAttachment.storeAction = .dontCare
+            descriptor.depthAttachment.clearDepth = 1.0
+            // The pipelines of the overlay layers are shared with the world
+            // pass (where the overlay merges on model-free frames), so the
+            // two passes must agree on the depth-stencil format.
+            descriptor.stencilAttachment.texture = depthTexture
+            descriptor.stencilAttachment.loadAction = .clear
+            descriptor.stencilAttachment.storeAction = .dontCare
+            descriptor.stencilAttachment.clearStencil = 0
+            return descriptor
+        }
+    }
+
+    func plan(frameContext: FrameContext,
+              settings: ImmersiveMapSettings,
+              attachments: FrameAttachmentStore,
+              target: FrameRenderTarget,
+              renderGraph: RenderGraph) -> [RenderPassNode] {
+        let resourceRegistry = renderGraph.resourceRegistry
+        // A label layer that reads the world's depth (the road names under
+        // the buildings) keeps it past the world pass, on those frames only.
+        let keepsSceneDepth = frameContext.sharedState.sceneDepthForLabelsRequested
+            && attachments.supportsSceneDepth
+        let depthTexture = attachments.ensureDepthTexture(drawSize: frameContext.drawSize,
+                                                          keptForLabels: keepsSceneDepth)
+        if let depthTexture {
+            resourceRegistry.setTexture(depthTexture, named: .depthTexture)
+        }
+        var sceneDepthTexture: MTLTexture?
+        if keepsSceneDepth {
+            sceneDepthTexture = attachments.sampleCount > 1
+                ? attachments.ensureSceneDepthResolveTexture(drawSize: frameContext.drawSize)
+                : depthTexture
+        }
+        frameContext.sharedState.sceneDepthTexture = sceneDepthTexture
+
+        let clearColor = RenderFrameClearColor.make(transition: frameContext.transition,
+                                                    settings: settings,
+                                                    mapColor: frameContext.services.baseColors.map)
+        let layerAvailability = renderGraph.passAvailability(settings: settings,
+                                                             renderSurfaceMode: frameContext.renderSurfaceMode)
+        let layerPlan = RenderLayerPlanner.plan(availability: layerAvailability)
+            .filter(\.enabled)
+            .map(\.layer)
+
+        var nodes: [RenderPassNode] = []
+        // The shadow map goes first: the world pass samples it. The gate skips the pass entirely when shadows are off
+        // or the frame has no casters, and the receivers then bind the fallback
+        // texture with a disabled uniform (same resolver on both sides).
+        if let shadowState = ShadowPassGateResolver.resolve(frameContext: frameContext),
+           let shadowMapTexture = attachments.ensureShadowMapTexture(resolution: shadowState.mapResolution) {
+            resourceRegistry.setTexture(shadowMapTexture, named: .shadowMapTexture)
+            // The sun is static and the buildings do not move: a window's
+            // caster pass runs only when its rendered slice went stale
+            // (fresh fit, new caster tile, new texture, or animating model
+            // casters); otherwise the receivers keep sampling the slice
+            // rendered some frames ago through matrices re-materialized for
+            // this frame. The near window follows the camera and refits
+            // often, the far one seldom, and each runs on its own.
+            for slot in shadowState.slots
+            where frameContext.shadowMapReuse.planShadowRender(frameContext: frameContext,
+                                                               texture: shadowMapTexture,
+                                                               slot: slot) {
+                nodes.append(RenderPassNode(name: slot.passName,
+                                            descriptorProvider: ShadowMapDescriptorProvider(slot: slot),
+                                            layers: [slot.casterLayer]))
+            }
+            // The ground shadow mask follows the map it samples: one lookup
+            // per pixel on the ground plane (two in the band between the
+            // windows), read by every blended ground layer of the world
+            // pass instead of a lookup per layer.
+            if frameContext.renderSurfaceMode == .flat,
+               let maskTexture = attachments.ensureGroundShadowMaskTexture(drawSize: frameContext.drawSize) {
+                resourceRegistry.setTexture(maskTexture, named: .groundShadowMaskTexture)
+                nodes.append(RenderPassNode(name: .groundShadowMask,
+                                            descriptorProvider: GroundShadowMaskDescriptorProvider(),
+                                            layers: [.groundShadowMask]))
+            }
+        }
+        let worldLayers = Self.worldLayerOrder(layerPlan.filter(Self.isWorldLayer))
+        let overlayLayers = layerPlan.filter(Self.isOverlayLayer)
+        let outputPlan = RenderFrameOutputPlanner.plan(
+            fxaaEnabled: settings.postProcessing.fxaaEnabled,
+            renderSampleCount: attachments.sampleCount
+        )
+
+        let mergesOverlayIntoWorld = Self.mergesOverlayIntoWorld(overlayLayers: overlayLayers,
+                                                                 renderSampleCount: attachments.sampleCount)
+        nodes.append(RenderPassNode(name: .world,
+                                    descriptorProvider: WorldDescriptorProvider(clearColor: clearColor,
+                                                                                depthTexture: depthTexture,
+                                                                                sceneDepthTexture: sceneDepthTexture,
+                                                                                outputPlan: outputPlan),
+                                    layers: mergesOverlayIntoWorld ? worldLayers + overlayLayers : worldLayers))
+        if outputPlan.includesPostProcessingPass {
+            nodes.append(RenderPassNode(name: .postProcessing,
+                                        descriptorProvider: PostProcessingDescriptorProvider(),
+                                        layers: [.postProcessing]))
+        }
+        if mergesOverlayIntoWorld == false, overlayLayers.isEmpty == false {
+            nodes.append(RenderPassNode(name: .overlay,
+                                        descriptorProvider: OverlayDescriptorProvider(),
+                                        layers: overlayLayers))
+        }
+        return nodes
+    }
+}

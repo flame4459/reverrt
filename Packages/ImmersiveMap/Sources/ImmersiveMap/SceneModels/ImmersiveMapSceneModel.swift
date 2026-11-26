@@ -1,0 +1,98 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+
+// The `SceneModels` folder: the engine-side model and CPU presentation of 3D
+// models anchored at coordinates, from the public descriptor to the per-frame
+// presentation state (position, orientation, scale, altitude, the flight
+// along an `ImmersiveMapGeoPath` through the shared sampler in `Geo`) and the
+// hit volumes `Selection` resolves a tap against, plus the Model I/O
+// loading, the meshes, the pipeline, the shader and the drawer. No map tile,
+// style or label logic and no views.
+//
+// A scene model is a local file: its source is a file URL
+// and nothing here fetches them. The one part of the folder that reaches a
+// network is `ModelTiles`, the models of a model archive: its format
+// (`ModelTileContents`), the archive and disk cache behind it
+// (`ModelTileSource`), the store that loads and releases tiles with the
+// camera (`ModelTileStore`), and its own pipeline, drawer and subsystem.
+// A tile's models are one mesh in the tile's own space, placed like the
+// map's buildings of that tile and not by `SceneModelAnchorMath`. It shares
+// the frame state with the scene models, and nothing with the map's tile
+// loading: a model tile is requested, cached and released on its own.
+
+/// A 3D model (USDZ or OBJ, loaded via Model I/O) anchored at a geographic
+/// coordinate. Rendered inside the map world pass in flat, globe, and the
+/// morph between them. Sized in real-world meters with the Web-Mercator
+/// convention: together with the surrounding map geometry the model inflates
+/// by 1/cos(latitude) toward the poles.
+public struct ImmersiveMapSceneModel: Identifiable, Equatable, Sendable {
+    /// Location of a model asset. Only local file URLs are supported (bundle
+    /// resources or previously downloaded files); the engine performs no
+    /// networking. Models sharing a source share one loaded mesh.
+    public struct Source: Hashable, Sendable {
+        public let url: URL
+
+        public init(url: URL) {
+            self.url = url
+        }
+
+        /// Resolves a bundle resource (for example `("biplane", "usdz")`) to
+        /// its file URL; nil when the resource is missing.
+        public init?(resource name: String, withExtension ext: String, in bundle: Bundle = .main) {
+            guard let url = bundle.url(forResource: name, withExtension: ext) else {
+                return nil
+            }
+            self.url = url
+        }
+    }
+
+    public var id: UInt64
+    public var source: Source
+    public var coordinate: GeoCoordinate
+    /// Offset above the map surface along the local up vector, in meters.
+    public var altitudeMeters: Double
+    /// Rotation about the local up axis, clockwise from north, in degrees.
+    public var headingDegrees: Double
+    /// Rotation about the local east axis, in degrees.
+    public var pitchDegrees: Double
+    /// Rotation about the model's forward axis, in degrees.
+    public var rollDegrees: Double
+    /// Multiplier over real-world meters. Model I/O does not expose the USD
+    /// stage `metersPerUnit`, so one asset unit is presented as one meter.
+    public var scale: Double
+    /// When set, the asset is uniformly rescaled so the largest extent of its
+    /// bounding box spans this many meters (applied before `scale`).
+    public var fitDiameterMeters: Double?
+    /// Whether the model cuts into the ground where it stands. A model sunk
+    /// below the surface (a negative `altitudeMeters`) would otherwise show
+    /// its underground part through the ground from every side. With this on, the part below the surface
+    /// is shown only where it is seen through the model's own outline on the
+    /// ground, as if the ground were dug out under the model and left whole
+    /// around it: an open pit, a sunken court, a half-buried hall. Off, the
+    /// model is drawn as it is.
+    public var cutsIntoGround: Bool
+
+    public init(id: UInt64,
+                source: Source,
+                coordinate: GeoCoordinate,
+                altitudeMeters: Double = 0,
+                headingDegrees: Double = 0,
+                pitchDegrees: Double = 0,
+                rollDegrees: Double = 0,
+                scale: Double = 1,
+                fitDiameterMeters: Double? = nil,
+                cutsIntoGround: Bool = false) {
+        self.id = id
+        self.source = source
+        self.coordinate = coordinate
+        self.altitudeMeters = altitudeMeters
+        self.headingDegrees = headingDegrees
+        self.pitchDegrees = pitchDegrees
+        self.rollDegrees = rollDegrees
+        self.scale = scale
+        self.fitDiameterMeters = fitDiameterMeters
+        self.cutsIntoGround = cutsIntoGround
+    }
+}

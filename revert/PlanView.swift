@@ -284,7 +284,7 @@ struct PlanView: View {
                     .font(RevertType.eyebrow)
                     .tracking(1.7)
                     .foregroundStyle(MapUI.cyan)
-                Text("Plan a loop")
+                Text("Plan a scenic loop")
                     .font(RevertType.display(30, weight: .heavy))
                     .foregroundStyle(MapUI.ink)
                     .accessibilityIdentifier(AccessibilityID.Plan.title)

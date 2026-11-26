@@ -4,7 +4,7 @@ import CoreLocation
 @testable import Revert
 
 /// Drives `NavigationManager` with synthetic fixes along a known route, in the
-/// simulator, the way the route simulator does. This is the layer the field
+/// synthetic fixes, the way a recorded track does. This is the layer the field
 /// bugs lived in: joining, advancing, and left/right being the road's actual
 /// side.
 @MainActor

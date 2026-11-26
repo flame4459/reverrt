@@ -21,7 +21,7 @@ are `Revert`; the person on the bike is still a *rider*.
 | Xcode | 26.0 or newer (built against the iOS 26 SDK) — the deployment target is iOS 18.0 |
 | macOS | whatever Xcode 26+ requires |
 | Device / simulator | iPhone running iOS 18.0+, or an iOS 18.0+ simulator runtime |
-| Dependencies | one SPM package (ImmersiveMap, MIT) — resolved by Xcode on first open |
+| Dependencies | none fetched at build time — ImmersiveMap is vendored at `Packages/ImmersiveMap` (MIT) |
 
 There are no API keys or `.env` files to fill in. Clone, open, run. Build and test
 details are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -67,49 +67,40 @@ yours before Xcode's automatic signing will succeed:
    the widget. If you change it, change it in all five places or the widget
    stops seeing live ride state:
    - `Revert.entitlements`
-   - `Revert+CarPlay.entitlements`
    - `RevertWidgets/RevertWidgets.entitlements`
    - `revert/WidgetBridge.swift`
    - `RevertWidgets/RevertQuickWidget.swift`
 
 The *RevertTests* target runs on the simulator and needs no signing.
 
-### CarPlay
+### Car dashboard, widgets and Live Activities
 
-The full CarPlay *app* (car-side map, lists, search) needs the
-`com.apple.developer.carplay-maps` entitlement, which Apple grants per App ID on
-request. It is wired for **simulator builds only**
-(`Revert+CarPlay.entitlements`), so anyone can try it with the CarPlay simulator
-without an approval; a device build deliberately omits it and will not appear as
-a CarPlay app.
-
-**Revert reaches the car anyway.** Since iOS 26, widgets and Live Activities show
-up on the CarPlay Dashboard with no CarPlay entitlement — so a device build ships
-a live ride card (next maneuver, distance, ETA) and a "Start a loop" launcher.
-That is the surface riders actually get today. The dashboard ride card needs the
-small activity family, which is iOS 18+; on iOS 17 the Live Activity is the
-lock-screen / Dynamic Island card. See [CARPLAY.md](CARPLAY.md).
+Revert has no CarPlay app. The ride still reaches a car screen through iOS
+itself: the widget extension provides a compact ride card and the Live Activity
+uses the small activity family, which car dashboards and the Apple Watch Smart
+Stack can display without a CarPlay entitlement. **Settings → Ride debug →
+Widget diagnostics** shows the snapshot those surfaces read.
 
 ### Companion
 
 **Ace** is the on-device spoken companion. He answers distance, fuel,
 weather/sunset, hazard, ride, bike and home questions; makes the odd dry remark;
 and checks in sparingly. **On → Asked only → Off** is one cockpit chip (long
-press for Off), the handlebar remote cycles it with a long press, and Settings has
-the same control plus the address term and a memory reset. Off stops the
+press for Off), and Settings has the same control plus the address term, a
+separate **Ace speaks** switch and a memory reset. Off stops the
 microphone and leaves navigation prompts untouched.
 
 The house voice is Tom (Enhanced) when installed, with a quality badge and a
 download hint in the voice picker. Tier 0/1 lines are canned and templated and
 work offline. Tier 2 Foundation Models only handles free-form conversation, is
 availability-gated, and falls back silently. While riding, **“Hey Ace”** is the
-always-waiting wake word (on by default, switchable); long-press Y on the remote
-is hold-to-talk. A connected Bluetooth headset such as a Cardo is preferred for
-the microphone automatically, with the iPhone mic as fallback.
+always-waiting wake word (on by default, switchable); the cockpit's microphone
+button arms hold-to-talk. A connected Bluetooth headset such as a Cardo is
+preferred for the microphone automatically, with the iPhone mic as fallback.
 
-The car-screen handoff was verified in the simulator through the first-open detection popup and a well-formed track-only GPX export with the standard GPX UTI. Organic Maps is the target app in the simulator, so the final share and CarPlay rendering require a physical phone/head unit.
+The car-screen handoff was verified in the simulator through the first-open detection popup and a well-formed track-only GPX export with the standard GPX UTI. Organic Maps is the target app in the simulator, so the final share requires a physical phone.
 
-While the entitlement is pending there is also a **car-screen handoff**:
+There is also a **car-screen handoff**:
 **Send to car screen** on a plan card or saved route writes either a track-only
 GPX for Roavic/OffTrail/Organic Maps or a track-plus-densified-route GPX for
 Kurviger/Scenic, then opens the share sheet. Revert keeps navigating and remains
@@ -238,7 +229,7 @@ Focus filter.
 
 ### Drone chase replay
 
-Every ride detail has a **Drone chase replay** button. The full-screen replay
+Every ride detail has a **Drone replay** button. The full-screen replay
 puts the camera high and behind the recorded track, turning with the ride’s
 heading, while the supplied red/white pixel rider switches between straight, lean-left,
 lean-right and tuck frames from the recorded lean and speed. The frames were
@@ -247,31 +238,14 @@ lettering. Playback starts at 8× and can be paused, scrubbed or slowed to
 1×/4×/16×. The map, sprite choice and telemetry all come from the local track;
 nothing is uploaded.
 
-### Director Mode
+### Ride replay
 
-**Director film** is an auto-edited cut of the ride. The director ranks corners
-by lean, speed and braking, picks up to five non-overlapping highlights, and
-builds an establishing shot, a chase / orbit / trackside / fly-by / hero-low
-shot for each moment, then an outro. Corner shots hold the apex for a moment and
-then accelerate out, so every highlight gets a real speed ramp.
-
-The rider sits in a stable lower-third film frame while the camera rigs move
-under it, so annotations cannot clip against the camera; the supplied red/white
-sprite set is used, with the eight-direction atlas wired for extra views as they
-arrive. The camera has a damped follow, looks 38 m along the route and frames the
-whole route bounds for the opening and finish. A short lower-third caption
-(shot type and corner) fades in after each cut. The HUD hides after a few seconds
-(tap to bring it back), and the controls include a map/satellite switch. Audio is
-opt-in. The film has a
-score trace, corner markers on the timeline, chapter jumps, a local-best ghost
-with a delta chip, an opt-in synthesized engine/wind soundtrack, and screen-record
-export through ReplayKit (save/share from the system preview). The overlay adds
-letterboxing, grain, speed lines and a vignette without putting a shadow or a
-label on the rider.
-
-The first pass uses the three supplied rider views for the eight direction slots
-and ReplayKit rather than an offline 4K frame renderer; both are isolated so
-they can be upgraded without changing the director.
+Every ride detail has a **Drone replay** button. The full-screen replay puts the
+camera high and behind the recorded track, turning with the ride's heading,
+while the supplied red/white pixel rider switches between straight, lean-left,
+lean-right and tuck frames from the recorded lean and speed. Playback starts at
+8× and can be paused, scrubbed or slowed to 1×/4×/16×. The map, sprite choice and
+telemetry all come from the local track; nothing is uploaded.
 
 ## Debugging a ride
 
@@ -288,10 +262,10 @@ step/turn/lap in every sample, `NAV-JOIN/STEP/CUE/STRAIGHT/OFFROUTE/LAP/ARRIVE`
 events, settings changes, `WIDGET-STATE` for every Dashboard snapshot (including
 the turn, step id, instruction, remaining/ETA, limit, hazard, reload request and
 whether it was forced by a turn), `WIDGET-REFRESH` for actual WidgetKit timeline
-refreshes, and `LIVE-START/UPDATE/END` for the Live Activity. CarPlay widget
-reloads are forced on maneuver changes, while remaining throttled otherwise.
+refreshes, and `LIVE-START/UPDATE/END` for the Live Activity. Widget reloads are forced on
+maneuver changes, while remaining throttled otherwise.
 
-**Settings → Ride debug → CarPlay diagnostics** shows the current Dashboard
+**Settings → Ride debug → Widget diagnostics** shows the current Dashboard
 snapshot and the retained widget-provider log. The file also ends with a
 diagnostics count summary for quick grepping.
 
@@ -322,12 +296,83 @@ The second prompt is at half the approach distance, and the final no-distance pr
 
 Car landscape now uses a floating **Google-style HUD**: the map is full-screen, the maneuver card sits top-left, ETA bottom-left, speed beside the controls, and a thumb rail at the trailing edge. There is no bottom sheet covering the map.
 
-The ride screen now defaults to **ImmersiveMap** — a Swift + Metal PMTiles
-renderer — with **MKMapView** and the SwiftUI Map selectable as fallbacks. The
+The ride screen uses **RevertMapView**, the single map renderer: ImmersiveMap,
+a Swift + Metal PMTiles engine. There is no MapKit renderer and no SwiftUI `Map`
+in the cockpit, and no renderer picker — every cockpit build draws the same
+map, overlays and camera. MapKit remains a *service*: directions
+(`MKDirections`), place search and map-item helpers still use it, they just do
+not draw the ride map. The
 camera is driven by `RideCameraEngine` and a display link, the route is an
 in-place overlay ribbon with pace shading, and the map viewport is inset above
-the cockpit panel so the puck stays visible. A bundled `region.pmtiles` is used
-when present; otherwise the hosted archive is streamed.
+the cockpit panel so the puck stays visible.
+
+**Offline maps.** The renderer reads a downloaded region when one covers the
+rider, then a bundled starter archive (`region.pmtiles`), then the hosted stream
+from `tiles.immersivemap.dev`. The cockpit is explicit about which one is in use:
+an "Online map" chip appears while streaming, and when the connection drops the
+notice offers a one-tap switch to MapKit. Regions are cut from a PMTiles source
+with `Scripts/maps/build-region.sh` (see `Scripts/maps/README.md`), listed in
+`revert/MapRegions.json`, and installed from Settings → Offline riding data → Offline map regions. No map server is required: static hosting is enough, and region
+files are checksum-verified before use.
+
+Routing already works without a signal: `RouteBuilder.direct` plans A→B on the
+cached road graph (with generated turn steps) whenever MapKit cannot answer.
+
+**Offline readiness.** `MapRegionStore.coverage(forRoute:)` samples the whole
+route (not just its ends) and reports tiles, road data and hazard data
+separately; the cockpit warns before a ride when any of the three is missing for
+any part of the route. Installed regions record their version and dataset
+flags in `installed.json`, so `Update` appears when the catalog publishes a
+newer version, and a failed checksum leaves the working region untouched.
+
+### Spoken directions
+
+Navigation audio is one engine for loops, sprints and point-to-point. The route
+kind changes the start line, lap and finish rules; it does not change how the
+rider is spoken to.
+
+- **Scheduler** (`AnnouncementScheduler`): staged prompts (early, middle, close,
+  immediate) tracked by stage, not by rung index, so slowing from highway to
+  town speed still delivers the 300 m and 150 m prompts; a minimum-gap rule
+  stops jitter from machine-gunning the rider.
+- **Distance accuracy**: distances are spoken by TTS at their real value. The
+  coarse Waze distance clips are no longer used for navigation prompts; a
+  missing clip can never delete the distance.
+- **Arbitration** (`Speaker.Priority`): safety alerts may interrupt a turn and
+  the turn is replayed if still relevant; ACE is the lowest priority and cannot
+  cancel a manoeuvre. Duplicate and stale prompts are dropped.
+- **Audio ownership** (`AudioSessionOwner`): one component sets the category.
+  Recording is dominant, so "Hey Ace" listening is not killed by a prompt, and
+  interruptions (calls, Siri) and Bluetooth route changes are handled.
+- **Route-specific**: loops announce the start line and lap times; sprints keep
+  their identity on the graph path and finish with "Finish" plus elapsed time;
+  point-to-point reroutes locally from the road graph first, then the network.
+- **Quality extras**: lane advice survives the final prompt, approach-to-start
+  prompts use the same distance-first wording, "say that again" works by voice
+  and through ACE, and ending navigation is announced.
+
+`PHYSICAL_DEVICE_TESTS.md` lists the headset/call/Siri checks that still need a
+real device; none have been performed here.
+
+### One renderer, and what is still Apple's
+
+`RevertMapView` takes a `RevertMapScene` (route, progress, camera mode, puck,
+approach, breadcrumbs, ghost, hazards, pins) and is used by the cockpit.
+
+**Overview camera status.** The fit is now real Mercator maths against the
+engine's 512-point tile size (`RevertMapFit`, unit tested for small/large
+bounds, portrait/landscape, padding, identical and invalid coordinates and the
+dateline), and the camera is applied only after the renderer has produced
+frames. One blocker remains: on the hosted archive, an overview at ~z13.5 draws
+the route but no basemap; the same archive renders at ~z14.5. Until that
+tile-coverage boundary is understood in the engine, the corner-report preview
+stays on SwiftUI `Map` rather than shipping a blank map. The cockpit is
+unaffected (it follows the rider and renders normally). The route/loop/sprint **planners** and the cinematic
+**replay** still draw with SwiftUI `Map`: moving them needs three APIs the
+vendored engine does not expose publicly yet — tap-to-coordinate, draggable
+annotations and arbitrary annotation content. That is the remaining work for a
+single renderer everywhere; it is intentionally not faked by overlaying two
+maps.
 
 ## Layout
 
@@ -338,7 +383,9 @@ RevertWidgets/              widget extension
 RevertTests/, RevertUITests/ unit and UI tests
 Scripts/                   Python tooling that generates the bike sprite sheets
 Assets3D/, catalog/        source assets and catalogues for that tooling
-CARPLAY.md, VOICE_PACKS.md design notes for those subsystems
+VOICE_PACKS.md design notes for the voice packs
+Packages/ImmersiveMap/      vendored MIT map engine (see VENDORED.md)
+Scripts/maps/               offline region bakes and their documentation
 ```
 
 The `bikes/`, `refs/`, `pilot/`, `Meshes3D/` and `Turntables/` directories are
@@ -457,7 +504,7 @@ which vehicle is primary. Cancel leaves the route unstarted.
 
 Add a **car** in the Garage (Vehicle type → Car) and make it primary. The
 cockpit then switches to car mode automatically: the lean gauge, lean
-calibration, helmet audio and handlebar remote disappear; the panel shows a
+calibration and helmet audio disappear; the panel shows a
 CAR MODE header, drive elapsed, speed/limit, g-force and drive stats. The
 planner defaults cars to paved, relaxed loops (no ADV surface, no max-twisty
 profile) while still allowing loops, routes and sprints. Car preferences —
@@ -471,12 +518,11 @@ too. Leaderboards remain shared: every result is labelled **Motorcycle** or
 **Car** and the board has an **All / Bikes / Cars** filter; links carry the
 vehicle type so imported times are labelled correctly.
 
-The CarPlay Dashboard surfaces are the car display layer: the
-`RevertQuickWidget` Dashboard widget now reads a shared drive snapshot
-(parked / driving / paused / arrived / simulation, turn, speed, limit, lap,
-hazard, ETA) and the Live Activity's small CarPlay card adds speed/limit, lap,
-hazard and a SIM badge. The full CarPlay map app remains entitlement-gated;
-the Dashboard surfaces do not require it.
+The widget and Live Activity are the car display layer: `RevertQuickWidget`
+reads a shared drive snapshot (parked / driving / paused / arrived, turn, speed,
+limit, lap, hazard, ETA) and the Live Activity's small card adds speed/limit,
+lap and hazard for the Watch Smart Stack and car dashboards that show iPhone
+widgets. There is no CarPlay app and no CarPlay entitlement.
 
 ## Story posters
 

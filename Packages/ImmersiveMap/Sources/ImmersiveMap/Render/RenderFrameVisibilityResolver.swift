@@ -1,0 +1,102 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+/// Computes the frame's coverage from the camera snapshot, the presentation
+/// state and the tile settings: the target zoom, then the coverage
+/// (`TileCulling`). `rules` are the plane's ring rules, the debug
+/// panel's or the default. `reliefHeights` is how far the ground relief
+/// falls and rises about the plane, in world units, nil off the relief:
+/// the coverage then reaches the tiles the relief lifts into view
+/// (`CoveragePolygonBuilder`).
+final class RenderFrameVisibilityResolver {
+    private let tileCulling: TileCulling
+    private var cachedFingerprint: Int?
+    private var cachedContent: VisibleContentState?
+
+    init(tileCulling: TileCulling = TileCulling()) {
+        self.tileCulling = tileCulling
+    }
+
+    func resolve(cameraFrameState: CameraFrameState,
+                 resolvedPresentation: ResolvedPresentationState,
+                 tileSettings: ImmersiveMapSettings.TileSettings,
+                 ruleSets: RingRuleSets = .default,
+                 reliefHeights: ClosedRange<Float>? = nil,
+                 diagnostics: (any FrameDiagnosticsService)? = nil) -> VisibleContentState {
+        // The planning zoom, not the camera's: over the terrain the
+        // camera's zoom follows the ground under the point it looks at,
+        // and a coverage planned by it would reshuffle its rings with
+        // every slope a drag crosses (`CameraStateController.planningZoom`).
+        let zoomPlan = TileCoverageZoomPolicy.resolve(cameraZoom: cameraFrameState.planningZoom,
+                                                      renderSurfaceMode: resolvedPresentation.renderSurfaceMode,
+                                                      maximumZoomLevel: tileSettings.coverage.resolvedMaximumZoomLevel)
+        // The frame is drawn by the rules of the set its planning zoom
+        // falls in. Not the target zoom: that stops at the tileset's
+        // deepest zoom, and a set starting past it would never be reached.
+        let rules = ruleSets.rules(forZoom: Self.ruleSetZoom(cameraZoom: cameraFrameState.planningZoom))
+        // The coverage is a pure function of the camera pose, drawSize,
+        // presentation state and rules: with an unchanged fingerprint the
+        // previous result is reused (along with its coverageVersion, which
+        // the demand pipeline's dirty-gate relies on).
+        let fingerprint = Self.makeFingerprint(cameraFrameState: cameraFrameState,
+                                               resolvedPresentation: resolvedPresentation,
+                                               targetZoom: zoomPlan.baseZoom,
+                                               rules: rules,
+                                               reliefHeights: reliefHeights,
+                                               rasterBandMarginShare: tileSettings.coverage.rasterBandMarginShare)
+        if fingerprint == cachedFingerprint,
+           let cachedContent {
+            return cachedContent
+        }
+
+        let content = tileCulling.resolveVisibleContent(cameraState: cameraFrameState.mapCameraState,
+                                                        resolvedPresentation: resolvedPresentation,
+                                                        targetZoom: zoomPlan.baseZoom,
+                                                        cameraMatrix: cameraFrameState.cameraMatrices.projectionView,
+                                                        cameraFrustum: cameraFrameState.cameraFrustum,
+                                                        cameraEye: cameraFrameState.cameraEye,
+                                                        reliefHeights: reliefHeights,
+                                                        rules: rules,
+                                                        rasterBandMarginShare: tileSettings.coverage.rasterBandMarginShare,
+                                                        diagnostics: diagnostics)
+        cachedFingerprint = fingerprint
+        cachedContent = content
+        return content
+    }
+
+    /// The zoom a frame's rule set is chosen by: the camera zoom's whole
+    /// part, the zoom the panel's sets are named by (`RingRuleSets`).
+    static func ruleSetZoom(cameraZoom: Double) -> Int {
+        guard cameraZoom.isFinite else { return 0 }
+        return min(max(0, Int(cameraZoom.rounded(.down))), RingRuleSets.zoomRange.upperBound)
+    }
+
+    private static func makeFingerprint(cameraFrameState: CameraFrameState,
+                                        resolvedPresentation: ResolvedPresentationState,
+                                        targetZoom: Int,
+                                        rules: FlatRingRules,
+                                        reliefHeights: ClosedRange<Float>?,
+                                        rasterBandMarginShare: Float = 0) -> Int {
+        var hasher = Hasher()
+        hasher.combine(rasterBandMarginShare.bitPattern)
+        hasher.combine(reliefHeights?.lowerBound.bitPattern)
+        hasher.combine(reliefHeights?.upperBound.bitPattern)
+        let cameraState = cameraFrameState.mapCameraState
+        hasher.combine(cameraState.centerWorldMercator.x.bitPattern)
+        hasher.combine(cameraState.centerWorldMercator.y.bitPattern)
+        hasher.combine(cameraState.zoom.bitPattern)
+        hasher.combine(cameraState.bearing.bitPattern)
+        hasher.combine(cameraState.pitch.bitPattern)
+        hasher.combine(cameraFrameState.drawSize.width.bitPattern)
+        hasher.combine(cameraFrameState.drawSize.height.bitPattern)
+        hasher.combine(targetZoom)
+        hasher.combine(rules)
+        hasher.combine(resolvedPresentation.renderSurfaceMode == .flat)
+        let globeUniform = resolvedPresentation.globeRenderState.globeUniform
+        hasher.combine(globeUniform.panX.bitPattern)
+        hasher.combine(globeUniform.panY.bitPattern)
+        hasher.combine(globeUniform.radius.bitPattern)
+        hasher.combine(globeUniform.transition.bitPattern)
+        return hasher.finalize()
+    }
+}

@@ -1,0 +1,444 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import CoreGraphics
+import Foundation
+import simd
+
+/// Owns the mutable camera state of one map view.
+/// Wraps `FrameCameraStateResolver`, applies camera changes, stores settings and requests frames.
+@MainActor
+package final class ImmersiveMapCameraRuntime {
+    private let initialCameraPosition: ImmersiveMapCameraPosition?
+    let presentationStateResolver: MapPresentationStateController
+    private let renderRuntime: ImmersiveMapRenderRuntime
+    private let controlsRuntime: ImmersiveMapControlsRuntime
+    private let viewportRuntime: ImmersiveMapViewportRuntime
+    private weak var controller: ImmersiveMapCameraController?
+    private(set) var renderCamera: FrameCameraStateResolver?
+    private var settings: ImmersiveMapSettings
+    private var appliedCameraPosition: ImmersiveMapCameraPosition?
+    private var cameraNotificationGeneration = 0
+
+    init(settings: ImmersiveMapSettings,
+         initialCameraPosition: ImmersiveMapCameraPosition?,
+         renderRuntime: ImmersiveMapRenderRuntime,
+         controlsRuntime: ImmersiveMapControlsRuntime,
+         viewportRuntime: ImmersiveMapViewportRuntime) {
+        self.settings = settings
+        self.initialCameraPosition = initialCameraPosition
+        self.presentationStateResolver = MapPresentationStateController(settings: settings)
+        self.renderRuntime = renderRuntime
+        self.controlsRuntime = controlsRuntime
+        self.viewportRuntime = viewportRuntime
+    }
+
+    var currentSettings: ImmersiveMapSettings {
+        settings
+    }
+
+    func isAttachedController(_ cameraController: ImmersiveMapCameraController?) -> Bool {
+        controller === cameraController
+    }
+
+    /// Forgets the last SwiftUI-declared camera position when the view parks
+    /// for reuse. The dedup against `appliedCameraPosition` exists so live
+    /// `updateUIView` calls do not re-snap the camera, but it must not survive
+    /// adoption: a new screen declaring the same position as the previous one
+    /// expects the camera to actually move there.
+    func clearAppliedCameraPositionForReuse() {
+        appliedCameraPosition = nil
+    }
+
+    func updateSettings(_ settings: ImmersiveMapSettings,
+                        notifiesCameraPositionChanged: Bool = true) {
+        self.settings = settings
+        presentationStateResolver.applySettings(settings)
+        renderCamera?.applyCameraSettings(settings.camera)
+        applyCurrentCameraConstraints()
+        if notifiesCameraPositionChanged {
+            notifyCameraPositionChanged()
+        }
+    }
+
+    @MainActor
+    func attachController(_ newController: ImmersiveMapCameraController?,
+                          commandHandler: ImmersiveMapCameraCommandHandler) {
+        guard controller !== newController else {
+            return
+        }
+
+        controller?.detachRuntime(owner: self)
+        controller = newController
+        newController?.attachRuntime(owner: self) { command in
+            commandHandler.handle(command)
+        }
+        newController?.updateCurrentCameraPosition(currentCameraPosition())
+        notifyCameraPositionChanged()
+    }
+
+    func detachController() {
+        controller?.detachRuntime(owner: self)
+        controller = nil
+    }
+
+    func makeRenderCamera(settings: ImmersiveMapSettings,
+                          cameraPosition: ImmersiveMapCameraPosition?) -> FrameCameraStateResolver {
+        self.settings = settings
+        let renderCamera = FrameCameraStateResolver(settings: settings)
+        self.renderCamera = renderCamera
+        if let cameraPosition {
+            renderCamera.setCameraPosition(cameraPosition)
+            appliedCameraPosition = cameraPosition
+        }
+        applyCurrentCameraConstraints()
+        syncPitchControlValue(fallbackCameraPosition: cameraPosition)
+        notifyCameraPositionChanged()
+        return renderCamera
+    }
+
+    func clearRenderCamera() {
+        renderCamera = nil
+    }
+
+    func cameraPositionForRendererRecreation() -> ImmersiveMapCameraPosition? {
+        currentCameraPosition()
+    }
+
+    func currentCameraPosition() -> ImmersiveMapCameraPosition? {
+        renderCamera?.currentCameraPosition()
+            ?? appliedCameraPosition
+            ?? initialCameraPosition
+    }
+
+    func currentCameraState() -> ImmersiveMapCameraState? {
+        renderCamera?.currentCameraState()
+    }
+
+    var currentPitch: Float? {
+        renderCamera?.currentCameraState().pitch
+    }
+
+    var currentBearing: Float? {
+        renderCamera?.currentCameraState().bearing
+    }
+
+    func currentMaximumAbsoluteBearing() -> Float {
+        guard let cameraState = renderCamera?.currentCameraState() else {
+            return min(max(settings.camera.maximumAbsoluteBearing ?? .pi, 0), .pi)
+        }
+
+        return currentCameraConstraints(cameraState: cameraState).bearing.maximumAbsoluteBearing ?? .pi
+    }
+
+    func currentCameraSnapshot(position overridePosition: ImmersiveMapCameraPosition? = nil) -> ImmersiveMapCameraSnapshot? {
+        guard let renderCamera else {
+            return nil
+        }
+
+        let cameraState = renderCamera.currentCameraState()
+        let position = overridePosition ?? renderCamera.currentCameraPosition()
+        let constraints = currentCameraConstraints(cameraState: cameraState)
+        return ImmersiveMapCameraSnapshotResolver.resolve(
+            position: position,
+            constraints: constraints,
+            isSphericalSurfaceActive: presentationStateResolver.isSphericalSurfaceActive(cameraState: cameraState),
+            planningZoom: renderCamera.planningZoom
+        )
+    }
+
+    func currentMaximumPitch() -> Float {
+        guard let cameraState = renderCamera?.currentCameraState() else {
+            return settings.camera.maximumPitch
+        }
+
+        return currentCameraConstraints(cameraState: cameraState).pitch.maximumPitch
+    }
+
+    func currentMinimumPitch() -> Float {
+        guard let cameraState = renderCamera?.currentCameraState() else {
+            return min(max(settings.camera.minimumPitch, 0), max(settings.camera.maximumPitch, 0))
+        }
+
+        return currentCameraConstraints(cameraState: cameraState).pitch.clampedMinimumPitch
+    }
+
+    /// The window the globe's upright pull holds the camera to right now,
+    /// nil where it holds nothing.
+    func currentGlobeUprightWindow() -> GlobeUprightWindow? {
+        guard let cameraState = renderCamera?.currentCameraState() else {
+            return nil
+        }
+
+        return presentationStateResolver.globeUprightWindow(cameraState: cameraState)
+    }
+
+    func isSphericalRenderSurfaceActive() -> Bool {
+        guard let cameraState = renderCamera?.currentCameraState() else {
+            return false
+        }
+
+        return presentationStateResolver.isSphericalSurfaceActive(cameraState: cameraState)
+    }
+
+    func needsCameraPositionUpdate(_ cameraPosition: ImmersiveMapCameraPosition?) -> Bool {
+        appliedCameraPosition != cameraPosition
+    }
+
+    /// A camera position arrived from outside through the controller's
+    /// `jump`: keeps the render loop awake across a series of such sets.
+    func noteExternalCameraDrive() {
+        renderRuntime.noteExternalCameraDrive()
+    }
+
+    func applyCameraPosition(_ cameraPosition: ImmersiveMapCameraPosition?) {
+        guard appliedCameraPosition != cameraPosition else {
+            return
+        }
+
+        appliedCameraPosition = cameraPosition
+        guard let cameraPosition else {
+            return
+        }
+
+        renderCamera?.setCameraPosition(cameraPosition)
+        applyCurrentCameraConstraints()
+        syncPitchControlValue(fallbackCameraPosition: cameraPosition)
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    func setCameraPosition(_ cameraPosition: ImmersiveMapCameraPosition,
+                           requestRenderFrame: Bool = true) {
+        appliedCameraPosition = cameraPosition
+        renderCamera?.setCameraPosition(cameraPosition)
+        applyCurrentCameraConstraints()
+        syncPitchControlValue(fallbackCameraPosition: cameraPosition)
+        notifyCameraPositionChanged()
+        if requestRenderFrame {
+            renderRuntime.requestFrame()
+        }
+    }
+
+    func setCameraState(_ cameraState: ImmersiveMapCameraState) {
+        renderCamera?.setCameraState(cameraState)
+        applyCurrentCameraConstraints()
+        syncPitchControlValue()
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    package func switchRenderMode() {
+        guard let cameraState = renderCamera?.currentCameraState() else {
+            return
+        }
+
+        presentationStateResolver.switchRenderSurfaceMode(cameraState: cameraState)
+        applyCurrentCameraConstraints()
+        syncPitchControlValue()
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    func rotateCameraYaw(delta: Float) {
+        renderCamera?.rotateCameraYaw(delta: delta)
+        applyCurrentCameraConstraints()
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    func panCamera(deltaX: Double,
+                   deltaY: Double) {
+        guard let renderCamera else {
+            return
+        }
+
+        let transition = presentationStateResolver.resolve(cameraState: renderCamera.currentCameraState())
+            .presentationState.transition
+        renderCamera.panCamera(deltaX: deltaX,
+                               deltaY: deltaY,
+                               transition: transition)
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    /// The drag ended, however it ended: the next one is its own
+    /// (`CameraStateController.endPan()`).
+    func endPan() {
+        renderCamera?.endPanCamera()
+    }
+
+    func zoomCamera(scale: CGFloat,
+                    velocity: CGFloat,
+                    anchorPoint: CGPoint? = nil) {
+        let stateBefore = renderCamera?.currentCameraState()
+        renderCamera?.zoomCamera(scale: scale,
+                                 velocity: velocity)
+        applyCurrentCameraConstraints()
+        applyZoomAnchorCompensation(stateBefore: stateBefore,
+                                    anchorPoint: anchorPoint)
+        notifyCameraPositionChanged()
+        syncPitchControlValue()
+        renderRuntime.requestFrame()
+    }
+
+    func zoomCamera(delta: Double,
+                    anchorPoint: CGPoint? = nil) {
+        let stateBefore = renderCamera?.currentCameraState()
+        renderCamera?.zoomCamera(delta: delta)
+        applyCurrentCameraConstraints()
+        applyZoomAnchorCompensation(stateBefore: stateBefore,
+                                    anchorPoint: anchorPoint)
+        notifyCameraPositionChanged()
+        syncPitchControlValue()
+        renderRuntime.requestFrame()
+    }
+
+    /// Target position for an animated anchored zoom (double tap/click):
+    /// zoom changes by `zoomDelta`, the center shifts so that the world point
+    /// under `anchorPoint` stays put (subject to `zoomAnchorFactor`).
+    func anchoredZoomTargetPosition(zoomDelta: Double,
+                                    anchorPoint: CGPoint) -> ImmersiveMapCameraPosition? {
+        guard let stateBefore = renderCamera?.currentCameraState() else {
+            return nil
+        }
+
+        var stateAfter = stateBefore
+        stateAfter.zoom = settings.camera.clampZoom(stateBefore.zoom + zoomDelta)
+        stateAfter.centerWorldMercator = anchorCompensatedCenter(stateBefore: stateBefore,
+                                                                 stateAfter: stateAfter,
+                                                                 anchorPoint: anchorPoint)
+        return stateAfter.cameraPosition()
+    }
+
+    /// Shifts the map center after an already-applied zoom so that the world point
+    /// under `anchorPoint` stays under it (by the `zoomAnchorFactor` fraction).
+    /// On the flat map the shift is a move over the terrain, where there
+    /// is one (`CameraStateController.setCenterWorldMercatorOverTerrain`):
+    /// the eye keeps the altitude the zoom gave it, whatever ground the
+    /// point slides over.
+    private func applyZoomAnchorCompensation(stateBefore: ImmersiveMapCameraState?,
+                                             anchorPoint: CGPoint?) {
+        guard let stateBefore,
+              let anchorPoint,
+              let renderCamera else {
+            return
+        }
+
+        let stateAfter = renderCamera.currentCameraState()
+        let center = anchorCompensatedCenter(stateBefore: stateBefore,
+                                             stateAfter: stateAfter,
+                                             anchorPoint: anchorPoint)
+        guard center != stateAfter.centerWorldMercator else {
+            return
+        }
+
+        let onThePlane = presentationStateResolver.resolve(cameraState: stateAfter).presentationState.transition >= 1
+        if onThePlane {
+            renderCamera.setCameraCenterWorldMercatorOverTerrain(center)
+        } else {
+            renderCamera.setCameraCenterWorldMercator(center)
+        }
+    }
+
+    private func anchorCompensatedCenter(stateBefore: ImmersiveMapCameraState,
+                                         stateAfter: ImmersiveMapCameraState,
+                                         anchorPoint: CGPoint) -> SIMD2<Double> {
+        let input = ZoomAnchorMath.Input(
+            anchorPoint: anchorPoint,
+            viewportSize: viewportRuntime.bounds.size,
+            centerWorldMercator: stateBefore.centerWorldMercator,
+            zoomBefore: stateBefore.zoom,
+            zoomAfter: stateAfter.zoom,
+            bearing: stateBefore.bearing,
+            transitionBefore: presentationStateResolver.resolve(cameraState: stateBefore).presentationState.transition,
+            transitionAfter: presentationStateResolver.resolve(cameraState: stateAfter).presentationState.transition,
+            globeRadiusScale: settings.presentation.globeRadiusScale,
+            anchorFactor: settings.camera.zoomAnchorFactor
+        )
+        return ZoomAnchorMath.compensatedCenterWorldMercator(input)
+    }
+
+    /// Advances the elastic bounds' pull by one frame, notifying and
+    /// redrawing when the center moved. Returns whether it is still pulling.
+    func advanceBoundsPull(deltaTime: Double) -> Bool {
+        guard let renderCamera else {
+            return false
+        }
+
+        let centerBefore = renderCamera.currentCameraState().centerWorldMercator
+        let isReturning = renderCamera.advanceBoundsPull(deltaTime: deltaTime)
+        if renderCamera.currentCameraState().centerWorldMercator != centerBefore {
+            notifyCameraPositionChanged()
+            renderRuntime.requestFrame()
+        }
+        return isReturning
+    }
+
+    func setCameraPitch(_ pitch: Float) {
+        renderCamera?.setCameraPitch(pitch)
+        applyCurrentCameraConstraints()
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    func setCameraBearing(_ bearing: Float) {
+        renderCamera?.setCameraBearing(bearing)
+        applyCurrentCameraConstraints()
+        notifyCameraPositionChanged()
+        renderRuntime.requestFrame()
+    }
+
+    func notifyCameraPositionChanged(_ position: ImmersiveMapCameraPosition? = nil) {
+        guard let position = position ?? currentCameraPosition() else {
+            return
+        }
+
+        controlsRuntime.syncAttribution(zoom: position.zoom)
+        let snapshot = currentCameraSnapshot(position: position)
+        cameraNotificationGeneration += 1
+        let notificationGeneration = cameraNotificationGeneration
+
+        if let snapshot {
+            controller?.updateCurrentCameraSnapshot(snapshot)
+        }
+        controller?.notifyCameraPositionChanged(position)
+
+        guard notificationGeneration == cameraNotificationGeneration,
+              let snapshot else {
+            return
+        }
+        controller?.notifyCameraSnapshotChanged(snapshot)
+    }
+
+    func notifyMapBackgroundTap() {
+        controller?.notifyMapBackgroundTap()
+    }
+
+    func notifyUserInteractionBegan() {
+        controller?.notifyUserInteractionBegan()
+    }
+
+    func syncPitchControlValue(fallbackCameraPosition: ImmersiveMapCameraPosition? = nil) {
+        let currentCameraPosition = renderCamera?.currentCameraPosition()
+            ?? fallbackCameraPosition
+            ?? appliedCameraPosition
+            ?? initialCameraPosition
+        controlsRuntime.syncPitch(cameraPosition: currentCameraPosition,
+                                  minimumPitch: currentMinimumPitch(),
+                                  maximumPitch: currentMaximumPitch())
+        controlsRuntime.syncAttribution(zoom: currentCameraPosition?.zoom)
+    }
+
+    private func applyCurrentCameraConstraints() {
+        guard let renderCamera else {
+            return
+        }
+
+        renderCamera.applyConstraints(currentCameraConstraints(cameraState: renderCamera.currentCameraState()))
+    }
+
+    private func currentCameraConstraints(cameraState: ImmersiveMapCameraState) -> CameraConstraints {
+        presentationStateResolver.cameraConstraints(cameraState: cameraState)
+    }
+}

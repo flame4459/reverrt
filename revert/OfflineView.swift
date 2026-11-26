@@ -57,10 +57,30 @@ struct OfflineView: View {
                 )
 
                 RevertInfoNote(
-                    text: "This saves routing and alert data, not map imagery. The map background may still need a signal.",
+                    text: "This saves routing and alert data. Map imagery with no signal comes from Offline map regions below.",
                     systemImage: "map",
                     tint: MapUI.textTertiary
                 )
+
+                NavigationLink {
+                    MapRegionsView()
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        RevertCardHeader(
+                            icon: "map.fill",
+                            title: "Offline map regions",
+                            subtitle: "Download map areas, not just roads",
+                            tint: MapUI.cyan
+                        )
+                        Text("The immersive map streams its tiles by default. A downloaded region removes that dependency for the area you ride.")
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(MapUI.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                    .pulseCard()
+                }
+                .buttonStyle(.plain)
 
                 downloadCard
 

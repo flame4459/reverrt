@@ -1,0 +1,124 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Foundation
+import Mvt
+
+/// The label policy a tile parse asks questions of: which spelling a road
+/// or a point feature is labelled with, how a labelled point is identified
+/// and ranked, and which spelling of a name the map's language and the
+/// text atlas allow.
+///
+/// Assembled once by the caller from the style (how labels are
+/// identified), the glyph coverage of the text atlas and the language
+/// settings, then handed to `TileMvtParser`, which holds nothing of the
+/// policy itself: the parser decodes geometry and asks, this answers, from
+/// the names the schema reading stated (`ImmersiveMapLabelFacts`). Every
+/// answer is pure, so one value serves every parse of a map.
+struct TileLabelDecisions {
+    /// The style the label identities are minted for.
+    let styleID: String
+
+    private let usesFeatureIdentity: Bool
+    private let languagePreferences: VectorTileLabelLanguagePreferences
+    private let glyphCoverage: VectorTileLabelGlyphCoverage
+    private let textResolver: VectorTileLabelTextResolver
+
+    init(style: any ImmersiveMapVectorTileStyle,
+         glyphCoverage: VectorTileLabelGlyphCoverage,
+         language: ImmersiveMapSettings.LabelLanguage,
+         fallbackPolicy: ImmersiveMapSettings.LabelFallbackPolicy) {
+        self.styleID = style.styleID
+        self.usesFeatureIdentity = style.labelsUseFeatureIdentity
+        self.languagePreferences = VectorTileLabelLanguagePreferences.from(settingsLanguage: language,
+                                                                           fallbackPolicy: fallbackPolicy)
+        self.glyphCoverage = glyphCoverage
+        self.textResolver = VectorTileLabelTextResolver(glyphCoverage: glyphCoverage)
+    }
+
+    /// The name a road line is labelled with, in the map's language with its
+    /// fallback chain, or nil when the feature carries none the atlas can
+    /// render. In capitals when the style sets it so.
+    func roadLabelText(label: ImmersiveMapLabelFacts?, style: LabelTextStyle?) -> String? {
+        guard let label, let style else { return nil }
+        return textResolver.resolveText(label: label,
+                                        preferences: languagePreferences,
+                                        uppercased: style.uppercased)
+    }
+
+    /// The route signs whose numbers the atlas can render, in their order.
+    func renderableRouteShields(_ shields: [RouteShield]) -> [RouteShield] {
+        shields.filter { $0.text.isEmpty == false && glyphCoverage.canRender($0.text) }
+    }
+
+    /// The identity of a road's route signs standing at `anchor` in a tile:
+    /// local to the tile, since a road's signs stand in different places in
+    /// every tile that holds the road.
+    func routeShieldKey(tile: Tile, text: String, anchor: SIMD2<Int16>) -> UInt64 {
+        VectorTileLabelIdentity.tileLocal(tile: tile,
+                                          layerName: "route-shield",
+                                          text: text,
+                                          anchor: anchor).runtimeKey
+    }
+
+    /// How a point feature the style labels is labelled: its text (the
+    /// name in the map's language), its identity across tiles, and the priorities
+    /// and the sprite the style gave it. Nil when the feature carries no
+    /// text the atlas can render.
+    func pointLabelDecision(feature: VectorTileLabelFeature,
+                            label: ImmersiveMapLabelFacts,
+                            style: PointLabelStyle) -> VectorTileLabelDecision? {
+        guard let resolvedText = textResolver.resolveText(label: label,
+                                                          preferences: languagePreferences,
+                                                          uppercased: style.text.uppercased) else {
+            return nil
+        }
+        let identity: VectorTileLabelIdentity
+        if usesFeatureIdentity, let featureID = feature.featureID {
+            identity = .styleFeature(styleID: styleID, layerName: feature.layerName, featureID: featureID)
+        } else {
+            identity = .tileLocal(tile: feature.tile,
+                                  layerName: feature.layerName,
+                                  text: resolvedText,
+                                  anchor: feature.anchor)
+        }
+        return VectorTileLabelDecision(text: resolvedText,
+                                       identity: identity,
+                                       priority: VectorTileLabelPriority(visibilityRank: style.rank,
+                                                                         collisionRank: style.collisionRank,
+                                                                         deduplicationRank: style.rank,
+                                                                         drawRank: style.rank),
+                                       placement: .centered,
+                                       style: style.text,
+                                       poiIcon: style.icon)
+    }
+
+    /// The spelling of a name the map shows, chosen from names keyed by
+    /// language code (`"en"`, `"ru"`, ...) plus `"native"` for the local
+    /// one, walking the same fallback chain a feature's names would, and
+    /// skipping any the atlas cannot render. English is the last resort.
+    /// For the labels the parser synthesizes itself, which carry no facts
+    /// to resolve from.
+    func localizedName(from names: [String: String]) -> String? {
+        for candidate in languagePreferences.fallbackChain {
+            let code = candidate.languageCode ?? "native"
+            var value = names[code]
+            switch candidate.kind {
+            case .romanizedNative:
+                value = value.flatMap(languagePreferences.romanizer.romanize)
+            case .nativeInMapScript:
+                value = value.flatMap { languagePreferences.mapScript?.writes($0) == true ? $0 : nil }
+            case .preferred, .native, .english:
+                break
+            }
+            guard let value,
+                  value.isEmpty == false,
+                  glyphCoverage.canRender(value) else {
+                continue
+            }
+            return value
+        }
+
+        return names["en"].flatMap { glyphCoverage.canRender($0) ? $0 : nil }
+    }
+}

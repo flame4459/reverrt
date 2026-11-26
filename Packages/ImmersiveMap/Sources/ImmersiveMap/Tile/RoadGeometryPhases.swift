@@ -1,0 +1,90 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+struct RoadGeometryPhases<Layer> {
+    let shadow: Layer
+    let casing: Layer
+    let fill: Layer
+    let detail: Layer
+    let overlay: Layer
+
+    func layer(for role: RoadPassRole) -> Layer {
+        switch role {
+        case .shadow:
+            return shadow
+        case .casing:
+            return casing
+        case .fill:
+            return fill
+        case .detail:
+            return detail
+        case .overlay:
+            return overlay
+        }
+    }
+
+    func map<T>(_ transform: (Layer) -> T) -> RoadGeometryPhases<T> {
+        RoadGeometryPhases<T>(shadow: transform(shadow),
+                              casing: transform(casing),
+                              fill: transform(fill),
+                              detail: transform(detail),
+                              overlay: transform(overlay))
+    }
+
+    var drawOrderLayers: [Layer] {
+        RoadPassRole.drawOrder.map(layer(for:))
+    }
+}
+
+extension RoadPassRole {
+    /// Draw order of the road phases inside one structure bucket. This list is
+    /// also the arena-image span order (`TileArenaSchema` iterates it), so
+    /// changing it is a prepared-cache format change: bump
+    /// `PreparedTileDiskCaching.preparedFormatVersion`.
+    static let drawOrder: [RoadPassRole] = [.shadow, .casing, .fill, .detail, .overlay]
+}
+
+extension RoadGeometryPhases: Equatable where Layer: Equatable {}
+extension RoadGeometryPhases: Sendable where Layer: Sendable {}
+
+struct RoadStructureBuckets<Bucket> {
+    let tunnel: Bucket
+    let ground: Bucket
+    let automobileGround: Bucket
+    let bridge: Bucket
+
+    func bucket(for structureKind: RoadStructureKind) -> Bucket {
+        switch structureKind {
+        case .tunnel:
+            return tunnel
+        case .ground:
+            return ground
+        case .automobileGround:
+            return automobileGround
+        case .bridge:
+            return bridge
+        }
+    }
+
+    func map<T>(_ transform: (Bucket) -> T) -> RoadStructureBuckets<T> {
+        RoadStructureBuckets<T>(tunnel: transform(tunnel),
+                                ground: transform(ground),
+                                automobileGround: transform(automobileGround),
+                                bridge: transform(bridge))
+    }
+
+    var drawOrderBuckets: [Bucket] {
+        RoadStructureKind.drawOrder.map(bucket(for:))
+    }
+}
+
+extension RoadStructureKind {
+    /// Draw order of the road structure buckets. This list is also the
+    /// arena-image span order (`TileArenaSchema` iterates it), so changing it
+    /// is a prepared-cache format change: bump
+    /// `PreparedTileDiskCaching.preparedFormatVersion`.
+    static let drawOrder: [RoadStructureKind] = [.tunnel, .ground, .automobileGround, .bridge]
+}
+
+extension RoadStructureBuckets: Equatable where Bucket: Equatable {}
+extension RoadStructureBuckets: Sendable where Bucket: Sendable {}

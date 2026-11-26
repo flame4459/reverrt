@@ -42,8 +42,6 @@ final class RideRecorder {
     /// When the last usable fix arrived, so the cockpit can say it has lost GPS.
     private(set) var lastFixAt: Date?
     /// True when any fix in the current recording came from the route
-    /// simulator. Simulated rides are debug data, not journal rides.
-    private(set) var wasSimulated = false
     private var altitudeRef: Double?
     private var journalBuffer: [RidePoint] = []
     private var lastJournalFlush = Date.distantPast
@@ -88,7 +86,6 @@ final class RideRecorder {
         pauseStart = nil
         lastLocation = nil
         lastFixAt = nil
-        wasSimulated = false
         altitudeRef = nil
         stationarySince = nil
         autoPaused = false
@@ -111,12 +108,14 @@ final class RideRecorder {
         isPaused = true
         autoPaused = false
         pauseStart = Date()
+        RideJournal.shared.markPaused()
     }
 
     func resume() {
         guard isRecording, isPaused else { return }
         if let p = pauseStart { pausedTotal += Date().timeIntervalSince(p) }
         pauseStart = nil
+        RideJournal.shared.markResumed()
         isPaused = false
         autoPaused = false
         stationarySince = nil
@@ -247,7 +246,6 @@ final class RideRecorder {
         // cover a 30-50 m fix is all there is. The ride itself still wants a
         // good one, so distance only accrues below the tighter gate.
         if loc.horizontalAccuracy <= 50 {
-            if hub.isSimulating { wasSimulated = true }
             currentSpeedMps = max(loc.speed, 0)
             onLocation?(loc)
         }

@@ -110,7 +110,7 @@ nonisolated enum DebugReports {
     static func fileStamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
         return formatter.string(from: date)
     }
 

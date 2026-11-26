@@ -2,8 +2,9 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
-/// iOS 18+ Live Activity. Declares the small activity family that CarPlay's
-/// Dashboard and the Watch Smart Stack use, and lets the card adapt to it.
+/// iOS 18+ Live Activity. Declares the small activity family that the Watch
+/// Smart Stack (and car dashboards showing iPhone widgets) use, so the card can
+/// adapt to it.
 @available(iOS 18.0, *)
 struct NavigationLiveActivity: Widget {
     var body: some WidgetConfiguration {
@@ -14,31 +15,14 @@ struct NavigationLiveActivity: Widget {
         } dynamicIsland: { context in
             navigationDynamicIsland(context)
         }
-        // The small family is what CarPlay puts on the Dashboard, and what the
-        // Apple Watch Smart Stack uses. Declaring it is what makes this Live
-        // Activity eligible for the car screen without a CarPlay entitlement.
-        // iOS 17 has no small family, so it runs the legacy variant below.
+        // The small family is what the Apple Watch Smart Stack uses, and what
+        // car dashboards show when they display iPhone widgets. Declaring it is
+        // what makes this Live Activity eligible for those surfaces.
         .supplementalActivityFamilies([.small])
     }
 }
 
-/// iOS 17 Live Activity: the phone card, without the small family that iOS 18
-/// introduced. Uses its own activity type so the two variants never compete for
-/// the same activity.
-struct NavigationLiveActivityLegacy: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: LegacyNavigationActivityAttributes.self) { context in
-            RideActivityCard(state: context.state, isStale: context.isStale)
-                .activityBackgroundTint(.black)
-                .activitySystemActionForegroundColor(.white)
-        } dynamicIsland: { context in
-            navigationDynamicIsland(context)
-        }
-    }
-}
-
-/// The Dynamic Island layout, shared by both activity types: they carry the
-/// same `ContentState`, so the island never has to exist twice.
+/// The Dynamic Island layout for the navigation activity.
 private func navigationDynamicIsland<Attributes: ActivityAttributes>(
     _ context: ActivityViewContext<Attributes>
 ) -> DynamicIsland where Attributes.ContentState == NavigationActivityAttributes.ContentState {
@@ -85,7 +69,7 @@ private func navigationDynamicIsland<Attributes: ActivityAttributes>(
     .keylineTint(RideActivityCard.cyan)
 }
 
-/// Reads the iOS 18 activity family (CarPlay Dashboard / Watch Smart Stack)
+/// Reads the iOS 18 activity family (Watch Smart Stack / car dashboard)
 /// and hands the result to the shared card.
 @available(iOS 18.0, *)
 private struct RideActivityCardHost: View {
@@ -145,7 +129,7 @@ private struct RideActivityCard: View {
     /// Dashboard card. Deliberately has no controls: most head units pass
     /// touches through badly or not at all, and an accidental "End ride" at
     /// speed is worse than reaching for the phone. Ending stays on the phone
-    /// and the handlebar remote.
+    /// and the helmet audio cues.
     @ViewBuilder
     private var carCard: some View {
         if let name = state.mapImage, let image = LiveMapImage.load(name) {
@@ -168,7 +152,7 @@ private struct RideActivityCard: View {
     private func mapCardBody(_ image: UIImage) -> some View {
         ZStack {
             // GeometryReader keeps the bitmap out of the layout: a 16:9 image
-            // in a short CarPlay slot otherwise stretches the card and clips
+            // in a short dashboard slot otherwise stretches the card and clips
             // the bars at its edges.
             GeometryReader { geometry in
                 Image(uiImage: image)

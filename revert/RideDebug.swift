@@ -26,7 +26,6 @@ final class RideDebug {
         let started: Date?
         let routeName: String?
         let bytes: Int
-        let isSimulation: Bool
 
         var id: URL { url }
     }
@@ -41,8 +40,6 @@ final class RideDebug {
 
     private(set) var isActive = false
     private(set) var fileURL: URL?
-    private(set) var isSimulation = false
-    private var simulationOwned = false
 
     init(directory: URL? = nil) {
         overrideDirectory = directory
@@ -62,11 +59,9 @@ final class RideDebug {
     // MARK: Ride lifecycle
 
     /// Called when the recorder starts. A no-op mid-ride or when logging is off.
-    func begin(route: PlannedRoute?, bike: String?, force: Bool = false, simulation: Bool = false) {
+    func begin(route: PlannedRoute?, bike: String?, force: Bool = false) {
         guard !isActive, force || isEnabled else { return }
         let now = Date()
-        isSimulation = simulation
-        simulationOwned = simulation
         startedAt = now
         counts.removeAll()
         loggedSkips.removeAll()
@@ -81,7 +76,7 @@ final class RideDebug {
             handle = try FileHandle(forWritingTo: url)
             fileURL = url
             isActive = true
-            write(header(now: now, route: route, bike: bike, simulation: simulation))
+            write(header(now: now, route: route, bike: bike))
             write(settingsBlock())
             write(routeBlock(route))
             write("--- EVENTS ---")
@@ -89,7 +84,7 @@ final class RideDebug {
                 ("route", route.map { $0.displayName ?? "(unnamed)" } ?? "none"),
                 ("bike", bike ?? "—"),
                 ("kind", route.map { "\($0.kind)" } ?? "—"),
-                ("mode", simulation ? "SIMULATION" : "ride")
+                ("mode", "ride")
             ]))
         } catch {
             // Debug logging must never break a ride.
@@ -141,42 +136,6 @@ final class RideDebug {
         handle = nil
         isActive = false
         fileURL = nil
-        isSimulation = false
-        simulationOwned = false
-    }
-
-    // MARK: Simulation
-
-    /// Starts a transcript for a simulated run even when the rider has not
-    /// tapped Start ride, so a debug session from home still leaves data.
-    func beginSimulation(route: PlannedRoute?, multiplier: Double,
-                         vehicle: String = "Motorcycle") {
-        let wasActive = isActive
-        if !isActive {
-            begin(route: route, bike: nil, force: true, simulation: true)
-        }
-        if wasActive {
-            isSimulation = true
-            write("Mode: SIMULATION — simulator started at \(Clock.stamp(Date()))")
-        }
-        event("SIMULATION START", [
-            ("route", route.map { $0.displayName ?? "(unnamed)" } ?? "none"),
-            ("speed", "\(Int(multiplier))x"),
-            ("vehicle", vehicle)
-        ])
-    }
-
-    func endSimulation(distance: Double, duration: TimeInterval, multiplier: Double,
-                       lap: Int, totalLaps: Int) {
-        guard isActive else { return }
-        event("SIMULATION END", [
-            ("distance", Metric.distance(distance)),
-            ("simTime", Clock.duration(duration)),
-            ("speed", "\(Int(multiplier))x"),
-            ("lap", "\(lap)/\(totalLaps)")
-        ])
-        // The cockpit's tearDown (or the recorder's own finish) closes the
-        // file; closing here could cut a real ride that continued after the sim.
     }
 
     // MARK: Events
@@ -365,8 +324,7 @@ final class RideDebug {
                 return Entry(url: url,
                              started: values?.creationDate ?? values?.contentModificationDate,
                              routeName: routeName(of: url),
-                             bytes: values?.fileSize ?? 0,
-                             isSimulation: isSimulationFile(url))
+                             bytes: values?.fileSize ?? 0)
             }
             .sorted { ($0.started ?? .distantPast) > ($1.started ?? .distantPast) }
     }
@@ -414,7 +372,7 @@ final class RideDebug {
         counts[key, default: 0] += 1
     }
 
-    private func header(now: Date, route: PlannedRoute?, bike: String?, simulation: Bool) -> String {
+    private func header(now: Date, route: PlannedRoute?, bike: String?) -> String {
         var lines = [
             "REVERT RIDE DEBUG",
             "App \(RevertDiagnostics.appVersion) (\(RevertDiagnostics.appBuild))"
@@ -422,9 +380,6 @@ final class RideDebug {
                 + "  \(UIDevice.current.model)",
             "Started \(Clock.stamp(now))"
         ]
-        if simulation {
-            lines.append("Mode: SIMULATION — location is synthetic, not a real ride")
-        }
         if let route {
             lines.append("Route: \(route.displayName ?? "(unnamed)")")
             lines.append("  kind=\(route.kind)  length=\(Metric.meters(route.length))"
@@ -489,7 +444,6 @@ final class RideDebug {
         ("alert.voice", "Hazard voice", true),
         ("navigation.voice", "Navigation voice", true),
         ("helmet.binaural", "Helmet cues", true),
-        ("remote.enabled", "Handlebar remote", true)
     ]
 
     private func prune() {
@@ -498,14 +452,6 @@ final class RideDebug {
         for entry in entries.suffix(from: Self.maxFiles - 1) {
             try? FileManager.default.removeItem(at: entry.url)
         }
-    }
-
-    private func isSimulationFile(_ url: URL) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
-        defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: 900),
-              let head = String(data: data, encoding: .utf8) else { return false }
-        return head.contains("Mode: SIMULATION")
     }
 
     private func routeName(of url: URL) -> String? {
@@ -521,7 +467,7 @@ final class RideDebug {
 
     private static func fileName(for date: Date, route: String?) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH.mm"
+        formatter.dateFormat = "yyyy-MM-dd-HHmm"
         var name = formatter.string(from: date)
         if let route, !route.isEmpty {
             let cleaned = route

@@ -1,0 +1,225 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import Metal
+
+/// Draws the extruded buildings of flat mode: opaque geometry straight into
+/// the world pass, before the ground, which then fails its depth test under
+/// them. Always solid; there is no translucent path. A building a drawn
+/// model stands in for (`SceneModelFrameState.replacedBuildings`) is left
+/// out of both the world pass and the shadow casters, and its tile still
+/// draws in one call, from a working index buffer without it
+/// (`HiddenBuildingIndexBuffers`).
+///
+/// The buildings draw from a camera zoom on
+/// (`ExtrusionSettings.buildingsMinimumZoom`), from the tiles the ground
+/// shows, the buildings' zoom and finer (`BuildingCoveragePlanner`), so
+/// they stand through a change of zoom as the ground does. A tile's
+/// buildings also wait for the model tile
+/// over them (`FrameContextSharedState.pendingModelTiles`), so the ones a
+/// model stands in for are left out from their first frame. Each tile's
+/// buildings grow out of the flat map from the frame they first draw in
+/// (`ExtrusionRise`), their shadows with them: all of them when the camera
+/// reaches the zoom, and a tile on ground no buildings stood on. A tile
+/// taking over from the tiles that drew there keeps their height. Leaving
+/// the zoom, they are gone at once. The coverage is planned from the
+/// grid's zoom on regardless (`BuildingCoveragePlanner`), so the tiles
+/// are there to rise.
+final class BuildingExtrusionRenderSubsystem: RenderSubsystem {
+    let name: String = "BuildingExtrusion"
+
+    private let extrudedTilePipeline: ExtrudedTilePipeline
+    /// Depth-only state of the shadow-caster pass (no stencil attachment there).
+    private let extrudedDepthState: MTLDepthStencilState
+    /// World-pass buildings: scene depth plus the tile-priority stencil test.
+    private let extrudedStencilTestState: MTLDepthStencilState
+    private let depthDisabledState: MTLDepthStencilState
+    private let shadowMapTextureProvider: () -> MTLTexture?
+    private let shadowFallbackTexture: MTLTexture
+    private let debugOverlayControls: DebugOverlayControlState
+    /// The index buffers the tiles draw from while the frame's models
+    /// stand in for some of their buildings, shared by the world pass and
+    /// the casters.
+    private let hiddenBuildingIndexBuffers = HiddenBuildingIndexBuffers()
+    private let extrusion: ImmersiveMapSettings.ExtrusionSettings
+    private var rise = ExtrusionRise<VisibleTile>()
+    /// How far each of the frame's building placements has risen,
+    /// index-aligned with them, 0 for one not drawn.
+    private var heightScales: [Float] = []
+    /// The ground relief the buildings stand on, nil while it is off.
+    /// Each of the frame's placements' lifts over the relief, index-aligned
+    /// with them: one float per volume of the tile, in the terrain's own
+    /// metres, nil for a tile whose terrain is not in. Metres, not world
+    /// units, which change with the zoom, and not as drawn, which changes
+    /// with the relief's fade: the drawer binds the units a metre rises
+    /// by this frame beside them, the exaggeration in them.
+    private var liftBuffers: [MTLBuffer?] = []
+    /// The lifts' cache, by tile and terrain (`BuildingReliefLifts`).
+    private let reliefLifts = BuildingReliefLifts()
+    private var drawsAny = false
+
+    init(extrudedTilePipeline: ExtrudedTilePipeline,
+         extrudedDepthState: MTLDepthStencilState,
+         extrudedStencilTestState: MTLDepthStencilState,
+         depthDisabledState: MTLDepthStencilState,
+         shadowMapTextureProvider: @escaping () -> MTLTexture?,
+         shadowFallbackTexture: MTLTexture,
+         extrusion: ImmersiveMapSettings.ExtrusionSettings = ImmersiveMapSettings.ExtrusionSettings(),
+         debugOverlayControls: DebugOverlayControlState) {
+        self.debugOverlayControls = debugOverlayControls
+        self.extrusion = extrusion
+        self.extrudedTilePipeline = extrudedTilePipeline
+        self.extrudedDepthState = extrudedDepthState
+        self.extrudedStencilTestState = extrudedStencilTestState
+        self.depthDisabledState = depthDisabledState
+        self.shadowMapTextureProvider = shadowMapTextureProvider
+        self.shadowFallbackTexture = shadowFallbackTexture
+    }
+
+    func update(frameContext: FrameContext) {
+        let isRaised = frameContext.renderSurfaceMode == .flat
+            && frameContext.planningZoom >= extrusion.buildingsMinimumZoom
+        let placements = frameContext.sharedState.tilePlacementState.buildingPlaceTilesContext.tilePlacements
+        let pendingModelTiles = frameContext.sharedState.pendingModelTiles
+        // The placements that draw: the camera at the buildings' zoom, and
+        // the model tile over the placement, if any, in hand.
+        let drawnKeys: [VisibleTile?] = placements.map { placement in
+            guard isRaised,
+                  pendingModelTiles.contains(Self.modelTile(over: placement.metalTile.tile)) == false else {
+                return nil
+            }
+            return placement.placeIn
+        }
+        let time = frameContext.time
+        // A tile taking over the ground of standing buildings (a coarser
+        // tile's children, or the other way) keeps their height.
+        rise.advance(keys: drawnKeys.compactMap { $0 },
+                     time: time,
+                     seconds: extrusion.riseSeconds,
+                     overlaps: Self.overlap)
+
+        heightScales.removeAll(keepingCapacity: true)
+        var drawnPlacements: [PlaceTile] = []
+        var riseCoverage = BuildingRiseCoverage()
+        var signature: Float = 0
+        for (placement, key) in zip(placements, drawnKeys) {
+            guard let key, placement.metalTile.tileBuffers.extruded.indicesCount > 0 else {
+                heightScales.append(0)
+                continue
+            }
+            drawnPlacements.append(placement)
+            let scale = rise.heightScale(of: key, time: time)
+            // Kept off zero while the tile draws: the roofs' normals come
+            // out of the scaled matrix and are normalized in the shader.
+            let drawn = max(scale, 0.001)
+            heightScales.append(drawn)
+            riseCoverage.add(tile: key.tile, quarters: placement.quarters, rise: scale)
+            signature += drawn
+        }
+        drawsAny = drawnPlacements.isEmpty == false
+        updateLiftBuffers(placements: placements, drawnKeys: drawnKeys, frameContext: frameContext)
+        frameContext.sharedState.drawnBuildingPlacements = drawnPlacements
+        frameContext.sharedState.buildingRise = riseCoverage
+        frameContext.sharedState.buildingRiseSignature = signature
+        frameContext.sharedState.isExtrusionRising = frameContext.sharedState.isExtrusionRising || rise.isAnimating
+    }
+
+    func prepareGPU(frameContext _: FrameContext, resourceRegistry _: RenderResourceRegistry) {}
+
+    /// Whether two squares share ground: one of them holds the other, in
+    /// the same world copy.
+    private static func overlap(_ lhs: VisibleTile, _ rhs: VisibleTile) -> Bool {
+        guard lhs.worldWrap == rhs.worldWrap else { return false }
+        let (coarse, fine) = lhs.z <= rhs.z ? (lhs, rhs) : (rhs, lhs)
+        return fine.tile.findParentTile(atZoom: coarse.z) == coarse.tile
+    }
+
+    /// Each drawn placement's lifts over the relief (`BuildingReliefLifts`).
+    private func updateLiftBuffers(placements: [PlaceTile], drawnKeys: [VisibleTile?], frameContext: FrameContext) {
+        liftBuffers = reliefLifts.update(placements: placements,
+                                         drawnKeys: drawnKeys,
+                                         relief: frameContext.services.groundRelief,
+                                         device: extrudedTilePipeline.pipelineState.device)
+    }
+
+    /// The frame's relief the lifts are drawn by: the datum, the terrain
+    /// under the point the camera looks at in the lifts' own metres
+    /// (`GroundReliefFrame.datumMetres`), the frame's strength
+    /// (`GroundReliefFrame.strength`) and the world units a metre of
+    /// terrain rises by this frame, one for every tile
+    /// (`GroundReliefFrame.worldUnitsPerMetre`). The plane without a relief.
+    private static func lift(_ frameContext: FrameContext) -> (datumMetres: Float, strength: Float, unitsPerMetre: Float) {
+        guard let relief = frameContext.services.groundRelief else {
+            return (0, 1, 0)
+        }
+        return (relief.datumMetres, relief.strength, relief.worldUnitsPerMetre)
+    }
+
+    /// The model tile (`ModelTileStore.tileZoom`) a map tile lies in.
+    static func modelTile(over tile: Tile) -> Tile {
+        let shift = max(tile.z - ModelTileStore.tileZoom, 0)
+        return Tile(x: tile.x >> shift, y: tile.y >> shift, z: tile.z - shift)
+    }
+
+    func encode(layer: RenderLayer, encoder: MTLRenderCommandEncoder, frameContext: FrameContext) {
+        guard frameContext.renderSurfaceMode == .flat, drawsAny else {
+            return
+        }
+
+        if let slot = ShadowCascadeSlot(casterLayer: layer) {
+            guard let lightProjectionView = frameContext.shadowFrameState?.lightProjectionView(for: slot) else { return }
+            // The casters are the building coverage, the same partition the
+            // world pass draws, so a building casts exactly once a window.
+            hiddenBuildingIndexBuffers.update(frameContext.sharedState.sceneModelState.replacedBuildings)
+            let lift = Self.lift(frameContext)
+            BuildingExtrusionDrawer.drawShadowCasters(
+                renderEncoder: encoder,
+                lightProjectionView: lightProjectionView,
+                placeTilesContext: frameContext.sharedState.tilePlacementState.buildingPlaceTilesContext,
+                indexBuffers: hiddenBuildingIndexBuffers,
+                flatRenderState: frameContext.resolvedPresentation.flatRenderState,
+                heightScales: heightScales,
+                liftBuffers: liftBuffers,
+                liftDatumMetres: lift.datumMetres,
+                liftStrength: lift.strength,
+                liftUnitsPerMetre: lift.unitsPerMetre,
+                extrudedTilePipeline: extrudedTilePipeline,
+                extrudedDepthState: extrudedDepthState)
+            return
+        }
+
+        guard layer == .buildingExtrusion else { return }
+        drawBuildings(encoder: encoder, frameContext: frameContext)
+    }
+
+    func handleMemoryWarning() {}
+
+    func evict() {
+        rise.reset()
+        reliefLifts.evict()
+    }
+
+    private func drawBuildings(encoder: MTLRenderCommandEncoder,
+                               frameContext: FrameContext) {
+        let shadowBinding = ShadowReceiverBinding.resolve(frameContext: frameContext,
+                                                          shadowMapTexture: shadowMapTextureProvider(),
+                                                          fallbackTexture: shadowFallbackTexture)
+        hiddenBuildingIndexBuffers.update(frameContext.sharedState.sceneModelState.replacedBuildings)
+        GroundFogUniform.bind(GroundFogUniform.resolveForBuildings(frameContext: frameContext), encoder: encoder)
+        let lift = Self.lift(frameContext)
+        BuildingExtrusionDrawer.drawBuildings(renderEncoder: encoder,
+                                              cameraUniform: frameContext.cameraUniform,
+                                              shadowBinding: shadowBinding,
+                                              placeTilesContext: frameContext.sharedState.tilePlacementState.buildingPlaceTilesContext,
+                                              indexBuffers: hiddenBuildingIndexBuffers,
+                                              flatRenderState: frameContext.resolvedPresentation.flatRenderState,
+                                              heightScales: heightScales,
+                                              liftBuffers: liftBuffers,
+                                              liftDatumMetres: lift.datumMetres,
+                                              liftStrength: lift.strength,
+                                              liftUnitsPerMetre: lift.unitsPerMetre,
+                                              extrudedTilePipeline: extrudedTilePipeline,
+                                              extrudedStencilTestState: extrudedStencilTestState,
+                                              depthDisabledState: depthDisabledState)
+    }
+}

@@ -61,7 +61,6 @@ struct RevertQuickEntry: TimelineEntry {
             fields["carLimit"] = car.speedLimit ?? "—"
             fields["carLap"] = "\(car.lap)/\(car.totalLaps)"
             fields["carHazard"] = car.hazard ?? "—"
-            fields["carSim"] = car.isSimulation ? "yes" : "no"
             fields["carUpdated"] = String(format: "%.1f", car.updatedAt.timeIntervalSince1970)
             fields["carStale"] = car.isStale ? "yes" : "no"
             fields["carProgress"] = String(format: "%.3f", car.progress)
@@ -237,15 +236,6 @@ private struct RevertQuickWidgetView: View {
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(car.hazard == nil ? cyan : .orange)
                 Spacer(minLength: 0)
-                if car.isSimulation {
-                    Text("SIM")
-                        .font(.system(size: 7, weight: .heavy, design: .rounded))
-                        .tracking(0.7)
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.orange, in: Capsule())
-                }
                 if let hazard = car.hazard {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9, weight: .bold))
@@ -330,7 +320,7 @@ private struct RevertQuickWidgetView: View {
         }
     }
 
-    // The one card CarPlay shows in the Dashboard strip when Revert is not on
+    // The one card the dashboard strip shows when Revert is not on
     // the screen. It is a launcher, not a dashboard: the live turn data rides
     // the Live Activity, because widgets only get a handful of refreshes a day.
     private var parked: some View {

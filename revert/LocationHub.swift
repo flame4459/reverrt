@@ -18,8 +18,6 @@ import Observation
 /// - Every lease release is idempotent and floors its counter at zero, so a
 ///   double release (suspend followed by stop) cannot strand the radio on.
 /// - Subscribers are UUID-addressed; removing an unknown id is a no-op.
-/// - While `isSimulating`, real fixes are ignored and the location manager is
-///   stopped, so the simulator cannot fight synthetic input.
 @MainActor
 @Observable
 final class LocationHub: NSObject, CLLocationManagerDelegate {
@@ -30,10 +28,6 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
     /// the cockpit says so before the rider depends on it.
     private(set) var isReducedAccuracy = false
     @ObservationIgnored private(set) var lastLocation: CLLocation?
-    /// When the route simulator is driving the app, real fixes are ignored and
-    /// synthetic ones are published through the same subscriber path.
-    private(set) var isSimulating = false
-
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private var locationSubscribers: [UUID: (CLLocation) -> Void] = [:]
     @ObservationIgnored private var authorizationSubscribers: [UUID: (CLAuthorizationStatus) -> Void] = [:]
@@ -85,31 +79,6 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
     func requestWhenInUse() {
         guard authorizationStatus == .notDetermined else { return }
         manager.requestWhenInUseAuthorization()
-    }
-
-    // MARK: Simulation
-
-    func beginSimulation() {
-        guard !isSimulating else { return }
-        isSimulating = true
-        manager.stopUpdatingLocation()
-    }
-
-    func endSimulation() {
-        guard isSimulating else { return }
-        isSimulating = false
-        applyConfiguration()
-    }
-
-    /// Publishes a synthetic fix exactly as if Core Location had delivered it.
-    /// Navigation, the recorder and the alert engine all subscribe to this hub,
-    /// so the rest of the app cannot tell the difference.
-    func inject(_ location: CLLocation) {
-        guard isSimulating else { return }
-        lastLocation = location
-        for handler in locationSubscribers.values {
-            handler(location)
-        }
     }
 
     func requestAlwaysIfNeeded() {
@@ -175,10 +144,6 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
     var backgroundClaimCount: Int { backgroundClients }
 
     private func applyConfiguration() {
-        if isSimulating {
-            manager.stopUpdatingLocation()
-            return
-        }
         // Navigating is the one moment where a metre of lag is visible: the
         // camera is following this position, so ask for navigation-grade fixes
         // and the smallest filter iOS will honour. Background/coarse clients
@@ -213,7 +178,6 @@ final class LocationHub: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard !isSimulating else { return }
         // A batch can carry several fixes after a suspension, a background
         // stretch or a slow redraw. They are not guaranteed to be in order, so
         // the newest timestamp is the rider's position — `locations.last`

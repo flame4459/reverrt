@@ -1,0 +1,131 @@
+// Copyright (c) 2025-2026 Artem Bobkin.
+// SPDX-License-Identifier: MIT
+
+import simd
+
+/// The frame's coverage: which tiles the frame draws, at which zooms,
+/// from the camera pose. The plane's ring rules (`FlatRingRuleCoverage`)
+/// or the sphere's walk (`GlobeTileCoverage`) over the same rules, both
+/// counted from the tile the camera looks at.
+class TileCulling {
+    /// The floor zoom of the flat placements: the pinned world cover's, so
+    /// no band and no stand-in goes below the tiles that are always
+    /// resident.
+    static let flatBackdropZoomLevel = TileWorkingSetStore.pinnedWorldCoverMaxZoomLevel
+
+    /// Moves when the targets differ from the last frame's, not when the
+    /// walk merely ran again: the working set gates on it.
+    private var coverageVersion: UInt64 = 0
+    private var previousVisibleTiles: [VisibleTile] = []
+    private var previousRasterTiles: [VisibleTile: RasterTileSpec] = [:]
+
+    /// What the demand reads of a raster target: how it is baked, and
+    /// whether the target wants its vector tile too.
+    init() {}
+
+    /// `rules` are the ring rules of both surfaces (`FlatRingRules.default`
+    /// unless the debug panel edits them).
+    func resolveVisibleContent(cameraState: ImmersiveMapCameraState,
+                               resolvedPresentation: ResolvedPresentationState,
+                               targetZoom: Int,
+                               cameraMatrix: matrix_float4x4?,
+                               cameraFrustum: Frustum?,
+                               cameraEye: SIMD3<Float>,
+                               reliefHeights: ClosedRange<Float>? = nil,
+                               rules: FlatRingRules = .default,
+                               rasterBandMarginShare: Float = 0,
+                               diagnostics: (any FrameDiagnosticsService)? = nil) -> VisibleContentState {
+        let semanticCenterWorldMercator = cameraState.centerWorldMercator
+        let center = Self.makeCenter(centerWorldMercator: semanticCenterWorldMercator,
+                                     targetZoom: targetZoom)
+        let visibleTiles: [VisibleTile]
+        var flatRingBands: [FlatRingBand] = []
+        var linelessTiles = Set<VisibleTile>()
+        var unlabelledTiles = Set<VisibleTile>()
+        var rasterTiles: [VisibleTile: RasterTileSpec] = [:]
+
+        switch resolvedPresentation.renderSurfaceMode {
+        case .spherical:
+            let inputs = GlobeCoverageInputs(eye: cameraEye,
+                                             globe: resolvedPresentation.globeRenderState.globeUniform,
+                                             rules: rules,
+                                             lookAtTile: GlobeRingMath.lookAtTile(center: center, targetZoom: targetZoom))
+            let resolution = GlobeTileCoverage.targets(targetZoom: targetZoom, inputs: inputs, frustum: cameraFrustum)
+            visibleTiles = resolution.targets
+            flatRingBands = resolution.bands
+            linelessTiles = resolution.linelessTargets
+            unlabelledTiles = resolution.unlabelledTargets
+            rasterTiles = resolution.rasterTargets
+            recordGlobeMetrics(resolution.metrics, diagnostics: diagnostics)
+        case .flat:
+            let flatRenderState = resolvedPresentation.flatRenderState
+            if let polygon = CoveragePolygonBuilder.make(cameraMatrix: cameraMatrix, heights: reliefHeights) {
+                // The flat map draws the rules' bands and nothing under
+                // them, and the world cover's zoom stays the floor no band
+                // and no stand-in goes down to. Beyond the last rule the
+                // world tile is the horizon backdrop, placed by the working
+                // set under the plan (`TileWorkingSetSubsystem.horizonBackdrops`).
+                // The texture bands over a footprint pushed out from the
+                // camera's ground point, so a turn finds their tiles in.
+                let rasterPolygon = rasterBandMarginShare > 0
+                    ? polygon.inflated(about: SIMD2<Float>(cameraEye.x, cameraEye.y), by: 1 + rasterBandMarginShare)
+                    : nil
+                let resolution = FlatRingRuleCoverage.resolve(flatRenderState: flatRenderState,
+                                                              targetZoom: targetZoom,
+                                                              backdropZoom: Self.flatBackdropZoomLevel,
+                                                              rules: rules,
+                                                              polygon: polygon,
+                                                              rasterPolygon: rasterPolygon)
+                visibleTiles = resolution.targets
+                flatRingBands = resolution.bands
+                linelessTiles = resolution.linelessTargets
+                unlabelledTiles = resolution.unlabelledTargets
+                rasterTiles = resolution.rasterTargets
+                diagnostics?.setCounter(.globeCullingVisitedNodes, value: resolution.visitedNodeCount)
+            } else {
+                visibleTiles = []
+            }
+        }
+
+        // Which targets are rasters, and at what size, is part of the
+        // coverage: a change of it is a new coverage even over the same
+        // targets.
+        if visibleTiles != previousVisibleTiles || rasterTiles != previousRasterTiles {
+            coverageVersion &+= 1
+            previousVisibleTiles = visibleTiles
+            previousRasterTiles = rasterTiles
+        }
+        return VisibleContentState(centerWorldMercator: semanticCenterWorldMercator,
+                                   center: center,
+                                   visibleTiles: visibleTiles,
+                                   tileZoomLevel: targetZoom,
+                                   coverageVersion: coverageVersion,
+                                   flatRingBands: flatRingBands,
+                                   linelessTiles: linelessTiles,
+                                   unlabelledTiles: unlabelledTiles,
+                                   rasterTiles: rasterTiles)
+    }
+
+    static func makeCenter(centerWorldMercator: SIMD2<Double>,
+                           targetZoom: Int) -> Center {
+        let tilesCount = Double(1 << targetZoom)
+        return Center(tileX: ImmersiveMapProjection.wrapNormalizedWorldX(centerWorldMercator.x) * tilesCount,
+                      tileY: ImmersiveMapProjection.clampNormalizedWorldY(centerWorldMercator.y) * tilesCount)
+    }
+
+    private func recordGlobeMetrics(_ metrics: GlobeCullingMetrics,
+                                    diagnostics: (any FrameDiagnosticsService)?) {
+        diagnostics?.setMeasurement(.globeCullingDurationMs,
+                                    value: metrics.duration * 1000.0)
+        diagnostics?.setCounter(.globeCullingVisitedNodes,
+                                value: metrics.visitedNodeCount)
+        diagnostics?.setCounter(.globeCullingFrustumRejects,
+                                value: metrics.frustumRejectCount)
+        diagnostics?.setCounter(.globeCullingHorizonRejects,
+                                value: metrics.horizonRejectCount)
+        diagnostics?.setCounter(.globeCullingPlacedTiles,
+                                value: metrics.placedTileCount)
+        diagnostics?.setCounter(.globeCullingAcceptedWholeSubtrees,
+                                value: metrics.acceptedWholeSubtreeCount)
+    }
+}

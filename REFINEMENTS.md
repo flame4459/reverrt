@@ -26,7 +26,7 @@ and file sizes in the notes).
 - [ ] **5.** Presentation router — 35 `.sheet`, 30 `NavigationStack`; nested stacks and duplicated dismissals follow from this. (M)
 - [ ] **6.** Split `revert/` into folders — 137 files in one directory. (Q)
 - [ ] **7.** Decide `FeatureHubView` — 1,409 lines reachable from Home. (M)
-- [ ] **8.** Retire Director mode — ~1,400 lines behind a debug flag. (Q)
+- [x] **8.** Retire Director mode — removed together with CarPlay, the Ride simulator and the handlebar remote. (Q)
 - [ ] **9.** Central `DebugFlags` — 30 `#if DEBUG` blocks. (Q)
 - [ ] **10.** Kill the renderer picker in the ride menu; auto-select by availability. (Q)
 
@@ -79,7 +79,7 @@ and file sizes in the notes).
 ## 7. Platform (42–47)
 
 - [x] **42.** Widget and Live Activity staleness after a crash. (M)
-- [x] **43.** CarPlay handoff when Organic Maps is missing or its mute resets. (Q)
+- [x] **43.** Car handoff when Organic Maps is missing or its mute resets. (Q)
 - [ ] **44.** Siri intents — failure copy and the no-route case. (Q)
 - [ ] **45.** Notification policy for service due and the monthly recap. (M)
 - [ ] **46.** iPad layout — still iPhone-width optimised. (L)
@@ -291,7 +291,7 @@ and file sizes in the notes).
 - [ ] **205.** iPhone SE (3rd gen) — cockpit card, dock and ETA pill at 375 pt. (M)
 - [ ] **206.** iPhone 16 Pro Max — Dynamic Island and Live Activity alongside the cockpit. (Q)
 - [ ] **207.** iPad mini / Air — split view, rotation and sheet detents. (M)
-- [ ] **208.** CarPlay 1920×720 versus 800×480 — the car HUD assumes one aspect. (M)
+- [x] **208.** CarPlay 1920×720 versus 800×480 — CarPlay was removed entirely. (M)
 - [ ] **209.** Motorcycle head unit (Chigee/Carpuride class) — touch targets and glare. (M)
 - [ ] **210.** Landscape phone in a mount — `carLandscape` is car-only; riders mount sideways. (M)
 - [ ] **211.** External display and Stage Manager — nothing verified. (Q)

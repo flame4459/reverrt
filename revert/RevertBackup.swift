@@ -155,7 +155,7 @@ enum RevertBackupService {
         var backup = RevertBackup()
         backup.appVersion = RevertDiagnostics.appVersion
 
-        let bikes = (try? context.fetch(FetchDescriptor<Bike>())) ?? []
+        let bikes = try context.fetch(FetchDescriptor<Bike>())
         backup.bikes = bikes.map { bike in
             BikeSnapshot(id: bike.id, name: bike.name, make: bike.make, model: bike.model,
                          year: bike.year, odometerKm: bike.odometerKm, fuelRangeKm: bike.fuelRangeKm,
@@ -173,7 +173,7 @@ enum RevertBackupService {
             }
         }
 
-        let rides = (try? context.fetch(FetchDescriptor<Ride>())) ?? []
+        let rides = try context.fetch(FetchDescriptor<Ride>())
         backup.rides = rides.map { ride in
             RideSnapshot(startDate: ride.startDate, endDate: ride.endDate,
                          distanceMeters: ride.distanceMeters, maxSpeedMps: ride.maxSpeedMps,
@@ -187,7 +187,7 @@ enum RevertBackupService {
                          vehicleKindRaw: ride.vehicleKindRaw)
         }
 
-        let routes = (try? context.fetch(FetchDescriptor<SavedRoute>())) ?? []
+        let routes = try context.fetch(FetchDescriptor<SavedRoute>())
         backup.savedRoutes = routes.map { route in
             SavedRouteSnapshot(id: route.id, name: route.name, createdAt: route.createdAt,
                                isLoop: route.isLoop, isSprint: route.isSprint,
@@ -200,7 +200,7 @@ enum RevertBackupService {
                                surfaceRaw: route.surfaceRaw, laps: route.laps)
         }
 
-        let trips = (try? context.fetch(FetchDescriptor<Trip>())) ?? []
+        let trips = try context.fetch(FetchDescriptor<Trip>())
         backup.trips = trips.map { trip in
             TripSnapshot(id: trip.id, title: trip.title, notes: trip.notes,
                          createdAt: trip.createdAt,
@@ -214,7 +214,7 @@ enum RevertBackupService {
                             })
         }
 
-        let setups = (try? context.fetch(FetchDescriptor<SetupNote>())) ?? []
+        let setups = try context.fetch(FetchDescriptor<SetupNote>())
         backup.setups = setups.map { note in
             SetupSnapshot(id: note.id, bikeID: note.bikeID, createdAt: note.createdAt,
                           title: note.title, frontPressure: note.frontPressure,
@@ -238,6 +238,8 @@ enum RevertBackupService {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(backup).write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete],
+                                               ofItemAtPath: url.path)
         RevertDiagnostics.log("backup.write rides=\(backup.rides.count) routes=\(backup.savedRoutes.count) bikes=\(backup.bikes.count)")
         return url
     }
@@ -250,14 +252,20 @@ enum RevertBackupService {
         var added = 0
         var skipped = 0
 
-        let existingBikeIDs = Set(((try? context.fetch(FetchDescriptor<Bike>())) ?? []).map(\.id))
+        let existingBikes = try context.fetch(FetchDescriptor<Bike>())
+        let existingBikeIDs = Set(existingBikes.map(\.id))
+        // A restore must never leave two bikes starred: ride attribution keys
+        // off a single primary.
+        var primaryTaken = existingBikes.contains(where: \.isPrimary)
         for snapshot in backup.bikes where !existingBikeIDs.contains(snapshot.id) {
+            let shouldBePrimary = snapshot.isPrimary && !primaryTaken
+            if shouldBePrimary { primaryTaken = true }
             let bike = Bike(name: snapshot.name, make: snapshot.make, model: snapshot.model,
                             year: snapshot.year, odometerKm: snapshot.odometerKm,
                             fuelRangeKm: snapshot.fuelRangeKm, tankLiters: snapshot.tankLiters,
                             serviceIntervalKm: snapshot.serviceIntervalKm,
                             lastServiceKm: snapshot.lastServiceKm, notes: snapshot.notes,
-                            isPrimary: snapshot.isPrimary,
+                            isPrimary: shouldBePrimary,
                             kind: VehicleKind(rawValue: snapshot.kindRaw) ?? .motorcycle,
                             isElectric: snapshot.isElectric, avoidTolls: snapshot.avoidTolls,
                             avoidHighways: snapshot.avoidHighways)
@@ -266,7 +274,7 @@ enum RevertBackupService {
             context.insert(bike)
             added += 1
         }
-        let existingMaintenanceIDs = Set(((try? context.fetch(FetchDescriptor<MaintenanceEntry>())) ?? []).map(\.id))
+        let existingMaintenanceIDs = Set((try context.fetch(FetchDescriptor<MaintenanceEntry>())).map(\.id))
         for entry in backup.maintenance where !existingMaintenanceIDs.contains(entry.id) {
             guard let bike = try? context.fetch(FetchDescriptor<Bike>()).first(where: { $0.id == entry.bikeID }) else {
                 skipped += 1
@@ -280,11 +288,18 @@ enum RevertBackupService {
             added += 1
         }
 
-        let existingRides = Set(((try? context.fetch(FetchDescriptor<Ride>())) ?? [])
-            .map { "\($0.startDate.timeIntervalSince1970)-\($0.distanceMeters)" })
+        // Export encodes dates as ISO-8601, which drops sub-second precision, so
+        // an exact timestamp key duplicated every ride on a second restore.
+        // Match with a one-second tolerance instead.
+        var seenRides: [(date: Date, meters: Double)] = try context.fetch(FetchDescriptor<Ride>())
+            .map { ($0.startDate, $0.distanceMeters) }
         for snapshot in backup.rides {
-            let key = "\(snapshot.startDate.timeIntervalSince1970)-\(snapshot.distanceMeters)"
-            if existingRides.contains(key) { skipped += 1; continue }
+            let isDuplicate = seenRides.contains { existing in
+                abs(existing.date.timeIntervalSince(snapshot.startDate)) < 1
+                    && abs(existing.meters - snapshot.distanceMeters) < 1
+            }
+            if isDuplicate { skipped += 1; continue }
+            seenRides.append((snapshot.startDate, snapshot.distanceMeters))
             let ride = Ride(startDate: snapshot.startDate, endDate: snapshot.endDate,
                             distanceMeters: snapshot.distanceMeters, maxSpeedMps: snapshot.maxSpeedMps,
                             elevationGainMeters: snapshot.elevationGainMeters,
@@ -302,7 +317,7 @@ enum RevertBackupService {
             added += 1
         }
 
-        let existingRouteIDs = Set(((try? context.fetch(FetchDescriptor<SavedRoute>())) ?? []).map(\.id))
+        let existingRouteIDs = Set((try context.fetch(FetchDescriptor<SavedRoute>())).map(\.id))
         for snapshot in backup.savedRoutes where !existingRouteIDs.contains(snapshot.id) {
             // SavedRoute has no empty initialiser (SwiftData needs its backing
             // storage), so start from a placeholder route and overwrite every
@@ -332,7 +347,7 @@ enum RevertBackupService {
             added += 1
         }
 
-        let existingTripIDs = Set(((try? context.fetch(FetchDescriptor<Trip>())) ?? []).map(\.id))
+        let existingTripIDs = Set((try context.fetch(FetchDescriptor<Trip>())).map(\.id))
         for snapshot in backup.trips where !existingTripIDs.contains(snapshot.id) {
             let trip = Trip(title: snapshot.title, notes: snapshot.notes)
             trip.id = snapshot.id
@@ -350,7 +365,7 @@ enum RevertBackupService {
             added += 1
         }
 
-        let existingSetupIDs = Set(((try? context.fetch(FetchDescriptor<SetupNote>())) ?? []).map(\.id))
+        let existingSetupIDs = Set((try context.fetch(FetchDescriptor<SetupNote>())).map(\.id))
         for snapshot in backup.setups where !existingSetupIDs.contains(snapshot.id) {
             let note = SetupNote(bikeID: snapshot.bikeID, title: snapshot.title,
                                  frontPressure: snapshot.frontPressure,
@@ -362,7 +377,13 @@ enum RevertBackupService {
         }
 
         if let preferences = backup.preferences { restorePreferences(preferences) }
-        try context.save()
+        do {
+            try context.save()
+        } catch {
+            // Nothing from a failed restore may stay in the autosaving context.
+            context.rollback()
+            throw error
+        }
         RevertDiagnostics.log("backup.restore added=\(added) skipped=\(skipped)")
         return (added, skipped)
     }

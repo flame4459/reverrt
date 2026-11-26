@@ -51,24 +51,22 @@ enum BackupReminder {
 
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
-        let granted: Bool
-        switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral:
-            granted = true
-        case .notDetermined:
-            granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        default:
-            granted = false
-        }
+        // Never prompt from a launch-time code path: permission is requested in
+        // Backup & restore, where the rider can see why.
+        let granted = settings.authorizationStatus == .authorized
+            || settings.authorizationStatus == .provisional
+            || settings.authorizationStatus == .ephemeral
         guard granted else {
-            RevertDiagnostics.log("backup.reminder permission=denied status=\(settings.authorizationStatus.rawValue)")
+            RevertDiagnostics.log("backup.reminder skipped status=\(settings.authorizationStatus.rawValue)")
             return
         }
 
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
         let calendar = Calendar.current
-        let start = installDate
+        // The clock runs from whichever is newer: the install or the last real
+        // backup, so a backup made this morning silences the reminder.
+        let start = max(installDate, lastBackupDate ?? .distantPast)
         var fire = calendar.date(byAdding: .day, value: intervalDays, to: start) ?? Date().addingTimeInterval(6 * 86_400)
         while fire < Date() {
             fire = calendar.date(byAdding: .day, value: intervalDays, to: fire) ?? Date().addingTimeInterval(6 * 86_400)
@@ -77,7 +75,7 @@ enum BackupReminder {
         let content = UNMutableNotificationContent()
         content.title = "Back up Revert before the app is revoked"
         content.sound = .default
-        content.body = bodyText(fireDate: fire)
+        content.body = bodyText(anchor: start, fireDate: fire)
         content.userInfo = ["destination": "backup"]
 
         let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
@@ -93,17 +91,27 @@ enum BackupReminder {
         }
     }
 
-    private static func bodyText(fireDate: Date) -> String {
-        let installDays = max(0, Calendar.current.dateComponents([.day], from: installDate, to: fireDate).day ?? intervalDays)
-        let sinceBackup: String
-        if let last = lastBackupDate {
-            let days = Calendar.current.dateComponents([.day], from: last, to: fireDate).day ?? 0
-            let unit = days == 1 ? "day" : "days"
-            sinceBackup = "Last backup was \(days) \(unit) ago."
-        } else {
-            sinceBackup = "You have never made a backup."
+    private static func bodyText(anchor: Date, fireDate: Date) -> String {
+        let days = max(0, Calendar.current.dateComponents([.day], from: anchor, to: fireDate).day ?? intervalDays)
+        let unit = days == 1 ? "day" : "days"
+        if lastBackupDate != nil {
+            return "It has been \(days) \(unit) since your last Revert backup. Back up again from Settings → Data & privacy → Backup & restore."
         }
-        return "It has been \(installDays) days since this install. \(sinceBackup) Back up now from Settings → Data & privacy → Backup & restore."
+        return "It has been \(days) \(unit) since this install and no backup exists. Back up from Settings → Data & privacy → Backup & restore."
+    }
+
+    /// Requests authorization only from a UI action that explains the reason.
+    static func requestPermission() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .notDetermined:
+            return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        default:
+            return false
+        }
     }
 
     #if DEBUG
@@ -122,7 +130,7 @@ enum BackupReminder {
         let content = UNMutableNotificationContent()
         content.title = "Back up Revert before the app is revoked"
         content.sound = .default
-        content.body = bodyText(fireDate: Date().addingTimeInterval(10))
+        content.body = bodyText(anchor: max(installDate, lastBackupDate ?? .distantPast), fireDate: Date().addingTimeInterval(10))
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
         try? await center.add(UNNotificationRequest(identifier: identifier + ".debug",
                                                     content: content, trigger: trigger))

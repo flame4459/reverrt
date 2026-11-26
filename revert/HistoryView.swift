@@ -565,7 +565,6 @@ struct RideDetailView: View {
     @State private var showingPoster = false
     @State private var showingRivals = false
     @State private var showingChaseReplay = false
-    @State private var showingDirectorReplay = false
     @Environment(NavigationManager.self) private var nav
     @Query(sort: \SavedRoute.createdAt, order: .reverse) private var savedRoutes: [SavedRoute]
 
@@ -750,9 +749,6 @@ struct RideDetailView: View {
         .fullScreenCover(isPresented: $showingChaseReplay) {
             RideChaseReplayView(ride: ride)
         }
-        .fullScreenCover(isPresented: $showingDirectorReplay) {
-            RideDirectorReplayView(ride: ride)
-        }
         .sheet(isPresented: $showingRivals) {
             RouteLeaderboardView(
                 title: ride.routeName ?? "This loop",
@@ -856,18 +852,9 @@ struct RideDetailView: View {
 
                 Button {
                     RevertHaptics.tap()
-                    showingDirectorReplay = true
-                } label: {
-                    Label("Director film", systemImage: "film.fill")
-                }
-                .buttonStyle(RevertPrimaryButtonStyle(minHeight: 48))
-                .disabled(points.count < 2)
-
-                Button {
-                    RevertHaptics.tap()
                     showingChaseReplay = true
                 } label: {
-                    Label("Free chase", systemImage: "video.fill")
+                    Label("Drone replay", systemImage: "video.fill")
                 }
                 .buttonStyle(RevertSecondaryButtonStyle(minHeight: 44))
                 .disabled(points.count < 2)

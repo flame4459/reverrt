@@ -433,7 +433,14 @@ struct RevertCoreTests {
             case .text: return nil
             }
         }
-        #expect(clips == [.distance400Imperial, .turnRight])
+        // Distance is TTS at the real value; the coarse recorded distance
+        // clips are gone from navigation prompts on accuracy grounds.
+        #expect(clips == [.turnRight])
+        if case .text(let lead)? = prompt.parts.first {
+            #expect(lead.hasPrefix("In "), "distance must lead the prompt")
+        } else {
+            Issue.record("prompt must lead with a distance")
+        }
         #expect(prompt.fallback.contains("Market Street"))
     }
 
@@ -444,22 +451,25 @@ struct RevertCoreTests {
         let step = NavStep(id: 1, turn: .right, road: "Market Street", at: 0, distance: 0)
         let prompt = Narrator.instruction(step, distance: 400)
 
-        // A pack with the manoeuvre but no imperial distance clips (Geralt and
-        // many others) should skip the distance rather than turn robotic.
+        // A missing distance clip must never remove the distance: the rider
+        // still hears how far the turn is, spoken by TTS.
         let plan = Speaker.plan(for: prompt, available: [.turnRight, .straight])
-        #expect(plan.count == 2)
-        #expect(plan[0] == .clip(.turnRight))
-        guard case .speech(let tail) = plan[1] else {
+        #expect(plan.count == 3)
+        guard case .speech(let lead) = plan[0] else {
+            Issue.record("distance should be synthesised")
+            return
+        }
+        #expect(lead.hasPrefix("In "))
+        #expect(plan[1] == .clip(.turnRight))
+        guard case .speech(let tail) = plan[2] else {
             Issue.record("street name should be synthesised after the turn clip")
             return
         }
         #expect(tail == "onto Market Street")
 
-        // With the distance clip present the whole prompt stays recorded except
-        // for the street name.
-        let complete = Speaker.plan(for: prompt, available: [.distance400Imperial, .turnRight])
+        // A complete pack keeps the manoeuvre recorded and the distance spoken.
+        let complete = Speaker.plan(for: prompt, available: [.turnRight])
         #expect(complete.count == 3)
-        #expect(complete[0] == .clip(.distance400Imperial))
         #expect(complete[1] == .clip(.turnRight))
 
         // A pack with nothing useful still speaks the full sentence.
@@ -740,35 +750,6 @@ struct RevertCoreTests {
                 "A sprint must not be ranked against the same road as a circuit")
     }
 
-    @Test func locationHubPublishesSimulatedFixes() {
-        let hub = LocationHub.shared
-        final class Box: @unchecked Sendable { var location: CLLocation? }
-        let box = Box()
-        let token = hub.addSubscriber { box.location = $0 }
-        hub.beginSimulation()
-        defer {
-            hub.removeSubscriber(token)
-            hub.endSimulation()
-        }
-        let location = CLLocation(latitude: 37.123, longitude: -122.456)
-        hub.inject(location)
-        #expect(box.location?.coordinate.latitude == 37.123)
-        #expect(box.location?.coordinate.longitude == -122.456)
-    }
-
-    @Test func recorderMarksFixesFromTheSimulator() {
-        let hub = LocationHub.shared
-        let recorder = RideRecorder()
-        recorder.start()
-        hub.beginSimulation()
-        hub.inject(CLLocation(coordinate: CLLocationCoordinate2D(latitude: 37.5, longitude: -122.5),
-                              altitude: 30, horizontalAccuracy: 5, verticalAccuracy: 5,
-                              course: 90, speed: 15, timestamp: Date()))
-        #expect(recorder.wasSimulated)
-        recorder.discard()
-        hub.endSimulation()
-    }
-
     @Test func vehiclePreferencesApplyToMapKitDirections() {
         let defaults = UserDefaults.standard
         let oldKind = defaults.string(forKey: VehiclePreferences.primaryKindKey)
@@ -895,21 +876,19 @@ struct RevertCoreTests {
 
     @Test func carWidgetSnapshotRoundTrips() {
         var snapshot = CarWidgetSnapshot()
-        snapshot.mode = .simulation
+        snapshot.mode = .driving
         snapshot.vehicleKind = "car"
         snapshot.speed = "62 mph"
         snapshot.speedLimit = "55 mph"
         snapshot.lap = 2
         snapshot.totalLaps = 3
         snapshot.hazard = "Pothole"
-        snapshot.isSimulation = true
         snapshot.updatedAt = Date()
         let data = try? JSONEncoder().encode(snapshot)
         let decoded = data.flatMap { try? JSONDecoder().decode(CarWidgetSnapshot.self, from: $0) }
-        #expect(decoded?.mode == .simulation)
+        #expect(decoded?.mode == .driving)
         #expect(decoded?.isCar == true)
         #expect(decoded?.isLive == true)
-        #expect(decoded?.isSimulation == true)
         #expect(decoded?.lap == 2)
     }
 

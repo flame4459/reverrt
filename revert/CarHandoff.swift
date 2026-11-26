@@ -150,6 +150,8 @@ nonisolated enum CarHandoffExporter {
             .appendingPathComponent("\(cleanName) - \(df.string(from: route.createdAt))\(suffix).gpx")
         do {
             try xml.write(to: url, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete],
+                                                   ofItemAtPath: url.path)
             CarHandoffStore.cleanupExpired()
             return url
         } catch {
@@ -522,7 +524,7 @@ struct CarHandoffSheet: View {
                 case .organicMapsRequired:
                     Alert(
                         title: Text("Organic Maps on the car screen"),
-                        message: Text("Revert cannot draw on CarPlay without Apple's entitlement. Organic Maps can: it is free, works offline, and imports the GPX you save here. Save the GPX, import it in Organic Maps, open the track on the car display, and turn its voice off. Revert keeps navigating and stays the only voice."),
+                        message: Text("Revert does not draw on the car screen. Organic Maps can: it is free, works offline, and imports the GPX you save here. Save the GPX, import it in Organic Maps, open the track on the car display, and turn its voice off. Revert keeps navigating and stays the only voice."),
                         primaryButton: .default(Text("Open Organic Maps")) {
                             carAppNoticeSeen = true
                             if let url = CarAppLauncher.launchURL { openURL(url) }
@@ -601,7 +603,7 @@ struct CarHandoffSheet: View {
                 Text(carAppRequirementTitle)
                     .font(.system(.subheadline, design: .rounded).weight(.semibold))
                     .foregroundStyle(Pulse.ink)
-                Text("Revert cannot draw on CarPlay without Apple's entitlement. Organic Maps is the display app: free, offline, and it imports GPX.")
+                Text("Revert does not draw on the car screen. Organic Maps is the display app: free, offline, and it imports GPX.")
                     .font(.system(.caption, design: .rounded))
                     .foregroundStyle(Pulse.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -630,7 +632,7 @@ struct CarHandoffSheet: View {
             if target == .organicMaps {
                 step(1, "Share the track", "Tap Share GPX and pick Organic Maps in the share sheet. It takes the file directly.")
                 step(2, "It lands in your bookmarks", "Organic Maps imports the track into Bookmarks and Tracks. Nothing else to set up.")
-                step(3, "Open it on the car screen", "Open the track in Organic Maps on CarPlay and turn its voice off. Revert stays the navigator.")
+                step(3, "Open it on the car screen", "Open the track in Organic Maps on the car display and turn its voice off. Revert stays the navigator.")
             } else {
                 step(1, "Send route + track", "Share the file with Kurviger, Scenic or calimoto.")
                 step(2, "Import as a route", "The densified waypoints keep the planned line; the track matches the geometry.")

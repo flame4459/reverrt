@@ -11,6 +11,14 @@ enum WidgetBridge {
         UserDefaults(suiteName: suiteName)
     }
 
+    /// Removes the vehicle from the widget when the garage becomes empty.
+    static func clearBike() {
+        guard let defaults else { return }
+        defaults.removeObject(forKey: "widget.bikeName")
+        defaults.removeObject(forKey: "widget.odometerKm")
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     static func updateBike(name: String, odometerKm: Double, kind: VehicleKind = .motorcycle) {
         guard let defaults else { return }
         defaults.set(name, forKey: "widget.bikeName")
@@ -39,7 +47,6 @@ enum WidgetBridge {
             defaults.set(data, forKey: "widget.carState")
         }
         defaults.set(snapshot.vehicleKind, forKey: "widget.vehicleKind")
-        defaults.set(snapshot.isSimulation, forKey: "widget.isSimulation")
         defaults.set(snapshot.updatedAt.timeIntervalSince1970, forKey: "widget.carUpdatedAt")
 
         let now = Date()
@@ -60,7 +67,6 @@ enum WidgetBridge {
             ("limit", snapshot.speedLimit ?? "—"),
             ("lap", "\(snapshot.lap)/\(snapshot.totalLaps)"),
             ("hazard", snapshot.hazard ?? "—"),
-            ("sim", snapshot.isSimulation ? "yes" : "no"),
             ("progress", String(format: "%.3f", snapshot.progress)),
             ("stepID", "\(snapshot.stepID)"),
             ("mapImage", snapshot.mapImage ?? "—"),

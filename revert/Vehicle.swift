@@ -36,7 +36,7 @@ nonisolated enum VehicleKind: String, CaseIterable, Codable, Sendable, Identifia
 
 
 /// Car routing preferences live in UserDefaults so every directions request —
-/// the planner, reroutes, loop fallbacks and the CarPlay coordinator — can read
+/// the planner, reroutes and loop fallbacks — can read
 /// them without threading a vehicle object through each call site.
 nonisolated enum VehiclePreferences {
     static let primaryKindKey = "vehicle.primaryKind"
