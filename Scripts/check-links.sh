@@ -11,6 +11,9 @@ for md in pathlib.Path('.').rglob('*.md'):
         continue
     if '.build' in md.parts:
         continue
+    # Vendored third-party packages ship their own docs; their links are not ours.
+    if 'Packages' in md.parts:
+        continue
     text = md.read_text(errors='ignore')
     for match in re.finditer(r'\[[^\]]*\]\(([^)]+)\)', text):
         target = match.group(1).strip().split('#')[0].strip()
